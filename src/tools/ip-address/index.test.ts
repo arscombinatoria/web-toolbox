@@ -18,6 +18,41 @@ function setup() {
     view: document.querySelector('.ip-tool')!,
   };
 }
+it('IPv6の高さを取得・リサイズ・再取得時に再計算し、破棄時に解除する', async () => {
+  api.mockResolvedValue('1.2.3.4');
+  vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+    borderTopWidth: '1px', borderBottomWidth: '1px',
+  } as CSSStyleDeclaration);
+  let contentHeight = 48;
+  const measure = vi.spyOn(HTMLTextAreaElement.prototype, 'scrollHeight', 'get')
+    .mockImplementation(function (this: HTMLTextAreaElement) {
+      expect(this.style.height).toBe('auto');
+      return contentHeight;
+    });
+  const ui = setup();
+  expect(ui.output6.rows).toBe(1);
+  expect(ui.output6.readOnly).toBe(true);
+  expect(ui.output6.style.height).toBe('50px');
+  contentHeight = 96;
+  await vi.waitFor(() => expect(ui.output6.value).toBe('2001:db8::1'));
+  expect(ui.output6.style.height).toBe('98px');
+  contentHeight = 48;
+  window.dispatchEvent(new Event('resize'));
+  expect(ui.output6.style.height).toBe('50px');
+  contentHeight = 96;
+  window.dispatchEvent(new Event('resize'));
+  expect(ui.output6.style.height).toBe('98px');
+  await vi.waitFor(() => expect(ui.refresh.disabled).toBe(false));
+  contentHeight = 48;
+  api6.mockReturnValueOnce(new Promise(() => {}));
+  ui.refresh.click();
+  expect(ui.output6.value).toBe('');
+  expect(ui.output6.style.height).toBe('50px');
+  dispose!();
+  measure.mockClear();
+  window.dispatchEvent(new Event('resize'));
+  expect(measure).not.toHaveBeenCalled();
+});
 it('初回取得・連打抑止・再取得時の旧IP消去', async () => {
   api.mockResolvedValueOnce('203.0.113.42');
   const ui = setup();
