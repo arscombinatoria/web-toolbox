@@ -129,6 +129,10 @@ Registryのエントリーは`id`、`name`、`description`、`category`、`load`
 
 ## 6. 検証とCI/CD
 
+第8段階でVitest + V8 Coverageを追加。`vitest`と`@vitest/coverage-v8`は同一の完全バージョンに固定し、更新時も同時に変更する。`npm test`は従来の単体テスト、`npm run test:coverage`は`text`と`json-summary`を出力する。`coverage.include`で`src/`配下のJS/TSコード全体を指定し、未importのファイルも0%として含める。テスト（test/spec、__tests__）と型宣言のみ除外し、4ツール、ルーター、画面ホスト、起動処理・共通UIを対象とする。最低閾値は設けず、PlaywrightのE2Eカバレッジは合算しない。
+
+既存CIでは型チェック後にカバレッジ計測とNode.js標準のバッジ生成テストを実行する。Viteビルド・Playwright成功後、mainへのpushに限り`scripts/generate-coverage-badge.mjs`が`coverage/coverage-summary.json`の`total.lines.pct`を検証して`dist/coverage.svg`を生成し、既存Pages成果物に含める。READMEは公開SVGを参照する。数値欠損・不正JSON・範囲外等はエラー終了し、計測値を補完しない。生成ファイルはGit管理せず、外部バッジサービスや追加トークン・権限は使用しない。
+
 Vitestは変換処理の境界値・不正入力・Unicodeの特殊ケースを中心にする。具体例は濁点の結合／分離、変換対象外の互換文字、うるう年、日付境界をまたぐJST／UTC変換、秒とミリ秒、パイプとバックスラッシュ、末尾空セル。外部APIはモックし、正常・タイムアウト・不正レスポンス・中止を検証する。
 
 Playwrightは直接URL、ツール切り替え、戻る／進む、遅いimportや通信の競合、代表的な入力→結果、モバイルサイドバーとキーボード操作に絞る。単体テストの全ケースを重複させない。ブラウザ側の通信もモックし、CIから実APIを叩かない。
