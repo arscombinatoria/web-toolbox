@@ -79,6 +79,7 @@ Registryのエントリーは`id`、`name`、`description`、`category`、`load`
 - IPv4・IPv6は独立した表示・取得状態・コピーボタンを持つ。一方の失敗で他方の成功結果を消去しない。先に成功したアドレスは他方の完了を待たず表示・コピーできる。共通の再取得ボタンは両方の通信が終わるまで無効にし、開始時に両方の旧IPを消去する。取得中・成功・通信エラー・HTTPエラー・タイムアウト・形式エラーを区別する。readonly入力（IPv6は折り返し可能なtextarea）で手動選択を可能にし、成功時のみClipboard APIによるコピーを有効にする。各取得状態とコピー結果は別のpoliteなstatusで通知する。
 - UI内のAbortController識別と破棄フラグにより古い取得・コピー結果を無視する。tool-hostは動的importの競合、ツールは自身の通信の破棄を担当する。
 - `api.test.ts`・`index.test.ts`で通信とUIの失敗・中止・破棄を検証する。Playwrightの共通fixtureで全E2Eのipifyをモックし、実サービスには通信しない。`npm run typecheck`、`npm test`、`npm run build`、`npm run test:e2e`で検証する。実API接続は別途確認が必要。
+- IPv6欄は`rows="1"`を基本とし、取得開始・成功時とウィンドウのリサイズ時に`scrollHeight`と枠線幅から高さを再計算する。折り返し時にも全体を表示し、手動リサイズは無効にする。Chromium／Firefoxで動作するよう`field-sizing`には依存せず、resizeリスナーは破棄時に解除する。
 - 各IPバージョンの接続環境、DNS、提供元の稼働状況、CORSに依存する。IPv6取得失敗をIPv6非対応と断定しない旨を画面に明記する。失敗時に別サービスへ無断で切り替えない。
 
 ### 全角・半角変換 — `width-converter`／テキスト・データ

@@ -22,7 +22,7 @@ export function mount(container: HTMLElement): () => void {
         <label id="${version}-label" class="ip-label" for="${version}-result">グローバル${version}アドレス</label>
         ${version === 'IPv4'
           ? `<input id="${version}-result" class="ip-result" readonly placeholder="未取得" spellcheck="false">`
-          : `<textarea id="${version}-result" class="ip-result" readonly rows="3" placeholder="未取得" spellcheck="false"></textarea>`}
+          : `<textarea id="${version}-result" class="ip-result" readonly rows="1" placeholder="未取得" spellcheck="false"></textarea>`}
         <div class="ip-actions">
           <button type="button" data-copy aria-label="${version}をコピーする" disabled>コピーする</button>
         </div>
@@ -36,6 +36,14 @@ export function mount(container: HTMLElement): () => void {
   view.querySelector('h1')!.textContent = tool.name;
   view.querySelector('.tool-description')!.textContent = tool.description;
   const refresh = view.querySelector<HTMLButtonElement>('[data-refresh]')!;
+  const ipv6Output = view.querySelector<HTMLTextAreaElement>('#IPv6-result')!;
+  const resizeIpv6 = () => {
+    // Firefoxを含めfield-sizing未対応のブラウザでも、折り返しに合わせて伸縮する。
+    ipv6Output.style.height = 'auto';
+    const style = getComputedStyle(ipv6Output);
+    const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    ipv6Output.style.height = `${ipv6Output.scrollHeight + border}px`;
+  };
   let disposed = false;
   let loading = false;
   let request: AbortController | undefined;
@@ -48,6 +56,7 @@ export function mount(container: HTMLElement): () => void {
     let copying = false;
     const retrieve = async (current: AbortController) => {
       output.value = '';
+      if (version === 'IPv6') resizeIpv6();
       output.setAttribute('aria-busy', 'true');
       copy.disabled = true;
       copyStatus.textContent = '';
@@ -56,6 +65,7 @@ export function mount(container: HTMLElement): () => void {
         const ip = await fetchAddress(current.signal);
         if (disposed || request !== current) return;
         output.value = ip;
+        if (version === 'IPv6') resizeIpv6();
         copy.disabled = copying;
         status.textContent = '取得成功';
       } catch (error) {
@@ -103,11 +113,13 @@ export function mount(container: HTMLElement): () => void {
   };
   refresh.addEventListener('click', retrieve);
   container.append(view);
+  window.addEventListener('resize', resizeIpv6);
   void retrieve();
   return () => {
     disposed = true;
     request?.abort();
     refresh.removeEventListener('click', retrieve);
+    window.removeEventListener('resize', resizeIpv6);
     panels.forEach((panel) => panel.dispose());
     view.remove();
   };
