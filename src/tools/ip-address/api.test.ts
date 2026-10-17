@@ -26,6 +26,13 @@ describe('IPv4取得', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{')));
     await expect(fetchIpv4(controller().signal)).rejects.toMatchObject({ kind: 'format' });
   });
+  it('本文読み込み中のTypeErrorを通信エラーとして扱う', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.reject(new TypeError('body read failed')),
+    }));
+    await expect(fetchIpv4(controller().signal)).rejects.toMatchObject({ kind: 'network' });
+  });
   it.each([null, [], {}, { ip: 42 }, { ip: null }, { ip: '256.0.0.1' }, { ip: '::1' }])('不正レスポンス %jを拒否する', async (body) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(body)));
     await expect(fetchIpv4(controller().signal)).rejects.toMatchObject({ kind: 'format' });
@@ -73,6 +80,22 @@ describe('IPv4取得', () => {
     })));
     const result = expect(fetchIpv4(controller().signal)).rejects.toMatchObject({ kind: 'timeout' });
     await vi.advanceTimersByTimeAsync(10_000);
+    await result;
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it('JSON本文の読み込み中の中止をabortedとして扱う', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => Promise.resolve({
+      ok: true,
+      json: () => new Promise((_resolve, reject) => {
+        options.signal!.addEventListener('abort', () => reject(new TypeError('aborted')));
+      }),
+    })));
+    const abort = controller();
+    const result = expect(fetchIpv4(abort.signal)).rejects.toMatchObject({ kind: 'aborted' });
+    await Promise.resolve();
+    await Promise.resolve();
+    abort.abort();
     await result;
     expect(vi.getTimerCount()).toBe(0);
   });

@@ -31,8 +31,9 @@ export async function fetchIpv4(signal: AbortSignal): Promise<string> {
     let data: unknown;
     try {
       data = await response.json();
-    } catch {
-      throw failure('format');
+    } catch (error) {
+      if (error instanceof SyntaxError) throw failure('format');
+      throw error;
     }
     controller.signal.throwIfAborted();
     if (typeof data !== 'object' || data === null || !('ip' in data)
