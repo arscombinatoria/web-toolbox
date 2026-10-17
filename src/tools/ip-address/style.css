@@ -5,3 +5,6 @@
 .ip-status, .ip-copy-status { margin: var(--space-2) 0; }
 .ip-copy-status:empty { margin: 0; }
 .ip-privacy { color: var(--muted); font-size: 0.875rem; margin: var(--space-3) 0 0; }
+
+.ip-tool section { min-width: 0; }
+.ip-tool textarea.ip-result { resize: vertical; overflow-wrap: anywhere; white-space: pre-wrap; }

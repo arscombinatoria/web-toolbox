@@ -10,12 +10,15 @@ test('IPの表示・再取得・実Clipboard APIによるコピー', async ({ pa
   await page.goto('./');
   const output = page.getByRole('textbox', { name: 'グローバルIPv4アドレス' });
   await expect(output).toHaveValue('203.0.113.42');
+  await expect(page.getByRole('textbox', { name: 'グローバルIPv6アドレス' })).toHaveValue('2001:db8::1');
   await page.getByRole('button', { name: '再取得', exact: true }).click();
   await expect(output).toHaveValue('198.51.100.7');
-  await page.getByRole('button', { name: 'コピーする' }).click();
+  await page.getByRole('button', { name: 'IPv4をコピーする' }).click();
   await expect(page.getByText('コピーしました。', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('198.51.100.7');
   expect(requests).toBe(2);
+  await page.getByRole('button', { name: 'IPv6をコピーする' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('2001:db8::1');
 });
 
 test('通信エラーから手動再取得できる', async ({ page }) => {
@@ -24,9 +27,9 @@ test('通信エラーから手動再取得できる', async ({ page }) => {
     ? route.abort('failed') : route.fulfill({ json: { ip: '203.0.113.42' } }));
   await page.goto('./');
   await expect(page.getByText(/通信エラー：/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'コピーする' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeDisabled();
   await page.getByRole('button', { name: '再取得', exact: true }).click();
-  await expect(page.getByRole('textbox')).toHaveValue('203.0.113.42');
+  await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
 });
 
 test('切り替え時に中止し、戻った画面に古い通信結果を表示しない', async ({ page }) => {
@@ -52,19 +55,38 @@ test('切り替え時に中止し、戻った画面に古い通信結果を表�
   await aborted;
   await expect(page.getByText('このツールは準備中です')).toBeVisible();
   await page.getByRole('link', { name: 'IPアドレス確認', exact: true }).click();
-  await expect(page.getByRole('textbox')).toHaveValue('198.51.100.7');
+  await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('198.51.100.7');
   release();
   await oldRequestCompleted;
-  await expect(page.getByRole('textbox')).toHaveValue('198.51.100.7');
+  await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('198.51.100.7');
 });
 
 for (const theme of ['light', 'dark']) {
   test(`320px・${theme}テーマでIPと操作を表示できる`, async ({ page }) => {
+    const ipv6 = '2001:0db8:1234:5678:90ab:cdef:1234:5678';
+    await page.route('https://api6.ipify.org/**', (route) => route.fulfill({ json: { ip: ipv6 } }));
     await page.setViewportSize({ width: 320, height: 740 });
     await page.goto('./');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
-    await expect(page.getByRole('textbox')).toHaveValue('203.0.113.42');
-    await expect(page.getByRole('button', { name: 'コピーする' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
+    await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeVisible();
+    const output6 = page.getByRole('textbox', { name: 'グローバルIPv6アドレス' });
+    await expect(output6).toHaveValue(ipv6);
+    await expect(page.getByRole('button', { name: 'IPv6をコピーする' })).toBeVisible();
+    expect(await output6.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   });
 }
+
+test('IPv6失敗時もIPv4を保持し、再取得でIPv6が復帰する', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://api6.ipify.org/**', (route) => ++requests === 1
+    ? route.abort('failed') : route.fulfill({ json: { ip: '2001:db8::2' } }));
+  await page.goto('./');
+  await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
+  await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' }).getByText(/通信エラー：/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'IPv6をコピーする' })).toBeDisabled();
+  await page.getByRole('button', { name: '再取得', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'グローバルIPv6アドレス' })).toHaveValue('2001:db8::2');
+});
