@@ -17,3 +17,7 @@ updates:
         patterns:
           - "vitest"
           - "@vitest/*"
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
