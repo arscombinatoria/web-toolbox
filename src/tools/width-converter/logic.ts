@@ -6,7 +6,7 @@ export interface Categories {
   spaces: boolean;
 }
 export const defaultCategories: Readonly<Categories> = {
-  alphanumeric: true, symbols: true, katakana: false, spaces: false,
+  alphanumeric: true, symbols: true, katakana: false, spaces: true,
 };
 
 // 正規化するのは既知の半角カナ1文字、または濁点との組のみ。
