@@ -33,8 +33,9 @@ export function convertWidth(
 ): string {
   let text = input;
   if (categories.katakana) {
+    // ひらがなと結合濁点の並びを先にまとめて拾い、濁点だけの変換を防ぐ。
     text = direction === 'to-half'
-      ? text.replace(/[\u3001\u3002\u300c\u300d\u3099-\u309c\u30a0-\u30ff]/gu,
+      ? text.replace(/\p{Script=Hiragana}[\u3099\u309a]+|[\u3001\u3002\u300c\u300d\u3099-\u309c\u30a0-\u30ff]/gu,
           (character) => fullToHalf.get(character) ?? character)
       : text.replace(/[\uff61-\uff9d][\uff9e\uff9f\u3099\u309a]?|[\uff9e\uff9f]/gu,
           (sequence) => sequence.normalize('NFKC'));

@@ -58,6 +58,17 @@ describe('convertWidth', () => {
     expect(convertWidth('ﾞﾟｱﾞｶﾟ', 'to-full', only('katakana'))).toBe('\u3099\u309aア\u3099カ\u309a');
     expect(convertWidth('がぱ', 'to-half', only('katakana'))).toBe('がぱ');
   });
+  it.each(['か\u3099', 'は\u309a', 'う\u3099', 'あ\u309a', 'か\u3099\u309a', '𛀁\u3099'])(
+    'ひらがなに付いた結合濁点・半濁点を保持する: %s', (input) => {
+      expect(convertWidth(input, 'to-half', only('katakana'))).toBe(input);
+    },
+  );
+  it('ひらがな・カタカナ・単独濁点の混在を区別する', () => {
+    const input = '\u3099\u309a か\u3099は\u309a カ\u3099ハ\u309a ガパヴ ゛゜ ①Ⅳ';
+    const expected = 'ﾞﾟ か\u3099は\u309a ｶﾞﾊﾟ ｶﾞﾊﾟｳﾞ ﾞﾟ ①Ⅳ';
+    expect(convertWidth(input, 'to-half', only('katakana'))).toBe(expected);
+    expect(convertWidth(input, 'to-half', none)).toBe(input);
+  });
   it('半角の全範囲に対応し単独カナを往復できる', () => {
     for (let code = 0xff61; code <= 0xff9f; code++) {
       const half = String.fromCharCode(code);
