@@ -1,0 +1,38 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { mount } from './index';
+afterEach(() => { document.body.replaceChildren(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+it('時計・時間帯・日付境界を更新し、再表示で更新、破棄で解除', () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-17T14:59:30Z'));
+  const dispose = mount(document.body);
+  const view = document.querySelector('.datetime-tool')!;
+  expect(view.querySelector('[data-now-jst]')?.textContent).toBe('2026-10-17 23:59');
+  expect(view.querySelector('.is-current')?.textContent).toContain('23:00');
+  expect(view.querySelector('[data-now-jst]')?.closest('[aria-live], [role="status"]')).toBeNull();
+  vi.advanceTimersByTime(60000);
+  expect(view.querySelector('[data-now-jst]')?.textContent).toBe('2026-10-18 00:00');
+  expect(view.querySelector('.is-current')).toBeNull();
+  (view.querySelector('[data-today]') as HTMLButtonElement).click();
+  expect(view.querySelector('.is-current')?.textContent).toContain('00:00');
+  vi.setSystemTime(new Date('2026-10-17T16:20:00Z'));
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(view.querySelector('.is-current')?.textContent).toContain('01:00');
+  dispose(); expect(vi.getTimerCount()).toBe(0);
+  vi.setSystemTime(new Date('2026-10-17T17:20:00Z'));
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(view.querySelector('[data-now-jst]')?.textContent).toBe('2026-10-18 01:20');
+});
+it('コピー待機中の変更・破棄後の通知を抑止', async () => {
+  let finish!: () => void;
+  vi.stubGlobal('navigator', { clipboard: { writeText: () => new Promise<void>(resolve => { finish = resolve; }) } });
+  const dispose = mount(document.body);
+  const view = document.querySelector('.datetime-tool')!;
+  (view.querySelector('.datetime-results button') as HTMLButtonElement).click();
+  const input = view.querySelector<HTMLInputElement>('#datetime-time')!;
+  input.value = '12:00:01'; input.dispatchEvent(new Event('input'));
+  finish(); await Promise.resolve();
+  expect(view.querySelector('[role="status"]')?.textContent).toBe('');
+  (view.querySelector('.datetime-results button') as HTMLButtonElement).click();
+  dispose(); finish(); await Promise.resolve();
+  expect(view.querySelector('[role="status"]')?.textContent).toBe('');
+});

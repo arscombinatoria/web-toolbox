@@ -1,0 +1,24 @@
+.datetime-tool h2 { font-size: 1.15rem; margin-top: var(--space-4); }
+.datetime-clocks { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.datetime-clocks p { margin: 0; padding: var(--space-2); background: var(--page); border-radius: var(--radius); }
+.datetime-tool time, .datetime-tool table, .datetime-results input { font-variant-numeric: tabular-nums; }
+.datetime-clocks time { display: block; font-weight: 600; }
+.datetime-controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); margin-bottom: var(--space-2); }
+.datetime-tool label { display: block; font-size: 0.875rem; }
+.datetime-tool input, .datetime-controls select { display: block; width: 100%; min-width: 0; font: inherit; padding: var(--space-1); color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: var(--radius); }
+.datetime-tool table { width: 100%; border-collapse: collapse; }
+.datetime-tool caption { text-align: left; color: var(--muted); font-size: 0.875rem; margin-bottom: var(--space-1); }
+.datetime-tool th, .datetime-tool td { text-align: left; padding: var(--space-1); border-bottom: 1px solid var(--border); }
+.datetime-tool td:first-child { width: 50%; }
+.datetime-tool td button { min-height: 2.75rem; padding: var(--space-1); }
+.datetime-tool td small { display: inline-block; margin-left: var(--space-1); font-size: 0.75rem; }
+.datetime-tool .is-current { background: var(--accent-soft); }
+.datetime-tool .is-selected td:first-child { box-shadow: inset 4px 0 var(--accent); }
+.datetime-tool button[aria-pressed="true"] { border-color: var(--accent); font-weight: 700; }
+.datetime-results { display: grid; gap: var(--space-2); }
+.datetime-results > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1); }
+.datetime-results label { grid-column: 1 / -1; }
+.datetime-help { color: var(--muted); font-size: 0.875rem; }
+.datetime-tool [role="status"] { min-height: 1.7em; }
+.datetime-tool button:disabled { opacity: 0.55; cursor: default; }
+@media (max-width: 400px) { .datetime-tool th, .datetime-tool td { padding: 0.25rem; } .datetime-tool td small { display: block; margin-left: 0; } }
