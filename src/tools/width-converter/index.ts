@@ -22,7 +22,7 @@ export function mount(container: HTMLElement): () => void {
         <label><input type="checkbox" name="alphanumeric" checked> 英数字</label>
         <label><input type="checkbox" name="symbols" checked> 記号</label>
         <label><input type="checkbox" name="katakana"> カタカナ</label>
-        <label><input type="checkbox" name="spaces"> スペース</label>
+        <label><input type="checkbox" name="spaces" checked> スペース</label>
       </div>
     </fieldset>
     <div class="width-editors">

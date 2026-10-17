@@ -7,13 +7,12 @@ test('初期設定・リアルタイム変換・方向と文字種の独立選�
   await expect(page.getByRole('group', { name: '変換方向' })).toBeVisible();
   await expect(page.getByRole('group', { name: '変換対象' })).toBeVisible();
   await expect(page.getByRole('radio', { name: '全角 → 半角' })).toBeChecked();
-  for (const label of ['英数字', '記号']) await expect(page.getByRole('checkbox', { name: label })).toBeChecked();
-  for (const label of ['カタカナ', 'スペース']) await expect(page.getByRole('checkbox', { name: label })).not.toBeChecked();
+  for (const label of ['英数字', '記号', 'スペース']) await expect(page.getByRole('checkbox', { name: label })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'カタカナ' })).not.toBeChecked();
   await input.fill('ＡＢＣ１２３！＠＃　ガギグ');
-  await expect(output).toHaveValue('ABC123!@#　ガギグ');
+  await expect(output).toHaveValue('ABC123!@# ガギグ');
   await expect(output).toHaveAttribute('readonly', '');
   await page.getByRole('checkbox', { name: 'カタカナ' }).check();
-  await page.getByRole('checkbox', { name: 'スペース' }).check();
   await expect(output).toHaveValue('ABC123!@# ｶﾞｷﾞｸﾞ');
   await input.fill('ABC123! ｶﾞ①Ⅳ\n');
   await page.getByRole('radio', { name: '半角 → 全角' }).check();
@@ -115,5 +114,5 @@ test('実Clipboard APIで変換結果をコピーできる', async ({ page, cont
   await page.getByRole('textbox', { name: '入力', exact: true }).fill('ＡＢＣ１２３！＠＃　ガギグ');
   await page.getByRole('button', { name: '結果をコピー' }).click();
   await expect(page.getByRole('status')).toHaveText('コピーしました。');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('ABC123!@#　ガギグ');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('ABC123!@# ガギグ');
 });
