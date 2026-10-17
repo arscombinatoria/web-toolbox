@@ -20,7 +20,7 @@ export interface ToolDefinition {
 export const tools: readonly ToolDefinition[] = [
   {
     id: 'ip-address', name: 'IPアドレス確認', category: 'network',
-    description: '接続元のグローバルIPアドレスを確認できます。',
+    description: '接続元のグローバルIPv4・IPv6アドレスを確認できます。',
     load: () => import('./tools/ip-address/index'),
   },
   {

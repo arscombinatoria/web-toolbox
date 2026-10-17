@@ -84,6 +84,13 @@ main { width: 100%; max-width: 75rem; padding: var(--space-5) clamp(1.5rem, 5vw,
 h1 { font-size: clamp(1.5rem, 2.5vw, 2rem); line-height: 1.4; letter-spacing: -0.035em; margin: 0 0 var(--space-2); }
 .tool-description, .tool-content > p { color: var(--muted); margin: 0; }
 .placeholder { margin: var(--space-5) 0 0; border: 1px dashed var(--border); border-radius: var(--radius); padding: var(--space-5) var(--space-3); text-align: center; color: var(--muted); background: var(--page); }
+.ip-address-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-4); }
+.ip-address-card { min-width: 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); }
+.ip-address-card h2 { margin: 0 0 var(--space-1); font-size: 1rem; }
+.ip-address-value { display: block; min-height: 3.5rem; padding: var(--space-1); border: 1px solid var(--border); border-radius: calc(var(--radius) / 2); background: var(--surface); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; word-break: break-word; user-select: all; }
+.ip-address-status { min-height: 3.4em; margin: var(--space-1) 0; color: var(--muted); font-size: 0.875rem; overflow-wrap: anywhere; }
+.ip-address-card button { width: 100%; }
+.ip-address-refresh { margin-top: var(--space-3); min-width: 8rem; }
 .footer-note { color: var(--muted); font-size: 0.75rem; margin-top: var(--space-3); }
 dialog { padding: 0; border: 0; background: var(--surface); color: var(--text); }
 dialog::backdrop { background: var(--backdrop); }
@@ -104,6 +111,8 @@ dialog:modal { position: fixed; inset: 0 auto 0 0; margin: 0; width: min(20rem, 
   .sidebar-slot { border: 0; }
   main { padding: var(--space-4) var(--space-2); }
   .tool-content { min-height: 22rem; }
+  .ip-address-grid { grid-template-columns: minmax(0, 1fr); }
+  .ip-address-value { min-height: 0; }
   body:has(dialog[open]) { overflow: hidden; }
 }
 
