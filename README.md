@@ -1,5 +1,7 @@
 # Web Toolbox
 
+![Coverage](https://arscombinatoria.github.io/web-toolbox/coverage.svg)
+
 GitHub Pagesで公開する、ブラウザで使える小さな便利ツール集です。バックエンドを持たない静的SPAとして構築しています。
 
 第7段階としてトップページを追加しました。IPアドレス確認、全角・半角変換、Markdown表 ↔ Excel変換、JST・UTC日時変換の4ツールがすべて利用可能です。
@@ -77,6 +79,8 @@ npm run dev
 ```sh
 npm run typecheck
 npm test
+npm run test:coverage
+npm run test:badge
 npm run build
 npx playwright install --with-deps chromium
 npm run test:e2e
@@ -85,6 +89,10 @@ npm run test:e2e
 単体テスト・E2Eともipify通信をモックし、実APIへはアクセスしません。VitestではHTTP・JSON・IPv4／IPv6検証、ネットワーク障害、fake timerによる10秒タイムアウト、中止・破棄、両バージョンの成功・失敗の組み合わせを確認します。E2Eでは表示・再取得・Clipboard API・失敗からの復帰・切り替え・両テーマの狭幅表示を確認します。実APIの接続確認はこれらと別に行ってください。全角・半角変換ではカテゴリ別・Unicode境界値をVitestで、設定変更・IMEイベント順序・コピー・破棄・モバイル表示をPlaywrightで検証します。
 
 `build`には型チェックも含みます。E2Eは事前に生成した`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。初回はPlaywrightのブラウザとOS依存パッケージのインストールが必要です。
+
+カバレッジはVitestのV8 Coverageで`src/`のアプリケーションコードを計測します（テスト・型宣言を除外、未importのソースも含む）。バッジは**Linesカバレッジ**を示し、PlaywrightのE2Eカバレッジは合算していません。最低閾値は設定していません。
+
+`main`のPagesデプロイ時に、`coverage/coverage-summary.json`から生成したSVGを既存の成果物に含め、バッジを更新します。PRでは計測・ログ表示のみ行い、公開しません。ローカルでは`npm run test:coverage`と`npm run build`の後に`node scripts/generate-coverage-badge.mjs`で`dist/coverage.svg`を生成できます。`dist/`と`coverage/`はGit管理対象外です。
 
 本番ビルドを手動確認する場合：
 
