@@ -1,5 +1,5 @@
 import { categories, tools } from '../registry';
-import { toolUrl } from '../router';
+import { homeUrl, toolUrl } from '../router';
 
 export function createLayout(root: HTMLElement) {
   root.innerHTML = `
@@ -7,8 +7,10 @@ export function createLayout(root: HTMLElement) {
     <header class="header">
       <div class="header-brand">
         <button class="menu-button" type="button" aria-label="ツールメニューを開く" aria-expanded="false" aria-controls="mobile-menu">☰</button>
-        <span class="brand-mark" aria-hidden="true">W</span>
-        <span class="brand">Web Toolbox</span>
+        <a class="brand-link" data-home>
+          <span class="brand-mark" aria-hidden="true">W</span>
+          <span class="brand">Web Toolbox</span>
+        </a>
       </div>
       <label class="theme-control">テーマ
         <select aria-label="テーマ"><option value="system">システム</option><option value="light">ライト</option><option value="dark">ダーク</option></select>
@@ -18,7 +20,7 @@ export function createLayout(root: HTMLElement) {
       <div class="sidebar-slot"></div>
       <main id="main-content" tabindex="-1">
         <div class="content-heading"><span class="eyebrow">日々の作業を、少し手軽に。</span></div>
-        <section class="tool-content" aria-label="選択したツール"></section>
+        <section class="tool-content" aria-label="メイン画面"></section>
         <p class="footer-note">Web Toolbox · ブラウザで使える小さな便利ツール集</p>
       </main>
     </div>
@@ -28,6 +30,11 @@ export function createLayout(root: HTMLElement) {
   sidebar.className = 'sidebar';
   sidebar.innerHTML = '<h2 id="sidebar-title">ツール一覧</h2><nav aria-label="ツール"></nav>';
   const nav = sidebar.querySelector('nav')!;
+  const brand = root.querySelector<HTMLAnchorElement>('.brand-link')!;
+  const home = document.createElement('a');
+  home.dataset.home = '';
+  home.textContent = 'ホーム';
+  nav.append(home);
   for (const category of categories) {
     const group = document.createElement('section');
     const title = document.createElement('h3');
@@ -90,12 +97,14 @@ export function createLayout(root: HTMLElement) {
   return {
     content: root.querySelector<HTMLElement>('.tool-content')!,
     themeSelect: root.querySelector<HTMLSelectElement>('.theme-control select')!,
-    select(id: string) {
+    select(id: string | null) {
+      brand.href = homeUrl().href;
+      root.querySelector<HTMLElement>('.content-heading')!.hidden = id === null;
       for (const link of nav.querySelectorAll<HTMLAnchorElement>('a')) {
-        if (link.dataset.toolId === id) link.setAttribute('aria-current', 'page');
+        if (link.hasAttribute('data-home') ? id === null : link.dataset.toolId === id) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
         // URLの無関係なクエリは現在の値を引き継ぐ。
-        link.href = toolUrl(link.dataset.toolId!).href;
+        link.href = (link.hasAttribute('data-home') ? homeUrl() : toolUrl(link.dataset.toolId!)).href;
       }
       if (dialog.open) dialog.close();
     },

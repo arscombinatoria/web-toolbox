@@ -8,7 +8,7 @@ import { createToolHost } from './tool-host';
 const layout = createLayout(document.querySelector<HTMLElement>('#app')!);
 const stopTheme = setupTheme(layout.themeSelect);
 const host = createToolHost(layout.content);
-let selectedId: string | undefined;
+let selectedId: string | null | undefined;
 const stopRouter = startRouter((id, focus) => {
   layout.select(id);
   if (id === selectedId) {
@@ -16,8 +16,8 @@ const stopRouter = startRouter((id, focus) => {
     return;
   }
   selectedId = id;
-  const tool = findTool(id);
-  document.title = `${tool?.name ?? 'ツールが見つかりません'} | Web Toolbox`;
+  const tool = id === null ? null : findTool(id);
+  document.title = id === null ? 'Web Toolbox' : `${tool?.name ?? 'ツールが見つかりません'} | Web Toolbox`;
   void host.show(tool).then((current) => {
     if (current && focus) layout.content.querySelector('h1')?.focus();
   });

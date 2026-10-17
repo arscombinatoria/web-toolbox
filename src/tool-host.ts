@@ -1,3 +1,4 @@
+import { mountHome } from './components/home';
 import type { ToolDefinition } from './registry';
 import { defaultToolId } from './registry';
 import { toolUrl } from './router';
@@ -28,10 +29,14 @@ export function createToolHost(container: HTMLElement) {
   };
 
   return {
-    async show(tool: ToolDefinition | undefined): Promise<boolean> {
+    async show(tool: ToolDefinition | null | undefined): Promise<boolean> {
       const current = ++generation;
       clear();
       container.removeAttribute('aria-busy');
+      if (tool === null) {
+        dispose = mountHome(container);
+        return true;
+      }
       if (!tool) {
         message('ツールが見つかりません', 'サイドバーから利用できるツールを選択してください。', true);
         return true;

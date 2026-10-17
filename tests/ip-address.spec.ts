@@ -7,7 +7,7 @@ test('IPの表示・再取得・実Clipboard APIによるコピー', async ({ pa
     requests++;
     return route.fulfill({ json: { ip: requests === 1 ? '203.0.113.42' : '198.51.100.7' } });
   });
-  await page.goto('./');
+  await page.goto('./?tool=ip-address');
   const output = page.getByRole('textbox', { name: 'グローバルIPv4アドレス' });
   await expect(output).toHaveValue('203.0.113.42');
   await expect(page.getByRole('textbox', { name: 'グローバルIPv6アドレス' })).toHaveValue('2001:db8::1');
@@ -25,7 +25,7 @@ test('通信エラーから手動再取得できる', async ({ page }) => {
   let requests = 0;
   await page.route('https://api.ipify.org/**', (route) => ++requests === 1
     ? route.abort('failed') : route.fulfill({ json: { ip: '203.0.113.42' } }));
-  await page.goto('./');
+  await page.goto('./?tool=ip-address');
   await expect(page.getByText(/通信エラー：/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeDisabled();
   await page.getByRole('button', { name: '再取得', exact: true }).click();
@@ -48,7 +48,7 @@ test('切り替え時に中止し、戻った画面に古い通信結果を表�
       completed();
     } else await route.fulfill({ json: { ip: '198.51.100.7' } });
   });
-  await page.goto('./');
+  await page.goto('./?tool=ip-address');
   await firstRequest;
   const aborted = page.waitForEvent('requestfailed', (request) => request.url().startsWith('https://api.ipify.org/'));
   await page.getByRole('link', { name: '日時・UTC変換', exact: true }).click();
@@ -66,7 +66,7 @@ for (const theme of ['light', 'dark']) {
     const ipv6 = '2001:0db8:1234:5678:90ab:cdef:1234:5678';
     await page.route('https://api6.ipify.org/**', (route) => route.fulfill({ json: { ip: ipv6 } }));
     await page.setViewportSize({ width: 320, height: 740 });
-    await page.goto('./');
+    await page.goto('./?tool=ip-address');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
     await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
     await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeVisible();
@@ -82,7 +82,7 @@ test('IPv6失敗時もIPv4を保持し、再取得でIPv6が復帰する', async
   let requests = 0;
   await page.route('https://api6.ipify.org/**', (route) => ++requests === 1
     ? route.abort('failed') : route.fulfill({ json: { ip: '2001:db8::2' } }));
-  await page.goto('./');
+  await page.goto('./?tool=ip-address');
   await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
   await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' }).getByText(/通信エラー：/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeEnabled();
