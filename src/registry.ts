@@ -20,22 +20,22 @@ export interface ToolDefinition {
 export const tools: readonly ToolDefinition[] = [
   {
     id: 'ip-address', name: 'IPアドレス確認', category: 'network',
-    description: '現在のグローバルIPv4・IPv6アドレスを確認できます',
+    description: 'グローバルIPv4・IPv6アドレスを確認',
     load: () => import('./tools/ip-address/index'),
   },
   {
     id: 'width-converter', name: '全角・半角変換', category: 'text-data',
-    description: '英数字やカタカナなどの全角・半角を変換できます。',
+    description: '英数字・記号・カタカナ・スペースの変換',
     load: () => import('./tools/width-converter/index'),
   },
   {
     id: 'markdown-table', name: 'Markdown表変換', category: 'text-data',
-    description: 'Markdownの表とTSV形式のデータを相互に変換できます。',
+    description: 'Markdown表とExcelデータの相互変換、XLSX出力',
     load: () => import('./tools/markdown-table/index'),
   },
   {
     id: 'datetime', name: '日時・UTC変換', category: 'date-time',
-    description: 'JST・UTCの24時間対応表と日時変換を確認できます。',
+    description: 'JST・UTCの24時間対応表と日時変換',
     load: () => import('./tools/datetime/index'),
   },
 ];

@@ -110,3 +110,16 @@ dialog:modal { position: fixed; inset: 0 auto 0 0; margin: 0; width: min(20rem, 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }
+
+.brand-link { display: flex; align-items: center; gap: var(--space-2); color: var(--text); text-decoration: none; border-radius: var(--radius); }
+.brand-link:hover .brand { color: var(--accent); }
+.home-tagline { margin: 0 0 var(--space-1); font-size: 1.125rem; }
+.home-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); list-style: none; padding: 0; margin: var(--space-4) 0 0; }
+.home-tools li { min-width: 0; }
+.tool-card { display: block; height: 100%; padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); text-decoration: none; }
+.tool-card h2 { margin: 0 0 var(--space-1); font-size: 1.125rem; color: var(--accent); }
+.tool-card p { margin: 0; color: var(--muted); font-size: 0.875rem; }
+.tool-card:hover, .tool-card:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 759px) {
+  .home-tools { grid-template-columns: minmax(0, 1fr); }
+}

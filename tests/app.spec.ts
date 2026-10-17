@@ -1,41 +1,72 @@
 import { expect, test } from './fixtures';
 
-test('Registryの4画面・URL・履歴・直接アクセスが本番サブパスで動く', async ({ page }) => {
-  const loadedScripts: string[] = [];
-  page.on('request', (request) => {
-    if (request.resourceType() === 'script') loadedScripts.push(request.url());
-  });
+test('ホームのカード・選択状態・URL・履歴・再読み込みが本番サブパスで動く', async ({ page }) => {
   await page.goto('./?keep=yes');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('IPアドレス確認');
-  // 初回に選択されていないツールのチャンクを読み込まない。
-  const initialCount = loadedScripts.length;
-  expect(initialCount).toBeGreaterThanOrEqual(2);
+  const heading = page.getByRole('heading', { level: 1 });
+  const home = page.getByRole('link', { name: 'ホーム', exact: true });
+  const brand = page.getByRole('link', { name: 'Web Toolbox', exact: true });
+  await expect(heading).toHaveText('Web Toolbox');
+  await expect(page).toHaveTitle('Web Toolbox');
+  await expect(page.locator('.home').getByText('日々の作業を、少し手軽に。', { exact: true })).toBeVisible();
+  await expect(page.getByText('ブラウザで使える、小さな便利ツール集です。', { exact: true })).toBeVisible();
+  await expect(page.locator('.tool-card')).toHaveCount(4);
+  await expect(home).toHaveAttribute('aria-current', 'page');
   const initialHistory = await page.evaluate(() => history.length);
-  await page.getByRole('link', { name: 'IPアドレス確認', exact: true }).click();
+  await home.click();
   expect(await page.evaluate(() => history.length)).toBe(initialHistory);
-  await page.getByRole('link', { name: '全角・半角変換', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('全角・半角変換');
-  expect(loadedScripts.length).toBe(initialCount + 1);
-  await expect(page).toHaveURL(/\/web-toolbox\/\?keep=yes&tool=width-converter$/);
-  await expect(page.getByRole('link', { name: '全角・半角変換', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
-  await page.getByRole('link', { name: 'Markdown表変換', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Markdown表変換');
-  await page.getByRole('link', { name: '日時・UTC変換', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('日時・UTC変換');
+  for (const name of ['IPアドレス確認', '全角・半角変換', 'Markdown表変換', '日時・UTC変換']) {
+    const card = page.locator('.tool-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
+    await card.focus();
+    await page.keyboard.press('Enter');
+    await expect(heading).toHaveText(name);
+    await expect(heading).toBeFocused();
+    await expect(page).toHaveTitle(`${name} | Web Toolbox`);
+    await expect(page.getByRole('navigation').getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(home).not.toHaveAttribute('aria-current');
+    await expect(page).toHaveURL(/keep=yes&tool=/);
+    await brand.click();
+    await expect(heading).toHaveText('Web Toolbox');
+    await expect(heading).toBeFocused();
+    await expect(page).toHaveURL(/\/web-toolbox\/\?keep=yes$/);
+    await expect(home).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('navigation').locator('[aria-current="page"]')).toHaveCount(1);
+  }
   await page.goBack();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Markdown表変換');
+  await expect(heading).toHaveText('日時・UTC変換');
   await page.goForward();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('日時・UTC変換');
+  await expect(heading).toHaveText('Web Toolbox');
   await page.reload();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('日時・UTC変換');
-  await expect(page.getByRole('heading', { name: 'JST ↔ UTC 24時間対応表' })).toBeVisible();
-  await page.goto('./?tool=not-a-tool');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('ツールが見つかりません');
-  await expect(page).toHaveURL(/tool=not-a-tool$/);
-  await page.getByRole('link', { name: '既定のツールを開く' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('IPアドレス確認');
+  await expect(heading).toHaveText('Web Toolbox');
+  await page.goBack();
+  await expect(heading).toHaveText('日時・UTC変換');
+  await home.click();
+  await expect(heading).toHaveText('Web Toolbox');
 });
+
+for (const id of ['ip-address', 'width-converter', 'markdown-table', 'datetime']) {
+  test(`直接URLと再読み込み: ${id}`, async ({ page }) => {
+    await page.goto(`./?tool=${id}`);
+    const link = page.getByRole('navigation').locator(`[data-tool-id="${id}"]`);
+    await expect(link).toHaveAttribute('aria-current', 'page');
+    const name = await link.textContent();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name!);
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name!);
+  });
+}
+
+for (const id of ['not-a-tool', '']) {
+  test(`不正IDをホームに置き換えない: ${id}`, async ({ page }) => {
+    await page.goto(`./?tool=${id}&keep=yes`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('ツールが見つかりません');
+    await expect(page.getByRole('navigation').locator('[aria-current]')).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get('tool')).toBe(id);
+    await page.getByRole('link', { name: '既定のツールを開く' }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('IPアドレス確認');
+    await page.getByRole('link', { name: 'ホーム', exact: true }).click();
+    await expect(page).toHaveURL(/\?keep=yes$/);
+  });
+}
 
 test('テーマのOS追従・手動保存・復元・システムへの復帰', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -59,7 +90,7 @@ test('ストレージへのアクセスが拒否されても起動できる', as
     Object.defineProperty(window, 'localStorage', { get() { throw new Error('denied'); } });
   });
   await page.goto('./');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('IPアドレス確認');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Web Toolbox');
   await page.getByRole('combobox', { name: 'テーマ' }).selectOption('dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
@@ -73,7 +104,7 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await menu.click();
   await expect(menu).toHaveAttribute('aria-expanded', 'true');
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('link', { name: 'IPアドレス確認', exact: true })).toBeFocused();
+  await expect(dialog.getByRole('link', { name: 'ホーム', exact: true })).toBeFocused();
   // 最後のリンクからTabを押すとダイアログ内に戻る。
   await dialog.getByRole('link', { name: '日時・UTC変換', exact: true }).focus();
   await page.keyboard.press('Tab');
@@ -83,6 +114,8 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await expect(menu).toBeFocused();
   await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Web Toolbox', exact: true })).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(page.getByRole('combobox', { name: 'テーマ' })).toBeFocused();
   await menu.click();
   await dialog.getByRole('link', { name: '日時・UTC変換', exact: true }).click();
@@ -90,8 +123,54 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('日時・UTC変換');
   await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
   await menu.click();
+  await expect(dialog.getByRole('link', { name: '日時・UTC変換', exact: true })).toHaveAttribute('aria-current', 'page');
+  await dialog.getByRole('link', { name: 'ホーム', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Web Toolbox');
+  await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
+  await menu.click();
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('navigation')).toBeVisible();
   await expect(menu).toBeHidden();
 });
+
+test('ホームはアプリのチャンクだけを読み込み、外部通信を行わない', async ({ page }) => {
+  const requests: string[] = [];
+  page.on('request', request => requests.push(request.url()));
+  await page.goto('./');
+  await expect(page.locator('.tool-card')).toHaveCount(4);
+  // load完了までの全通信を確認し、動的チャンクや外部リクエストがないことを検証する。
+  await page.waitForLoadState('networkidle');
+  expect(requests.every(url => new URL(url).origin === new URL(page.url()).origin)).toBe(true);
+  const scripts = requests.filter(url => new URL(url).pathname.endsWith('.js'));
+  expect(scripts).toHaveLength(1);
+  expect(new URL(scripts[0]!).pathname).toMatch(/^\/web-toolbox\/assets\/index-[\w-]+\.js$/);
+  await page.locator('.tool-card[data-tool-id="width-converter"]').click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('全角・半角変換');
+  expect(requests.filter(url => new URL(url).pathname.endsWith('.js'))).toHaveLength(2);
+});
+
+for (const width of [1280, 390, 320]) {
+  for (const theme of ['light', 'dark']) {
+    test(`ホームの${width}px・${theme}表示とカード配置`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('./');
+      await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+      const cards = page.locator('.tool-card');
+      for (const card of await cards.all()) await expect(card).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      const first = await cards.nth(0).boundingBox();
+      const second = await cards.nth(1).boundingBox();
+      if (width >= 760) {
+        expect(first!.y).toBe(second!.y);
+        expect(second!.x).toBeGreaterThan(first!.x);
+      } else {
+        expect(first!.x).toBe(second!.x);
+        expect(second!.y).toBeGreaterThan(first!.y);
+      }
+      await cards.first().focus();
+      await expect(cards.first()).toHaveCSS('outline-style', 'solid');
+    });
+  }
+}

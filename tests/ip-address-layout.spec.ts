@@ -11,7 +11,7 @@ for (const theme of ['light', 'dark']) {
         : route.abort('failed');
     });
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.goto('./');
+    await page.goto('./?tool=ip-address');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
     const ipv4 = page.getByRole('textbox', { name: 'グローバルIPv4アドレス' });
     const ipv6 = page.getByRole('textbox', { name: 'グローバルIPv6アドレス' });

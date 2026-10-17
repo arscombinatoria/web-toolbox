@@ -88,3 +88,33 @@ describe('ツールのライフサイクル', () => {
     expect(container.textContent).toBe('B');
   });
 });
+
+it.each(['resolve', 'reject'] as const)('ホーム遷移後の旧importの%sを無視する', async (outcome) => {
+  const container = document.createElement('div');
+  const host = createToolHost(container);
+  const pending = deferred();
+  const mount = vi.fn(() => vi.fn());
+  const navigation = host.show(tool('a', () => pending.promise));
+  await host.show(null);
+  if (outcome === 'resolve') pending.resolve({ mount });
+  else pending.reject(new Error('offline'));
+  expect(await navigation).toBe(false);
+  expect(mount).not.toHaveBeenCalled();
+  expect(container.querySelector('h1')?.textContent).toBe('Web Toolbox');
+  expect(container.querySelectorAll('.tool-card')).toHaveLength(4);
+  expect(container.hasAttribute('aria-busy')).toBe(false);
+  host.destroy();
+});
+
+it('ホームに戻る際にツールを破棄し、空・未知のIDはエラーを表示する', async () => {
+  const container = document.createElement('div');
+  const host = createToolHost(container);
+  const dispose = vi.fn();
+  await host.show(tool('a', async () => ({ mount: () => dispose })));
+  await host.show(null);
+  expect(dispose).toHaveBeenCalledOnce();
+  await host.show(undefined);
+  expect(container.querySelector('h1')?.textContent).toBe('ツールが見つかりません');
+  expect(container.querySelectorAll('.tool-card')).toHaveLength(0);
+  host.destroy();
+});

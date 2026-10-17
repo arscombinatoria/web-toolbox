@@ -2,7 +2,7 @@
 
 ## 1. 状態と前提
 
-第6段階でJST・UTC日時変換まで実装済み。第2段階の共通基盤は維持する。Registry、共通レイアウト、History APIによる遷移、テーマ、マウント・破棄と読み込み競合制御、CI/CDを備える。4つの初期ツールはすべて利用可能。
+第7段階でトップページを追加。JST・UTC日時変換まで実装済み。第2段階の共通基盤は維持する。Registry、共通レイアウト、History APIによる遷移、テーマ、マウント・破棄と読み込み競合制御、CI/CDを備える。4つの初期ツールはすべて利用可能。
 
 サイト名はWeb Toolbox、リポジトリ名は`web-toolbox`。Vanilla TypeScript、Vite、HTML/CSS、Vitest、必要最小限のPlaywright、GitHub Actions、GitHub Pages、Node.js LTSを採用する。UIフレームワークとバックエンドは導入しない。
 
@@ -18,7 +18,7 @@ src/
   router.ts               # History APIと標準リンク操作
   tool-host.ts            # マウント・破棄と読み込み競合制御
   registry.ts             # メタデータ、型、遅延読み込み関数
-  components/             # 共通レイアウト、サイドバー、テーマ切り替え
+  components/             # ホーム（home.ts）、共通レイアウト、サイドバー、テーマ切り替え
   styles/                 # デザイントークン、共通スタイル
   tools/
     ip-address/
@@ -46,9 +46,14 @@ Registryのエントリーは`id`、`name`、`description`、`category`、`load`
 - 同一サイト内のツールリンクは現在のURLを基に`URL`/`URLSearchParams`で構築し、パスと無関係なクエリを維持する。
 - 通常の選択操作は`pushState`と画面更新、`popstate`はURLから再描画するだけとし、履歴を追加しない。同一ツールの再選択で不要な履歴を作らない。
 - 修飾キー付きクリック等の標準リンク操作を妨げない。直接アクセスと再読み込みでも同じツールを表示する。
-- `tool`未指定時はRegistryの`defaultToolId`（`ip-address`）を表示。不明IDは説明と有効なツールへの導線を表示し、URLを勝手に別IDへ置換しない。
+- `/web-toolbox/`（`tool`未指定時のみ）はトップページを表示する。ルーターのIDは未指定を`null`、空IDは空文字として区別する。不明ID・空IDは従来どおり説明と有効なツールへの導線を表示し、URLを勝手に置換しない。
+- 個別URL `?tool=ip-address`、`?tool=width-converter`、`?tool=markdown-table`、`?tool=datetime` は維持する。ヘッダーのブランドリンクとサイドバー先頭の「ホーム」（モバイル共通）で戻れ、ホームURLは`tool`のみ削除する。
 - Viteの公開用`base`は`/web-toolbox/`。アセットはimportまたは`import.meta.env.BASE_URL`に基づいて参照し、`/assets/...`のようなドメインルート固定を避ける。
 - ビルド成果物を実際のサブパスで配信して検証する。カスタムドメイン等へ移す場合はbaseを明示的に変更する。
+
+ホームはRegistryのツールではなく`components/home.ts`で表示する。カードのID・名前・説明・順序は`tools`から生成し、デスクトップは2列、モバイルは1列のリンク一覧とする。ツールの機能一覧は第5節を参照。ホームのタイトルは`Web Toolbox`、ツールは従来の`ツール名 | Web Toolbox`。ホーム表示ではツールのloadを呼ばず、ipify・ExcelJS・外部リクエストを発生させない。
+
+`tool-host.show`は`null`をホーム、`undefined`を不明ツールとして扱う。ホーム遷移も世代番号を更新してツールを破棄し、旧importの成功・失敗による上書きを防ぐ。ホームも破棄関数を返し、遷移後の見出しフォーカスは共通処理で行う。
 
 ## 4. 共通UIと安全性
 
@@ -138,7 +143,7 @@ Node.js 24 LTSを`.nvmrc`と`engines`で固定する。PRと`main`へのpushで�
 
 | 項目 | 推奨・判断が必要な点 |
 | --- | --- |
-| 初期表示・不明ID（確定） | `defaultToolId`の`ip-address`を初期表示、不明IDは案内表示 |
+| 初期表示・不明ID（確定） | `tool`未指定でホーム、空・不明IDは案内表示 |
 | テーマ（確定） | 手動選択のみ保存、未選択時はOS追従、「システム」で解除 |
 | IP取得（確定） | 表示時取得、10秒タイムアウト、自動リトライなし、キャッシュ不使用 |
 | 全角・半角（確定） | ASCII／半角カナの対応範囲に限定、単独濁点は結合文字、初期値は全角→半角・英数字／記号ON。詳細は第5節 |

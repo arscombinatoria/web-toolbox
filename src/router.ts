@@ -1,7 +1,5 @@
-import { defaultToolId } from './registry';
-
-export function toolIdFromUrl(url: URL): string {
-  return url.searchParams.get('tool') ?? defaultToolId;
+export function toolIdFromUrl(url: URL): string | null {
+  return url.searchParams.get('tool');
 }
 
 export function toolUrl(id: string, current = new URL(window.location.href)): URL {
@@ -10,10 +8,16 @@ export function toolUrl(id: string, current = new URL(window.location.href)): UR
   return url;
 }
 
-export function startRouter(onNavigate: (id: string, focus: boolean) => void): () => void {
+export function homeUrl(current = new URL(window.location.href)): URL {
+  const url = new URL(current);
+  url.searchParams.delete('tool');
+  return url;
+}
+
+export function startRouter(onNavigate: (id: string | null, focus: boolean) => void): () => void {
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[data-tool-id]') : null;
+    const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[data-tool-id], a[data-home]') : null;
     if (!link || link.hasAttribute('download') || (link.target && link.target !== '_self')) return;
     const url = new URL(link.href);
     if (url.origin !== location.origin || url.pathname !== location.pathname) return;
