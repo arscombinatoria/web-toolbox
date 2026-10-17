@@ -29,7 +29,7 @@ test('Registryの4画面・URL・履歴・直接アクセスが本番サブパ�
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('日時・UTC変換');
   await page.reload();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('日時・UTC変換');
-  await expect(page.getByText('このツールは準備中です')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'JST ↔ UTC 24時間対応表' })).toBeVisible();
   await page.goto('./?tool=not-a-tool');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('ツールが見つかりません');
   await expect(page).toHaveURL(/tool=not-a-tool$/);

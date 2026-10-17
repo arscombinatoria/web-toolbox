@@ -35,7 +35,7 @@ export const tools: readonly ToolDefinition[] = [
   },
   {
     id: 'datetime', name: '日時・UTC変換', category: 'date-time',
-    description: 'JST・UTCの日時やUnix timeを変換できます。',
+    description: 'JST・UTCの24時間対応表と日時変換を確認できます。',
     load: () => import('./tools/datetime/index'),
   },
 ];

@@ -53,7 +53,7 @@ test('切り替え時に中止し、戻った画面に古い通信結果を表�
   const aborted = page.waitForEvent('requestfailed', (request) => request.url().startsWith('https://api.ipify.org/'));
   await page.getByRole('link', { name: '日時・UTC変換', exact: true }).click();
   await aborted;
-  await expect(page.getByText('このツールは準備中です')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'JST ↔ UTC 24時間対応表' })).toBeVisible();
   await page.getByRole('link', { name: 'IPアドレス確認', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('198.51.100.7');
   release();
