@@ -2,12 +2,14 @@
 
 GitHub Pagesで公開する、ブラウザで使える小さな便利ツール集です。バックエンドを持たない静的SPAとして構築しています。
 
-現在は第2段階の共通基盤です。IPアドレス確認、全角・半角変換、Markdown表変換、日時・UTC変換の4画面はプレースホルダーで、変換機能や外部API通信はまだありません。
+第3段階としてIPアドレス確認が利用可能です。全角・半角変換、Markdown表変換、日時・UTC変換の3ツールは準備中です。
+
+IP確認はブラウザから `https://api.ipify.org?format=json`（ipify）を直接呼び出します。表示時に自動取得し、再取得・コピーに対応します。10秒でタイムアウトし、自動リトライは行いません。IPv4接続、提供元の稼働状況、CORS設定に依存するため、環境によって取得できない場合があります。取得時には接続元IPがipifyへ伝わります。IPは永続保存せず、位置情報やローカルIPは取得しません。
 
 ## 使用技術と動作環境
 
 - Vanilla TypeScript（strict）、Vite、HTML/CSS、ブラウザ標準API
-- Vitest + jsdom（共通基盤の単体テスト）、Playwright（Chromiumの主要操作）
+- Vitest + jsdom（通信検証・ツールUI・共通基盤の単体テスト）、Playwright（Chromiumの主要操作）
 - Node.js **24 LTS**、npm。`.nvmrc`と`package.json`の`engines`でローカル・CIのメジャーバージョンを統一
 - モダンブラウザを対象とします。自動E2E検証はChromiumで実施し、他ブラウザの動作は未確認です。
 
@@ -32,6 +34,8 @@ npm run build
 npx playwright install --with-deps chromium
 npm run test:e2e
 ```
+
+単体テスト・E2Eともipify通信をモックし、実APIへはアクセスしません。VitestではHTTP・JSON・IPv4検証、ネットワーク障害、fake timerによる10秒タイムアウト、中止・破棄を確認します。E2Eでは表示・再取得・Clipboard API・失敗からの復帰・切り替え・両テーマの狭幅表示を確認します。実APIの接続確認はこれらと別に行ってください。
 
 `build`には型チェックも含みます。E2Eは事前に生成した`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。初回はPlaywrightのブラウザとOS依存パッケージのインストールが必要です。
 
