@@ -1,0 +1,7 @@
+.ip-label { display: block; margin-top: var(--space-4); color: var(--muted); }
+.ip-result { display: block; width: 100%; min-width: 0; margin-top: var(--space-1); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--text); font: 600 clamp(1rem, 3vw, 2rem)/1.5 ui-monospace, monospace; }
+.ip-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+.ip-tool button:disabled { cursor: default; opacity: 0.55; background: var(--surface); }
+.ip-status, .ip-copy-status { margin: var(--space-2) 0; }
+.ip-copy-status:empty { margin: 0; }
+.ip-privacy { color: var(--muted); font-size: 0.875rem; margin: var(--space-3) 0 0; }

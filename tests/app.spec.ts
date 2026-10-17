@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 test('Registryの4画面・URL・履歴・直接アクセスが本番サブパスで動く', async ({ page }) => {
   const loadedScripts: string[] = [];
