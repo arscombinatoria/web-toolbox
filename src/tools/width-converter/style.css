@@ -1,0 +1,15 @@
+.width-tool fieldset { min-width: 0; margin: var(--space-3) 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.width-tool legend { padding: 0 var(--space-1); font-weight: 600; }
+.width-options { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.width-options label { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 2.75rem; padding: var(--space-1); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.width-options label:has(:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.width-options input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
+.width-editors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.width-editors > div { min-width: 0; }
+.width-editors label { display: block; font-weight: 600; }
+.width-editors textarea { display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 12rem; margin: var(--space-1) 0 var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--text); font: inherit; resize: vertical; overflow-wrap: anywhere; }
+.width-tool p:not(.tool-description), .width-tool details { font-size: 0.875rem; color: var(--muted); }
+.width-status { min-height: 1.7em; }
+.width-tool button:disabled { opacity: 0.55; cursor: default; }
+.width-tool summary { cursor: pointer; }
+@media (max-width: 1050px) { .width-editors { grid-template-columns: minmax(0, 1fr); } }
