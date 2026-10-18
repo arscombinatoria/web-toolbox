@@ -74,7 +74,7 @@ Registryのエントリーは`id`、`name`、`description`、`category`、`load`
 ### IPアドレス確認 — `ip-address`／ネットワーク
 
 - IPv4は`https://api.ipify.org?format=json`、IPv6は`https://api6.ipify.org?format=json`から並行して取得する。`api64.ipify.org`は使用しない。ローカルIPの探索は行わない。
-- 再取得、コピー、ローディング、エラー、タイムアウトを提供する。
+- 再取得、コピー、ローディング、エラー、タイムアウトを提供します。位置情報は取得しません。
 - 外部APIを使うことと接続元IPが提供元へ伝わることを画面に明記する。
 - HTTP失敗、通信失敗、JSON不正、`ip`欠落、IPv4／IPv6形式不正を区別可能な内部エラーとして扱い、利用者には分かりやすく表示する。
 - AbortControllerで時間切れ・再取得・アンマウント時に中止し、タイマーを必ず解放する。古いリクエストの結果が新しい結果を上書きしないようにする。
@@ -106,6 +106,7 @@ Registryのエントリーは`id`、`name`、`description`、`category`、`load`
 - 表はJST 00:00〜23:00の24行。UTC時刻と前日／同日を表示。初期日付はJSTの今日。「今日へ戻る」で復帰できる。入力が不正ならエラーとし、補正せず表を空にする。
 - 選択日がJSTの今日なら現在の時間帯を背景色と「現在」で示す。選択行は左線・ボタン枠・「選択中」で区別。各行のボタンはキーボード操作可能で、選択により詳細をJST・表の日付・その時刻の00秒に設定する。
 - 時計は60秒間隔とタブ再表示時に更新する。時計にライブリージョンは設定しない。日付が変わっても表の選択日付は保持し、今日と異なればハイライトを消す。破棄時にタイマーと全リスナーを解除する。
+- 時計の更新では詳細入力を上書きしません。
 - 詳細入力はJST／UTC、日付、時分秒のみ。変更時に即座に変換する。「現在時刻を入力」は選択ゾーンの現在日時を秒まで設定する。表の基準日には影響しない。
 - 出力はJST日時・UTC日時（YYYY-MM-DD HH:mm:ss）、ISO 8601（UTCの末尾Z、秒精度）、整数のUnix秒・ミリ秒。それぞれ個別コピーとreadonly欄による手動選択を提供する。ISO・Unix timeは出力専用で、入力フォームは設けない。
 - 入力年は0001〜9999年（先発グレゴリオ暦）。変換で範囲をまたぐ出力は0000年・10000年を許す。ミリ秒入力と、うるう秒は非対応。負のUnix timeは対応する。
@@ -129,13 +130,15 @@ Registryのエントリーは`id`、`name`、`description`、`category`、`load`
 
 ## 6. 検証とCI/CD
 
-第8段階でVitest + V8 Coverageを追加。`vitest`と`@vitest/coverage-v8`は同一の完全バージョンに固定し、更新時も同時に変更する。`npm test`は従来の単体テスト、`npm run test:coverage`は`text`と`json-summary`を出力する。`coverage.include`で`src/`配下のJS/TSコード全体を指定し、未importのファイルも0%として含める。テスト（test/spec、__tests__）と型宣言のみ除外し、4ツール、ルーター、画面ホスト、起動処理・共通UIを対象とする。最低閾値は設けず、PlaywrightのE2Eカバレッジは合算しない。
+Vitest + V8 Coverageで単体テストのカバレッジを計測します。`vitest`と`@vitest/coverage-v8`は同一の完全バージョンに固定し、更新時も同時に変更します。`npm test`は単体テストを実行し、`npm run test:coverage`は追加で`text`と`json-summary`を出力します。`coverage.include`で`src/`配下のJS/TSコード全体を指定し、未importのファイルも0%として含めます。テスト（test/spec、__tests__）と型宣言のみ除外し、各ツール、ルーター、画面ホスト、起動処理・共通UIを対象とします。最低閾値は設けず、PlaywrightのE2Eカバレッジは合算しません。
 
-既存CIでは型チェック後にカバレッジ計測とNode.js標準のバッジ生成テストを実行する。Viteビルド・Playwright成功後、mainへのpushに限り`scripts/generate-coverage-badge.mjs`が`coverage/coverage-summary.json`の`total.lines.pct`を検証して`dist/coverage.svg`を生成し、既存Pages成果物に含める。READMEは公開SVGを参照する。数値欠損・不正JSON・範囲外等はエラー終了し、計測値を補完しない。生成ファイルはGit管理せず、外部バッジサービスや追加トークン・権限は使用しない。
+CIは`npm ci`の後、`npm run test:coverage`、Node.js標準のバッジ生成テスト（`npm run test:badge`）、`npm run build`、Playwrightの順に実行します。型チェックは`build`内の`npm run typecheck`で行い、Viteビルドの前に実行します。Playwright成功後、`main`へのpushに限り`scripts/generate-coverage-badge.mjs`が`coverage/coverage-summary.json`の`total.lines.pct`を検証して`dist/coverage.svg`を生成し、Pages成果物に含めます。READMEは公開SVGを参照します。数値欠損・不正JSON・範囲外等はエラー終了し、計測値を補完しません。生成ファイルはGit管理せず、外部バッジサービスや追加トークン・権限は使用しません。
 
 Vitestは変換処理の境界値・不正入力・Unicodeの特殊ケースを中心にする。具体例は濁点の結合／分離、変換対象外の互換文字、うるう年、日付境界をまたぐJST／UTC変換、秒とミリ秒、パイプとバックスラッシュ、末尾空セル。外部APIはモックし、正常・タイムアウト・不正レスポンス・中止を検証する。
 
 Playwrightは直接URL、ツール切り替え、戻る／進む、遅いimportや通信の競合、代表的な入力→結果、モバイルサイドバーとキーボード操作に絞る。単体テストの全ケースを重複させない。ブラウザ側の通信もモックし、CIから実APIを叩かない。
+
+`playwright.config.ts`のChromiumプロジェクトは主要シナリオ全体を実行し、Firefoxプロジェクトは`ip-address-layout.spec.ts`のみを実行します。後者は両テーマでIPv4欄との高さの比較、IPv6の長短・取得失敗時の表示、1920pxと320px間のリサイズによる折り返し・高さの伸縮、全体の表示と手動選択を検証します。Firefoxで他ツールの主要操作を検証する設定ではありません。ブラウザの準備には`npx playwright install --with-deps chromium firefox`を使用します。E2Eは事前ビルドした`dist/`をVite previewで`http://127.0.0.1:4173/web-toolbox/`に配信し、既存サーバーを再利用せず検証します。
 
 Node.js 24 LTSを`.nvmrc`と`engines`で固定する。PRと`main`へのpushで型チェック、Vitest、Viteビルド、Playwrightを実行する。基盤の単体テストはjsdomで読み込み競合・破棄・テーマ・標準リンク操作を検証し、E2Eは本番ビルドのサブパス配信で4画面・履歴・テーマ復元・モバイル操作を確認する。
 
@@ -154,6 +157,6 @@ Node.js 24 LTSを`.nvmrc`と`engines`で固定する。PRと`main`へのpushで�
 | 日時（確定） | JST基準24時間表、秒精度、入力0001〜9999年、ISO・Unixは出力専用。詳細は第5節 |
 | Markdown／TSV（確定） | 引用符付き複数行セル、文字列XLSX、空白・エスケープ規則は第5節 |
 | ツール切り替え | 初期案は入力を引き継がない。保持が必要なら別途仕様化 |
-| 実行・公開環境（確定） | Node.js 24 LTS、モダンブラウザ（自動E2EはChromium）、mainからActionsでPages公開 |
+| 実行・公開環境（確定） | Node.js 24 LTS、モダンブラウザ（主要E2EはChromium、IP欄のレイアウトはFirefoxでも限定検証）、mainからActionsでPages公開 |
 
 後続は、個別の依頼範囲で各ツールの処理とテストを追加する。初期4ツールは実装済み。入力履歴・永続保存はスコープ外。
