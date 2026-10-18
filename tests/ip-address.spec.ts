@@ -44,8 +44,16 @@ test('切り替え時に中止し、戻った画面に古い通信結果を表�
     if (++requests === 1) {
       started();
       await pending;
-      await route.fulfill({ json: { ip: '192.0.2.1' } });
-      completed();
+      try {
+        await route.fulfill({ json: { ip: '192.0.2.1' } });
+      } catch (error) {
+        // Chromiumが中止済みのinterceptionを削除した場合だけ許容する。
+        if (route.request().failure()?.errorText !== 'net::ERR_ABORTED'
+          || !(error instanceof Error)
+          || !error.message.includes('Protocol error (Fetch.fulfillRequest): Invalid InterceptionId')) throw error;
+      } finally {
+        completed();
+      }
     } else await route.fulfill({ json: { ip: '198.51.100.7' } });
   });
   await page.goto('./?tool=ip-address');
