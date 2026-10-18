@@ -189,3 +189,80 @@ it('再取得前のIPv6コピー結果を新しい取得結果に通知しない
   expect(ui.view.querySelector('[data-version=IPv6] .ip-copy-status')!.textContent).toBe('');
   expect(ui.copy6.disabled).toBe(false);
 });
+
+function deferredAddress() {
+  let resolve!: (ip: string) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<string>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+it.each(['resolve', 'reject'] as const)('再マウントの成功後に旧IPv4・IPv6の%sが届いても新旧DOMを変更しない', async (outcome) => {
+  const old4 = deferredAddress();
+  const old6 = deferredAddress();
+  api.mockReturnValueOnce(old4.promise).mockResolvedValueOnce('198.51.100.7');
+  api6.mockReturnValueOnce(old6.promise).mockResolvedValueOnce('2001:db8::2');
+  const old = setup();
+  const signal = api.mock.calls[0]![0];
+  expect(api6.mock.calls[0]![0]).toBe(signal);
+  dispose!();
+  expect(signal.aborted).toBe(true);
+  const oldMarkup = old.view.innerHTML;
+  const latest = setup();
+  await vi.waitFor(() => expect(latest.refresh.disabled).toBe(false));
+  const latestMarkup = latest.view.innerHTML;
+  // Abortを無視するAPIを模し、古い処理を最新の成功より後に完了させる。
+  if (outcome === 'resolve') {
+    old6.resolve('2001:db8::1');
+    old4.resolve('192.0.2.1');
+  } else {
+    old6.reject(new Error('old IPv6 failure'));
+    old4.reject(new Error('old IPv4 failure'));
+  }
+  // retrieveのcatch/finally、Promise.all後の継続まで待つ。
+  await Promise.allSettled([old4.promise, old6.promise]);
+  await Promise.resolve();
+  expect(old.view.innerHTML).toBe(oldMarkup);
+  expect(old.output.value).toBe('');
+  expect(old.output6.value).toBe('');
+  expect(latest.view.innerHTML).toBe(latestMarkup);
+  expect(latest.output.value).toBe('198.51.100.7');
+  expect(latest.output6.value).toBe('2001:db8::2');
+  expect(latest.refresh.disabled).toBe(false);
+  expect(latest.view.querySelector('[aria-busy]')).toBeNull();
+  old.refresh.dispatchEvent(new Event('click'));
+  expect(api).toHaveBeenCalledTimes(2);
+  expect(api6).toHaveBeenCalledTimes(2);
+});
+
+it.each(['IPv4', 'IPv6'] as const)('再取得中に%sだけ完了しても連打を抑止し、残りの失敗後に操作を復帰する', async (first) => {
+  api.mockResolvedValueOnce('192.0.2.1');
+  const ui = setup();
+  await vi.waitFor(() => expect(ui.refresh.disabled).toBe(false));
+  const v4 = deferredAddress();
+  const v6 = deferredAddress();
+  api.mockReturnValueOnce(v4.promise);
+  api6.mockReturnValueOnce(v6.promise);
+  ui.refresh.click();
+  const fast = first === 'IPv4' ? v4 : v6;
+  const slow = first === 'IPv4' ? v6 : v4;
+  const output = first === 'IPv4' ? ui.output : ui.output6;
+  const pendingOutput = first === 'IPv4' ? ui.output6 : ui.output;
+  const address = first === 'IPv4' ? '198.51.100.7' : '2001:db8::2';
+  for (let i = 0; i < 3; i++) ui.refresh.dispatchEvent(new Event('click'));
+  fast.resolve(address);
+  await fast.promise;
+  expect(output.value).toBe(address);
+  expect(output.hasAttribute('aria-busy')).toBe(false);
+  expect(pendingOutput.getAttribute('aria-busy')).toBe('true');
+  expect(ui.refresh.disabled).toBe(true);
+  for (let i = 0; i < 3; i++) ui.refresh.dispatchEvent(new Event('click'));
+  expect(api).toHaveBeenCalledTimes(2);
+  expect(api6).toHaveBeenCalledTimes(2);
+  slow.reject(Object.assign(new Error('offline'), { kind: 'network' }));
+  await vi.waitFor(() => expect(ui.refresh.disabled).toBe(false));
+  expect(output.value).toBe(address);
+  expect(pendingOutput.value).toBe('');
+  expect(ui.view.querySelector('[aria-busy]')).toBeNull();
+  expect(ui.view.querySelectorAll('.ip-status')[first === 'IPv4' ? 1 : 0]!.textContent).toContain('通信エラー');
+});

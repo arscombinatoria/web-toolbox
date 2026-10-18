@@ -154,3 +154,61 @@ describe('IPv6取得', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+// Abortへの反応を遅らせ、タイマーとPromiseの完了順序を個別に制御する。
+describe('中止の競合とリソース解放', () => {
+  it.each(['manual-first', 'timeout-first'] as const)('%s: 完了前に両方発生した場合は手動中止を優先する', async (order) => {
+    vi.useFakeTimers();
+    const abort = controller();
+    const add = vi.spyOn(abort.signal, 'addEventListener');
+    const remove = vi.spyOn(abort.signal, 'removeEventListener');
+    let reject!: (error: Error) => void;
+    let inner!: AbortSignal;
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      inner = options.signal as AbortSignal;
+      return new Promise<Response>((_resolve, no) => { reject = no; });
+    }));
+    const result = expect(fetchIpv4(abort.signal)).rejects.toMatchObject({ kind: 'aborted' });
+    const onAbort = vi.fn();
+    inner.addEventListener('abort', onAbort);
+    if (order === 'manual-first') abort.abort();
+    vi.advanceTimersByTime(10_000);
+    if (order === 'timeout-first') abort.abort();
+    reject(new DOMException('Aborted', 'AbortError'));
+    await result;
+    expect(onAbort).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledExactlyOnceWith('abort', add.mock.calls[0]![1]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['success', 'failure', 'aborted'] as const)('%s後に外部Abortリスナーとタイマーを解除する', async (outcome) => {
+    vi.useFakeTimers();
+    const abort = controller();
+    const add = vi.spyOn(abort.signal, 'addEventListener');
+    const remove = vi.spyOn(abort.signal, 'removeEventListener');
+    let resolve!: (body: unknown) => void;
+    let reject!: (error: Error) => void;
+    let bodyStarted!: () => void;
+    const started = new Promise<void>((yes) => { bodyStarted = yes; });
+    const body = new Promise<unknown>((yes, no) => { resolve = yes; reject = no; });
+    let inner!: AbortSignal;
+    vi.stubGlobal('fetch', vi.fn((_url: string, options: RequestInit) => {
+      inner = options.signal as AbortSignal;
+      return Promise.resolve({ ok: true, json: () => { bodyStarted(); return body; } });
+    }));
+    const request = fetchIpv4(abort.signal);
+    const result = outcome === 'success' ? expect(request).resolves.toBe('1.2.3.4')
+      : expect(request).rejects.toMatchObject({ kind: outcome === 'failure' ? 'network' : 'aborted' });
+    await started;
+    if (outcome === 'aborted') abort.abort();
+    if (outcome === 'failure') reject(new TypeError('body failed'));
+    else resolve({ ip: '1.2.3.4' });
+    await result;
+    expect(remove).toHaveBeenCalledExactlyOnceWith('abort', add.mock.calls[0]![1]);
+    expect(vi.getTimerCount()).toBe(0);
+    const wasAborted = inner.aborted;
+    abort.abort();
+    vi.advanceTimersByTime(10_000);
+    expect(inner.aborted).toBe(wasAborted);
+  });
+});
