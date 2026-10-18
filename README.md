@@ -65,7 +65,7 @@
 - Vanilla TypeScript（strict）、Vite、HTML/CSS、ブラウザ標準APIを使用しています。
 - 単体テストはVitest + jsdom、E2EテストはPlaywrightを使用しています。
 - 開発・CIではNode.js **24 LTS**とnpmを使用します。メジャーバージョンは`.nvmrc`と`package.json`の`engines`で指定しています。
-- モダンブラウザを対象としています。自動E2E検証はChromiumの主要シナリオと、FirefoxのIPアドレス欄のレイアウトに限っています。
+- モダンブラウザを対象としています。自動E2E検証はChromiumの詳細シナリオと、Chromium・Firefox共通の主要機能スモーク／IPアドレス欄のレイアウトを対象としています。
 
 UIフレームワーク、外部フォント、アイコンライブラリは使用していません。XLSX生成にはExcelJS 4.4（MIT）を使用し、ダウンロード操作時に同一サイトのバンドルから動的に読み込みます。
 
@@ -93,7 +93,7 @@ npm run test:e2e
 
 `npm run build`には型チェックを含むため、上の手順で別途実行する必要はありません。型チェックのみを行う場合は`npm run typecheck`を使えます。初回はPlaywrightのブラウザとOS依存パッケージのインストールが必要です。
 
-E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。Chromiumでは各ツールの主要操作・遷移・コピー・モバイル表示などを検証します。Firefoxでは`tests/ip-address-layout.spec.ts`のみを実行し、IPアドレス欄の高さ・折り返し・画面幅への追従などを両テーマで検証します。Firefoxで他の主要シナリオを網羅しているわけではありません。
+E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。`tests/smoke.spec.ts`ではIP表示・再取得、文字幅の双方向変換、Markdown／TSV変換、日時変換、基本ナビゲーションをChromium・Firefoxの両方で確認します。`tests/ip-address-layout.spec.ts`も両ブラウザで実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで検証します。コピー・ダウンロード・IME・モバイルなどの詳細シナリオはChromiumで実行します。CIの再試行でのみ成功したケースも失敗扱いです。WebKitの自動検証は今回追加していません。
 
 単体テスト・E2Eともipify通信をモックし、実APIへはアクセスしません。実APIへの接続確認は別途必要です。各ツールの詳しい検証対象は[詳細設計書](docs/architecture.md)を参照してください。
 

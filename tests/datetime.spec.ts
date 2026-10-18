@@ -48,6 +48,10 @@ test('各形式のコピー・失敗時の手動選択', async ({ page, context 
   await page.getByRole('button', { name: 'ISO 8601をコピー' }).click();
   await expect(page.getByRole('status')).toContainText('手動でコピー');
   await expect(page.getByLabel('ISO 8601', { exact: true })).toHaveAttribute('readonly', '');
+  const output = page.getByLabel('ISO 8601', { exact: true });
+  await output.selectText();
+  expect(await output.evaluate((element: HTMLInputElement) => element.value.slice(element.selectionStart!, element.selectionEnd!)))
+    .toBe(await output.inputValue());
 });
 test('モバイル・両テーマ・時間帯更新', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

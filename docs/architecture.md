@@ -40,7 +40,7 @@ web-toolbox/
         index.ts / logic.ts / xlsx.ts / style.css
       datetime/
         index.ts / logic.ts / style.css
-  tests/                           # Playwrightの主要操作・IP欄レイアウト
+  tests/                           # Playwrightのスモーク・詳細操作・IP欄レイアウト
     fixtures.ts                    # 全E2E共通のipifyモック
   scripts/
     generate-coverage-badge.mjs
@@ -210,6 +210,8 @@ TSVは状態機械で解析し、セル全体を囲む引用符、引用符内�
 
 textareaはCRLFをLFへ正規化するため、コピー時は表示欄の値ではなく共通モデルから再生成します。TSVをExcelへ貼り付ける際の数値・日付・数式への自動型判定は完全には制御できません。文字列型の確実な保持にはXLSX出力を案内します。
 
+モデルの往復検証は矩形の文字列表（空表以外は1列以上）を対象とします。TSVはセル内のCRLF／LF／CRも含めて保持します。Markdownの完全一致の往復はセル内改行がLFのモデルに限り、CRLF／CRはLFに正規化した値を期待します。Markdown原文の配置指定・区切り・余白などの構文を再現する保証はありません。
+
 #### XLSX生成
 
 `xlsx.ts`はExcelJS 4.4（MIT）を使用します。ブラウザ用ビルドと文字列型・書式・列幅・折り返しのAPIがあり、独自のZIP/XML生成を避けられるため採用しています。追加の直接依存は`exceljs`のみで、推移依存はlockfileで管理します。
@@ -228,7 +230,7 @@ textareaはCRLFをLFへ正規化するため、コピー時は表示欄の値で
 
 #### 主なテスト
 
-`logic.test.ts`は区切り・列数・空白・空セル、連続バックスラッシュ、コードスパンとbr、TSVの引用符・改行・不正入力、出力と往復、数値風文字列の保持を検証します。`xlsx.test.ts`は実ファイルを再読み込みし、セル型・値・書式・折り返し・列幅を検証し、列数とセル長の上限超過を確認します。`index.test.ts`は生成中の変更・破棄、生成失敗、Object URL解放を検証します。
+`logic.test.ts`は区切り・列数・空白・空セル、連続バックスラッシュ、コードスパンとbr、TSVの引用符・改行・不正入力、出力と往復、数値風文字列の保持を検証します。往復は共通の固定ケースとシード`0x5eed1234`の128表で両形式を検証し、Unicode・絵文字・結合文字、引用符・バッククォート、リテラルbrと実改行を組み合わせます。形式をまたぐ往復とCRLF／CRの正規化も別に検証します。`xlsx.test.ts`は実ファイルを再読み込みし、セル型・値・書式・折り返し・列幅を検証し、列数とセル長の上限超過を確認します。`index.test.ts`は生成中の変更・破棄、生成失敗、Object URL解放を検証します。
 
 `tests/markdown-table.spec.ts`は両方向・エラー・クリア・再訪時の入力破棄、実Clipboard APIと失敗、XLSX遅延読み込み・実ダウンロード・再読み込み、非送信・非保存、モバイル両テーマとキーボード操作を検証します。
 
@@ -260,7 +262,7 @@ textareaはCRLFをLFへ正規化するため、コピー時は表示欄の値で
 
 コピー成功・失敗をstatusで通知し、入力更新の世代番号と破棄フラグで古い完了通知を抑制します。破棄時は時計タイマーを止め、AbortControllerで入力・ボタン・`visibilitychange`などのリスナーを解除します。
 
-`logic.test.ts`は全24行、年末・うるう年・0〜99年・入出力年境界、不正入力、秒省略、ISO・Unixの正負出力を検証します。`index.test.ts`は固定時計とfake timerで日付境界・再表示・破棄、コピー待機中の変更／破棄を確認します。
+`logic.test.ts`は全24行、月末・年末・うるう年・0〜99年・入出力年境界、不正入力、秒省略、ISO・Unixの正負出力を検証します。epochの前後1秒と0秒、UTC／JSTの往復、入力範囲外になる境界出力も確認します。ローカル依存性はNode.js 24のTypeScript読み込みで別プロセスを起動し、`UTC`・`Asia/Tokyo`・`America/Los_Angeles`・`Pacific/Kiritimati`で夏時間切り替え日の変換・24時間表を比較します。`index.test.ts`は固定時計とfake timerで日付境界・再表示・破棄、コピー待機中の変更／破棄を確認します。
 
 `tests/datetime.spec.ts`は固定時計と`America/Los_Angeles`のローカルゾーンで、表とハイライト、日付・行の選択、詳細変換、不正入力、実コピーと失敗、モバイル両テーマ、時間帯更新、切り替えを検証します。
 
@@ -268,7 +270,7 @@ textareaはCRLFをLFへ正規化するため、コピー時は表示欄の値で
 
 ### 単体テストとカバレッジ
 
-[vitest.config.ts](../vitest.config.ts)はjsdom環境で`src/**/*.test.ts`を実行し、モックを復元します。純粋な変換処理の境界値・不正入力・Unicodeに加え、UIの非同期完了、通信中止、リスナー・タイマーの破棄を検証します。ツール固有の対象は前節にまとめています。
+[vitest.config.ts](../vitest.config.ts)は既定のjsdom環境で`src/**/*.test.ts`を実行し、モックを復元します。DOMを使わないMarkdown／TSV・日時の`logic.test.ts`はファイル単位でNode環境を指定します。純粋な変換処理の境界値・不正入力・Unicodeに加え、UIの非同期完了、通信中止、リスナー・タイマーの破棄を検証します。ツール固有の対象は前節にまとめています。
 
 共通基盤では`router.test.ts`がURL・標準リンク操作・履歴通知、`tool-host.test.ts`が遅いimportの成功／失敗と新画面の競合、ホーム遷移、破棄契約、`components/home.test.ts`がRegistry順のカードと未ロード、`components/theme.test.ts`がOS追従・手動保存・ストレージ拒否・購読解除を検証します。
 
@@ -276,11 +278,13 @@ textareaはCRLFをLFへ正規化するため、コピー時は表示欄の値で
 
 ### E2Eと検証範囲
 
-[playwright.config.ts](../playwright.config.ts)はビルド済み`dist/`をVite previewで配信し、`http://127.0.0.1:4173/web-toolbox/`を使用します。E2Eコマンド自体はビルドしないため、事前の`npm run build`が必要です。サーバーは既存プロセスを再利用せず、指定ポートで起動します。CIでは`test.only`を禁止し、失敗時に1回再試行します。失敗時のtraceを保持します。
+[playwright.config.ts](../playwright.config.ts)はビルド済み`dist/`をVite previewで配信し、`http://127.0.0.1:4173/web-toolbox/`を使用します。E2Eコマンド自体はビルドしないため、事前の`npm run build`が必要です。サーバーは既存プロセスを再利用せず、指定ポートで起動します。CIでは`test.only`を禁止し、診断用に失敗時に1回再試行します。`failOnFlakyTests: true`により再試行でのみ成功したケースもコマンドを失敗させ、失敗時のtraceを保持します。
 
 Chromiumはホームと4ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
 
-Firefoxは`tests/ip-address-layout.spec.ts`のみを実行し、IP欄の高さ・折り返し・画面幅への追従などを両テーマで限定的に確認します。Firefoxの他ツールや他ブラウザの主要操作は自動検証していません。
+`tests/smoke.spec.ts`の5ケースはChromium・Firefox共通です。ホームからの遷移・URL・戻る／進む・再読み込み、IPv4／IPv6表示と再取得、文字種選択と双方向の文字幅変換、Markdown／TSV変換とエラー復帰、JSTの24時間表選択とUTC入力・epoch出力を検証します。ブラウザのタイムゾーンをロサンゼルスに固定し、端末の時間帯に依存しない操作を確認します。
+
+Firefoxではスモークに加えて既存の`tests/ip-address-layout.spec.ts`を実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで維持します。詳細なコピー・ダウンロード・IME・モバイル操作などはChromium中心とし、Firefoxへ全ケースを複製しません。WebKitはSafari系のフォーム・レイアウト差の検出に有効ですが、追加ブラウザとOS依存の配備・実行のCI負荷が増えるため今回は追加しません。Safari固有の検証が必要になった時点で共通スモークへの追加を検討します。
 
 単体テストのfetchモックとE2E共通の`tests/fixtures.ts`でipifyを置換するため、実APIにはアクセスしません。CI成功だけでは実サービスの接続・CORS・IPv6到達性を保証せず、必要時に別途確認します。
 
