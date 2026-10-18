@@ -44,7 +44,7 @@ test('切り替え時に中止し、戻った画面に古い通信結果を表�
     if (++requests === 1) {
       started();
       await pending;
-      await route.fulfill({ json: { ip: '192.0.2.1' } }).catch(() => {});
+      await route.fulfill({ json: { ip: '192.0.2.1' } });
       completed();
     } else await route.fulfill({ json: { ip: '198.51.100.7' } });
   });
@@ -89,4 +89,47 @@ test('IPv6失敗時もIPv4を保持し、再取得でIPv6が復帰する', async
   await expect(page.getByRole('button', { name: 'IPv6をコピーする' })).toBeDisabled();
   await page.getByRole('button', { name: '再取得', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'グローバルIPv6アドレス' })).toHaveValue('2001:db8::2');
+});
+
+
+test('再取得中は片方が成功しても再取得を無効にし、残りの失敗後に復帰する', async ({ page }) => {
+  let release!: () => void;
+  let started!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const requested = new Promise<void>((resolve) => { started = resolve; });
+  let requests4 = 0;
+  let requests6 = 0;
+  await page.route('https://api.ipify.org/**', (route) => {
+    requests4++;
+    return route.fulfill({ json: { ip: requests4 === 1 ? '192.0.2.1' : '198.51.100.7' } });
+  });
+  await page.route('https://api6.ipify.org/**', async (route) => {
+    if (++requests6 === 1) {
+      await route.fulfill({ json: { ip: '2001:db8::1' } });
+    } else {
+      started();
+      await pending;
+      await route.abort('failed');
+    }
+  });
+  await page.goto('./?tool=ip-address');
+  const refresh = page.getByRole('button', { name: '再取得', exact: true });
+  await expect(refresh).toBeEnabled();
+  await refresh.click();
+  await requested;
+  const output4 = page.getByRole('textbox', { name: 'グローバルIPv4アドレス' });
+  const output6 = page.getByRole('textbox', { name: 'グローバルIPv6アドレス' });
+  await expect(output4).toHaveValue('198.51.100.7');
+  await expect(output4).not.toHaveAttribute('aria-busy');
+  await expect(output6).toHaveAttribute('aria-busy', 'true');
+  await expect(refresh).toBeDisabled();
+  // 実ブラウザでdisabledボタンへのclick()がリクエストを増やさないことを確認。
+  await refresh.evaluate((button: HTMLButtonElement) => { button.click(); button.click(); button.click(); });
+  release();
+  await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' }).getByText(/通信エラー：/)).toBeVisible();
+  await expect(refresh).toBeEnabled();
+  await expect(output4).toHaveValue('198.51.100.7');
+  await expect(output6).not.toHaveAttribute('aria-busy');
+  expect(requests4).toBe(2);
+  expect(requests6).toBe(2);
 });
