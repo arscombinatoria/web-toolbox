@@ -57,7 +57,7 @@ GitHub Pagesで公開する、バックエンドを持たない静的SPA。ツ�
 - 既存テストを理由なく削除・弱体化しない。失敗を無視する設定や検証を迂回する変更を行わない。
 - コード変更時は関連テストと`npm run build`を実行する。buildは型チェックを含むため、型チェックだけを行う場合は`npm run typecheck`を使う。
 - `npm test`は単体テスト、`npm run test:coverage`はカバレッジ付き単体テスト、`npm run test:badge`はバッジ生成テスト。カバレッジやバッジ関連の変更では対応する検証を行う。lintコマンドは未定義であり、型チェックをlintの代わりとは扱わない。
-- E2Eは`npm run build`の後に`npm run test:e2e`を実行する（既存の`dist/`をVite previewで配信）。初回は`npx playwright install --with-deps chromium firefox`で準備する。現在はChromium全般とIP表示のFirefoxテストを実行する。
+- E2Eは`npm run build`の後に`npm run test:e2e`を実行する（既存の`dist/`をVite previewで配信）。初回は`npx playwright install --with-deps chromium firefox`で準備する。Chromium全般と、Chromium・Firefox共通の主要機能スモーク／IP欄レイアウトを実行する。再試行でのみ成功するケースも失敗扱いとし、原因を調査する。
 - 文書のみの変更では全テストを必須とせず、参照先・実装との整合、リンク、差分・変更範囲を確認する。未実施の検証は理由とともに報告する。
 
 ## ドキュメント更新・完了報告
