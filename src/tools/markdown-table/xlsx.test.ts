@@ -58,6 +58,14 @@ describe('generateXlsx', () => {
     }));
   });
 
+  it('OOXMLエスケープ風文字列とXML特殊文字を文字列のまま保持', async () => {
+    const values = ['_x000D_', '_x0041_', '_x005F_x0041_', '_x000D_x0041_', '_x00ff_', 'a_x000A_b\r\nc', '&<>\'"'];
+    const sheet = await readXlsx([values, values]);
+    for (let r = 1; r <= 2; r++) {
+      values.forEach((value, c) => expect(sheet.getCell(r, c + 1).value).toBe(value));
+    }
+  });
+
   it('空文字列1セルの表と空表を区別', async () => {
     const single = await readXlsx([['']]);
     expect(single.rowCount).toBe(1);
