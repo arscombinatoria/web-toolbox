@@ -1,7 +1,8 @@
 import ExcelJS from 'exceljs';
 import { validateTable, type TableData } from './logic';
 
-export async function generateXlsx(table: TableData): Promise<Uint8Array<ArrayBuffer>> {
+// 巨大なワークブックを作らずにExcelの上限を検証できるよう、生成と分離する。
+export function validateXlsxTable(table: TableData): void {
   validateTable(table);
   if (table.rows.length > 1048576 || (table.rows[0]?.length ?? 0) > 16384) {
     throw new Error('Excelの行数・列数の上限を超えています。');
@@ -9,6 +10,10 @@ export async function generateXlsx(table: TableData): Promise<Uint8Array<ArrayBu
   if (table.rows.some(row => row.some(cell => cell.length > 32767))) {
     throw new Error('Excelの1セルの上限（32767文字）を超えています。');
   }
+}
+
+export async function generateXlsx(table: TableData): Promise<Uint8Array<ArrayBuffer>> {
+  validateXlsxTable(table);
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Table');
   for (const values of table.rows) {
