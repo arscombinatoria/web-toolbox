@@ -48,3 +48,86 @@ it('Object URLを破棄時に解放し、生成失敗を通知する', async () 
   expect(next.download.disabled).toBe(false);
   next.dispose();
 });
+
+for (const outcome of ['resolve', 'reject'] as const) {
+  it.each(['edit', 'dispose'] as const)('コピーの' + outcome + 'が%s後の状態を上書きしない', async change => {
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    const write = vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText: write } });
+    const { dispose, fill } = setup();
+    const copy = document.querySelector<HTMLButtonElement>('[data-copy]')!;
+    const status = document.querySelector<HTMLElement>('[role="status"]')!;
+    try {
+      copy.click();
+      expect(copy.disabled).toBe(true);
+      copy.click();
+      expect(write).toHaveBeenCalledExactlyOnceWith('h\r\nx');
+      if (change === 'edit') fill('h\n---\ny');
+      else dispose();
+      if (outcome === 'resolve') resolve();
+      else reject(new Error('clipboard denied'));
+      await pending.catch(() => {});
+      expect(status.textContent).toBe('');
+      if (change === 'edit') {
+        expect(copy.disabled).toBe(false);
+        copy.click();
+        await vi.waitFor(() => expect(status.textContent).toBe('コピーしました。'));
+        expect(write).toHaveBeenLastCalledWith('h\r\ny');
+      } else {
+        copy.dispatchEvent(new MouseEvent('click'));
+        expect(write).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      dispose();
+    }
+  });
+}
+
+it.each(['edit', 'dispose'] as const)('古いXLSX生成の失敗を%s後に通知しない', async change => {
+  let reject!: (error: Error) => void;
+  const pending = new Promise<Uint8Array<ArrayBuffer>>((_, no) => { reject = no; });
+  const generate = vi.mocked(generateXlsx).mockReset().mockReturnValue(pending);
+  const { dispose, fill, download } = setup();
+  const status = document.querySelector<HTMLElement>('[role="status"]')!;
+  try {
+    download.click();
+    await vi.waitFor(() => expect(generate).toHaveBeenCalledOnce());
+    if (change === 'edit') fill('h\n---\ny');
+    else dispose();
+    const previous = status.textContent;
+    reject(new Error('古い生成エラー'));
+    await pending.catch(() => {});
+    expect(status.textContent).toBe(previous);
+    if (change === 'edit') expect(download.disabled).toBe(false);
+    else {
+      download.dispatchEvent(new MouseEvent('click'));
+      expect(generate).toHaveBeenCalledOnce();
+    }
+  } finally {
+    dispose();
+  }
+});
+
+it('ダウンロード用Object URLをタイマーで一度だけ解放する', async () => {
+  vi.useFakeTimers();
+  vi.mocked(generateXlsx).mockResolvedValue(new Uint8Array());
+  const revoke = vi.fn();
+  vi.stubGlobal('URL', { createObjectURL: () => 'blob:timer', revokeObjectURL: revoke });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const { dispose, download } = setup();
+  try {
+    download.click();
+    await vi.waitFor(() => expect(document.querySelector('[role="status"]')?.textContent).toContain('ダウンロードしました'));
+    expect(revoke).not.toHaveBeenCalled();
+    expect(document.querySelector('a[download]')).toBeNull();
+    await vi.runAllTimersAsync();
+    expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:timer');
+    dispose();
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    dispose();
+  }
+});

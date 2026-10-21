@@ -59,6 +59,7 @@ for (const id of ['not-a-tool', '']) {
   test(`不正IDをホームに置き換えない: ${id}`, async ({ page }) => {
     await page.goto(`./?tool=${id}&keep=yes`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('ツールが見つかりません');
+    await expect(page).toHaveTitle('ツールが見つかりません | Web Toolbox');
     await expect(page.getByRole('navigation').locator('[aria-current]')).toHaveCount(0);
     expect(new URL(page.url()).searchParams.get('tool')).toBe(id);
     await page.getByRole('link', { name: '既定のツールを開く' }).click();
@@ -109,6 +110,12 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await dialog.getByRole('link', { name: '日時・UTC変換', exact: true }).focus();
   await page.keyboard.press('Tab');
   await expect(dialog.getByRole('button', { name: '閉じる', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(dialog.getByRole('link', { name: '日時・UTC変換', exact: true })).toBeFocused();
+  // 境界以外では通常のTab順序を維持する。
+  await dialog.getByRole('button', { name: '閉じる', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('link', { name: 'ホーム', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(dialog).not.toBeVisible();
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
@@ -133,6 +140,61 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('navigation')).toBeVisible();
   await expect(menu).toBeHidden();
+});
+
+test('ロード中にホームへ戻っても古いツールが画面・タイトル・フォーカスを奪わない', async ({ page }) => {
+  await page.goto('./');
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let requested!: (url: string) => void;
+  const pending = new Promise<string>(resolve => { requested = resolve; });
+  // ホーム起動後の動的JSだけを保留し、ビルドのハッシュやチャンク名に依存しない。
+  await page.route('**/*.js', async route => {
+    const response = await route.fetch();
+    requested(route.request().url());
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.locator('.tool-card[data-tool-id="width-converter"]').click();
+    const moduleUrl = await pending;
+    await expect(page.getByText('読み込み中です…', { exact: true })).toBeVisible();
+    await expect(page.locator('.tool-content')).toHaveAttribute('aria-busy', 'true');
+    await expect(page).toHaveTitle('全角・半角変換 | Web Toolbox');
+    await page.getByRole('link', { name: 'ホーム', exact: true }).click();
+    const heading = page.getByRole('heading', { level: 1 });
+    await expect(heading).toHaveText('Web Toolbox');
+    await expect(heading).toBeFocused();
+    const theme = page.getByRole('combobox', { name: 'テーマ' });
+    await theme.focus();
+    release();
+    // 同じモジュールの評価完了を待ち、旧ロードの完了前に検証が終わるのを防ぐ。
+    await page.evaluate(url => import(url), moduleUrl);
+    await expect(heading).toHaveText('Web Toolbox');
+    await expect(page).toHaveTitle('Web Toolbox');
+    await expect(theme).toBeFocused();
+    await expect(page.locator('.tool-content')).not.toHaveAttribute('aria-busy');
+    await expect(page).toHaveURL(/\/web-toolbox\/$/);
+    await page.locator('.tool-card[data-tool-id="width-converter"]').click();
+    await expect(heading).toHaveText('全角・半角変換');
+    await expect(heading).toBeFocused();
+    await expect(page.getByRole('textbox', { name: '入力', exact: true })).toBeVisible();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('同じツールの再選択では入力を保持して見出しへフォーカスを戻す', async ({ page }) => {
+  await page.goto('./?tool=width-converter');
+  const input = page.getByRole('textbox', { name: '入力', exact: true });
+  await input.fill('ＡＢＣ');
+  const historyLength = await page.evaluate(() => history.length);
+  await page.getByRole('navigation').getByRole('link', { name: '全角・半角変換', exact: true }).click();
+  await expect(input).toHaveValue('ＡＢＣ');
+  await expect(page.getByRole('textbox', { name: '変換結果', exact: true })).toHaveValue('ABC');
+  await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
+  expect(await page.evaluate(() => history.length)).toBe(historyLength);
 });
 
 test('ホームはアプリのチャンクだけを読み込み、外部通信を行わない', async ({ page }) => {
