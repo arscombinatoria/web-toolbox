@@ -1,3 +1,10 @@
+// リンク要素の寿命に限定した一時入力。URL・History state・ストレージには保存しない。
+const navigationInputs = new WeakMap<HTMLAnchorElement, string>();
+export function setNavigationInput(link: HTMLAnchorElement, input: string | undefined): void {
+  if (input === undefined) navigationInputs.delete(link);
+  else navigationInputs.set(link, input);
+}
+
 export function toolIdFromUrl(url: URL): string | null {
   return url.searchParams.get('tool');
 }
@@ -14,7 +21,7 @@ export function homeUrl(current = new URL(window.location.href)): URL {
   return url;
 }
 
-export function startRouter(onNavigate: (id: string | null, focus: boolean) => void): () => void {
+export function startRouter(onNavigate: (id: string | null, focus: boolean, input?: string) => void): () => void {
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[data-tool-id], a[data-home]') : null;
@@ -24,7 +31,9 @@ export function startRouter(onNavigate: (id: string | null, focus: boolean) => v
     event.preventDefault();
     const id = toolIdFromUrl(url);
     if (id !== toolIdFromUrl(new URL(location.href))) history.pushState(null, '', url);
-    onNavigate(id, true);
+    const input = navigationInputs.get(link);
+    if (input === undefined) onNavigate(id, true);
+    else onNavigate(id, true, input);
   };
   const onPopState = () => onNavigate(toolIdFromUrl(new URL(location.href)), true);
   document.addEventListener('click', onClick);

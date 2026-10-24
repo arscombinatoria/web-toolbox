@@ -266,3 +266,22 @@ it.each(['IPv4', 'IPv6'] as const)('再取得中に%sだけ完了しても連打
   expect(ui.view.querySelector('[aria-busy]')).toBeNull();
   expect(ui.view.querySelectorAll('.ip-status')[first === 'IPv4' ? 1 : 0]!.textContent).toContain('通信エラー');
 });
+
+it('RDAPリンクは成功したIPだけで利用でき、再取得時に隠れる', async () => {
+  let complete!: (ip: string) => void;
+  api.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));
+  api6.mockRejectedValue(new Error());
+  const ui = setup();
+  const links = ui.view.querySelectorAll<HTMLAnchorElement>('[data-rdap]');
+  expect(links[0]!.hidden).toBe(true);
+  expect(links[1]!.hidden).toBe(true);
+  complete('8.8.8.8');
+  await vi.waitFor(() => expect(ui.refresh.disabled).toBe(false));
+  expect(links[0]!.hidden).toBe(false);
+  expect(links[1]!.hidden).toBe(true);
+  expect(new URL(links[0]!.href).searchParams.get('tool')).toBe('rdap-lookup');
+  expect(links[0]!.href).not.toContain('8.8.8.8');
+  api.mockReturnValueOnce(new Promise(() => {}));
+  ui.refresh.click();
+  expect(links[0]!.hidden).toBe(true);
+});

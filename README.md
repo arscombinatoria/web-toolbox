@@ -8,7 +8,7 @@
 
 トップページのカードやサイドバーからツールを選べます。ヘッダーの「Web Toolbox」またはメニューの「ホーム」からトップページに戻れます。個別URLへの直接アクセス、再読み込み、ブラウザの戻る・進むに対応しています。モバイルではヘッダーからメニューを開けます。
 
-入力・変換結果は外部送信せず、URL・ログ・永続ストレージにも保存しません。ツールを切り替えると入力は破棄されます。**IPアドレス確認では外部サービスのipifyへ通信します。** トップページの表示だけではipifyへの通信は行いません。
+入力・変換結果は原則ブラウザ内で処理し、URL・ログ・永続ストレージに保存しません。ツールを切り替えると入力は破棄されます。**IPアドレス確認ではipifyへ、IP登録情報検索では検索対象IPをRDAP.orgと転送先へ送信します。** トップページの表示だけでは外部サービスへの通信は行いません。
 
 テーマは初期状態でOS設定に従います。ライト・ダークの手動選択だけをlocalStorageに保存し、「システム」を選ぶと解除します。ストレージが利用できなくても動作します。各ツールの出力はコピーボタンを使うほか、コピーに失敗した場合も選択して手動でコピーできます。
 
@@ -17,6 +17,7 @@
 | ツール | 主な機能 |
 | --- | --- |
 | [IPアドレス確認](https://arscombinatoria.github.io/web-toolbox/?tool=ip-address) | グローバルIPv4・IPv6アドレスの取得・コピー |
+| [IP登録情報検索](https://arscombinatoria.github.io/web-toolbox/?tool=rdap-lookup) | IPv4・IPv6のネットワーク・管理組織・公開連絡先検索、RDAP JSON表示・コピー |
 | [全角・半角変換](https://arscombinatoria.github.io/web-toolbox/?tool=width-converter) | 英数字・記号・カタカナ・スペースの双方向変換 |
 | [Markdown表変換](https://arscombinatoria.github.io/web-toolbox/?tool=markdown-table) | Markdown表とExcel貼り付け用TSVの相互変換、XLSX出力（XLSX読み込みは非対応） |
 | [JST・UTC日時変換](https://arscombinatoria.github.io/web-toolbox/?tool=datetime) | JST・UTCの24時間対応表と日時変換 |
@@ -28,6 +29,14 @@
 ブラウザからipifyのIPv4用API（`https://api.ipify.org?format=json`）とIPv6用API（`https://api6.ipify.org?format=json`）へ直接通信するため、**接続元IPアドレスがipifyに伝わります。** 取得したIPアドレスは保存せず、位置情報やローカルIPは取得しません。
 
 取得結果は各IPバージョンの接続環境、DNS、提供元の稼働状況・CORS設定に依存します。IPv6の取得失敗だけではIPv6非対応とは判断できません。
+
+## IP登録情報検索
+
+IPv4・IPv6を入力し「検索」またはEnterでRDAP登録情報を取得します。通常の画面表示では自動検索しません。IPアドレス確認で取得に成功した各IPの「登録情報を検索」からは、そのIPを引き継いで検索します。この引き継ぎは同一SPA内のメモリだけを使い、戻る・進む・再読み込みでは検索を再実行しません。
+
+RDAP.org（`https://rdap.org/ip/{IP}`）へブラウザから直接問い合わせ、標準リダイレクト先のネットワーク名・IP範囲・CIDR（応答にある場合）・国コード・種別・ステータス、管理組織・Abuseメール・公開連絡先、登録・更新日時を表示します。欠損項目は省略または「情報なし」とし、登録国は実際の所在地とは限りません。元のJSONは折りたたみ表示で確認・コピーできます。
+
+**検索対象IPと接続元IPがRDAP.orgおよび転送先のRDAPサービスへ伝わります。** 入力・結果・連絡先情報は保存しません。10秒でタイムアウトし、自動リトライは行いません。新しい検索・入力変更・画面切り替えで古い通信を中止します。接続・サービス・CORS設定などで取得できない場合は、検証済みIPのRDAP.org外部確認リンクを表示します。RIR別判定・Bootstrap・CORS回避プロキシは使用しません。
 
 ## 全角・半角変換
 
@@ -93,9 +102,9 @@ npm run test:e2e
 
 `npm run build`には型チェックを含むため、上の手順で別途実行する必要はありません。型チェックのみを行う場合は`npm run typecheck`を使えます。初回はPlaywrightのブラウザとOS依存パッケージのインストールが必要です。
 
-E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。`tests/smoke.spec.ts`ではIP表示・再取得、文字幅の双方向変換、Markdown／TSV変換、日時変換、基本ナビゲーションをChromium・Firefoxの両方で確認します。`tests/ip-address-layout.spec.ts`も両ブラウザで実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで検証します。コピー・ダウンロード・IME・モバイルなどの詳細シナリオはChromiumで実行します。CIの再試行でのみ成功したケースも失敗扱いです。WebKitの自動検証は今回追加していません。
+E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。`tests/smoke.spec.ts`ではIP表示・再取得、文字幅の双方向変換、Markdown／TSV変換、日時変換、RDAP検索・JSON表示、基本ナビゲーションをChromium・Firefoxの両方で確認します。`tests/ip-address-layout.spec.ts`も両ブラウザで実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで検証します。RDAPの検索・JSON・IP確認からの遷移と履歴・エラー・狭幅両テーマは`tests/rdap-lookup.spec.ts`で確認します。コピー・ダウンロード・IME・モバイルなどの詳細シナリオはChromiumで実行します。CIの再試行でのみ成功したケースも失敗扱いです。WebKitの自動検証は今回追加していません。
 
-単体テスト・E2Eともipify通信をモックし、実APIへはアクセスしません。実APIへの接続確認は別途必要です。各ツールの詳しい検証対象は[詳細設計書](docs/architecture.md)を参照してください。
+単体テスト・E2Eともipify・RDAP通信をモックし、実APIへはアクセスしません。実APIへの接続確認は別途必要です。各ツールの詳しい検証対象は[詳細設計書](docs/architecture.md)を参照してください。
 
 ### カバレッジ
 

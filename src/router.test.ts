@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { homeUrl, startRouter, toolIdFromUrl, toolUrl } from './router';
+import { homeUrl, setNavigationInput, startRouter, toolIdFromUrl, toolUrl } from './router';
 import { findTool, tools } from './registry';
 
 let stop: (() => void) | undefined;
@@ -72,4 +72,23 @@ it('ホームの初回表示・History APIによる往復・popstateを通知す
   window.dispatchEvent(new PopStateEvent('popstate'));
   expect(navigate).toHaveBeenLastCalledWith('datetime', true);
   push.mockRestore();
+});
+
+it('一時入力を通常のSPAリンク操作だけで渡し、URL・履歴に保存しない', () => {
+  const navigate = vi.fn();
+  stop = startRouter(navigate);
+  const link = document.createElement('a');
+  link.dataset.toolId = 'rdap-lookup';
+  link.href = toolUrl('rdap-lookup').href;
+  setNavigationInput(link, '2001:db8::1');
+  document.body.append(link);
+  link.click();
+  expect(navigate).toHaveBeenLastCalledWith('rdap-lookup', true, '2001:db8::1');
+  expect(location.search).toBe('?tool=rdap-lookup');
+  expect(history.state).toBeNull();
+  window.dispatchEvent(new PopStateEvent('popstate'));
+  expect(navigate).toHaveBeenLastCalledWith('rdap-lookup', true);
+  setNavigationInput(link, undefined);
+  link.click();
+  expect(navigate).toHaveBeenLastCalledWith('rdap-lookup', true);
 });
