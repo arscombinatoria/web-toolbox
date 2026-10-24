@@ -1,5 +1,5 @@
 export interface ToolModule {
-  mount(container: HTMLElement): () => void;
+  mount(container: HTMLElement, input?: string): () => void;
 }
 
 // 配列順がカテゴリとカテゴリ内ツールの表示順になる。
@@ -22,6 +22,11 @@ export const tools: readonly ToolDefinition[] = [
     id: 'ip-address', name: 'IPアドレス確認', category: 'network',
     description: 'グローバルIPv4・IPv6アドレスを確認',
     load: () => import('./tools/ip-address/index'),
+  },
+  {
+    id: 'rdap-lookup', name: 'IP登録情報検索', category: 'network',
+    description: 'IPアドレスの管理組織・ネットワーク情報を検索',
+    load: () => import('./tools/rdap-lookup/index'),
   },
   {
     id: 'width-converter', name: '全角・半角変換', category: 'text-data',

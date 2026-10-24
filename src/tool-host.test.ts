@@ -110,7 +110,7 @@ it.each(['resolve', 'reject'] as const)('ホーム遷移後の旧importの%sを�
   expect(await navigation).toBe(false);
   expect(mount).not.toHaveBeenCalled();
   expect(container.querySelector('h1')?.textContent).toBe('Web Toolbox');
-  expect(container.querySelectorAll('.tool-card')).toHaveLength(4);
+  expect(container.querySelectorAll('.tool-card')).toHaveLength(5);
   expect(container.hasAttribute('aria-busy')).toBe(false);
   host.destroy();
 });
@@ -192,4 +192,13 @@ it('表示済みの同一ツールを再選択すると以前のmountを一度�
   host.destroy();
   expect(firstDispose).toHaveBeenCalledOnce();
   expect(nextDispose).toHaveBeenCalledOnce();
+});
+
+it('遷移操作の一時入力をマウントに渡す', async () => {
+  const container = document.createElement('div');
+  const host = createToolHost(container);
+  const mount = vi.fn(() => vi.fn());
+  await host.show({ id: 'rdap-lookup', name: 'RDAP', description: '', category: 'network', load: async () => ({ mount }) }, '8.8.8.8');
+  expect(mount).toHaveBeenCalledWith(container, '8.8.8.8');
+  host.destroy();
 });

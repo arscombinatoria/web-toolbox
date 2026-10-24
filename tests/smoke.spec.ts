@@ -80,3 +80,15 @@ test('スモーク: ローカルが米国時間でも日時入力と24時間表�
   await expect(page.getByLabel('Unix time（秒）', { exact: true })).toHaveValue('0');
   await expect(page.getByLabel('Unix time（ミリ秒）', { exact: true })).toHaveValue('0');
 });
+
+test('スモーク: IP登録情報を明示検索し、JSONを表示する', async ({ page }) => {
+  await page.goto('./?tool=rdap-lookup');
+  const input = page.getByRole('textbox', { name: 'IPアドレス（IPv4・IPv6）' });
+  await expect(input).toHaveValue('');
+  await expect(page.locator('[data-result]')).toBeHidden();
+  await input.fill('2001:db8::1');
+  await input.press('Enter');
+  await expect(page.locator('[data-result]')).toContainText('MOCK-NETWORK');
+  await page.getByText('元のRDAP JSON', { exact: true }).click();
+  await expect(page.locator('pre')).toContainText('"objectClassName": "ip network"');
+});

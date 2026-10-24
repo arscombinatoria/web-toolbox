@@ -1,3 +1,4 @@
+import { setNavigationInput, toolUrl } from '../../router';
 import { findTool } from '../../registry';
 import { fetchIpv4, fetchIpv6 } from './api';
 import type { IpErrorKind } from './api';
@@ -25,6 +26,7 @@ export function mount(container: HTMLElement): () => void {
           : `<textarea id="${version}-result" class="ip-result" readonly rows="1" placeholder="未取得" spellcheck="false"></textarea>`}
         <div class="ip-actions">
           <button type="button" data-copy aria-label="${version}をコピーする" disabled>コピーする</button>
+          <a data-rdap data-tool-id="rdap-lookup" hidden>登録情報を検索</a>
         </div>
         <p class="ip-status" role="status" aria-atomic="true"></p>
         <p class="ip-copy-status" role="status" aria-atomic="true"></p>
@@ -53,9 +55,14 @@ export function mount(container: HTMLElement): () => void {
     const copy = section.querySelector<HTMLButtonElement>('[data-copy]')!;
     const status = section.querySelector<HTMLElement>('.ip-status')!;
     const copyStatus = section.querySelector<HTMLElement>('.ip-copy-status')!;
+    const rdap = section.querySelector<HTMLAnchorElement>('[data-rdap]')!;
+    rdap.href = toolUrl('rdap-lookup').href;
+    rdap.setAttribute('aria-label', `${version}の登録情報を検索`);
     let copying = false;
     const retrieve = async (current: AbortController) => {
       output.value = '';
+      rdap.hidden = true;
+      setNavigationInput(rdap, undefined);
       if (version === 'IPv6') resizeIpv6();
       output.setAttribute('aria-busy', 'true');
       copy.disabled = true;
@@ -65,6 +72,8 @@ export function mount(container: HTMLElement): () => void {
         const ip = await fetchAddress(current.signal);
         if (disposed || request !== current) return;
         output.value = ip;
+        setNavigationInput(rdap, ip);
+        rdap.hidden = false;
         if (version === 'IPv6') resizeIpv6();
         copy.disabled = copying;
         status.textContent = '取得成功';
@@ -95,7 +104,10 @@ export function mount(container: HTMLElement): () => void {
       }
     };
     copy.addEventListener('click', copyIp);
-    return { retrieve, dispose: () => copy.removeEventListener('click', copyIp) };
+    return { retrieve, dispose: () => {
+      copy.removeEventListener('click', copyIp);
+      setNavigationInput(rdap, undefined);
+    } };
   });
   const retrieve = async () => {
     if (disposed || loading) return;
