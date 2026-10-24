@@ -2,11 +2,11 @@
 
 ## 概要・設計方針
 
-Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・全角／半角変換・Markdown表変換・JST／UTC日時変換の4ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
+Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・IP登録情報検索・全角／半角変換・Markdown表変換・JST／UTC日時変換の5ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
 
 Vanilla TypeScript（strict）、ES Modules、Vite、HTML/CSS、ブラウザ標準APIを使用します。UIフレームワークや状態管理ライブラリは使用せず、各ツールのDOM操作と通信・変換処理を分離しています。共通UIはRegistryのメタデータから生成し、ツール本体は必要時に読み込みます。
 
-入力・結果は画面内で扱い、ツールを離れると破棄します。IP確認の外部API通信と、手動選択したテーマの保存については[セキュリティ・データ保護](#セキュリティデータ保護)に記載します。
+入力・結果は画面内で扱い、ツールを離れると破棄します。IP確認・RDAPの外部API通信と、手動選択したテーマの保存については[セキュリティ・データ保護](#セキュリティデータ保護)に記載します。
 
 ## システム構成・モジュール構成
 
@@ -34,6 +34,8 @@ web-toolbox/
     tools/
       ip-address/
         index.ts / api.ts / style.css
+      rdap-lookup/
+        index.ts / api.ts / logic.ts / style.css
       width-converter/
         index.ts / logic.ts / style.css
       markdown-table/
@@ -41,7 +43,7 @@ web-toolbox/
       datetime/
         index.ts / logic.ts / style.css
   tests/                           # Playwrightのスモーク・詳細操作・IP欄レイアウト
-    fixtures.ts                    # 全E2E共通のipifyモック
+    fixtures.ts                    # 全E2E共通のipify・RDAPモック
   scripts/
     generate-coverage-badge.mjs
     generate-coverage-badge.test.mjs
@@ -49,15 +51,15 @@ web-toolbox/
   .github/workflows/ci-pages.yml
 ```
 
-各ツールの`index.ts`はDOM・イベント・非同期処理の状態を、`style.css`はツール固有の表示を担当します。IP確認の`api.ts`は通信とレスポンス検証、他ツールの`logic.ts`はDOMに依存しない変換処理を担当します。Markdown表の`xlsx.ts`はファイル生成専用です。現在、`public/`ディレクトリはありません。
+各ツールの`index.ts`はDOM・イベント・非同期処理の状態を、`style.css`はツール固有の表示を担当します。IP確認の`api.ts`は通信とレスポンス検証、他ツールの`logic.ts`はDOMに依存しない変換処理を担当します。Markdown表の`xlsx.ts`はファイル生成専用です。`public/favicon.svg`はタブ用アイコンとして配信します。
 
 ### Registryと遅延読み込み
 
 [src/registry.ts](../src/registry.ts)の`ToolDefinition`は`id`、`name`、`description`、`category`、`load`を持ちます。`load`は固定パスを指定した動的importです。URLの文字列をimportパスに直接使用しません。共通の`ToolModule`型もRegistryで定義します。
 
-`categories`の配列順はサイドバーのカテゴリ順、`tools`の配列順はカテゴリ内のツール順とホームのカード順になります。現在のツール順はIP確認、全角・半角、Markdown表、日時です。ホームはツール登録に含めず、`components/home.ts`で表示します。
+`categories`の配列順はサイドバーのカテゴリ順、`tools`の配列順はカテゴリ内のツール順とホームのカード順になります。現在のツール順はIP確認、IP登録情報検索、全角・半角、Markdown表、日時です。ホームはツール登録に含めず、`components/home.ts`で表示します。
 
-ホームのカードはRegistryのID・名前・説明から生成します。ホーム表示時にはツールの`load`を呼ばず、ツール本体・ExcelJSを読み込まず、ipifyにも通信しません。ExcelJSはMarkdown表のダウンロード操作時にさらに遅延読み込みします。
+ホームのカードはRegistryのID・名前・説明から生成します。ホーム表示時にはツールの`load`を呼ばず、ツール本体・ExcelJSを読み込まず、ipify・RDAPにも通信しません。ExcelJSはMarkdown表のダウンロード操作時にさらに遅延読み込みします。
 
 ## ルーティング・画面ライフサイクル
 
@@ -79,7 +81,7 @@ web-toolbox/
 
 ### マウント・破棄・競合制御
 
-ツールの契約は同期関数`mount(container: HTMLElement): () => void`です。マウント中に表示を作り、通信などは内部で開始します。返す破棄関数は、ツールが登録したリスナー・タイマー・通信などと表示要素を解放します。
+ツールの契約は同期関数`mount(container: HTMLElement): () => void`です。マウント中に表示を作り、通信などは内部で開始します。IP確認からRDAPへの一時入力に限り、任意の第2引数`input?: string`を受け取れます。返す破棄関数は、ツールが登録したリスナー・タイマー・通信などと表示要素を解放します。
 
 [src/tool-host.ts](../src/tool-host.ts)の`show`は、`null`をホーム、`undefined`を不明ツール、それ以外をツール定義として扱います。遷移ごとに世代番号を更新し、旧画面の破棄関数を呼んでからコンテナを空にします。ホームも破棄関数を返します。
 
@@ -113,9 +115,9 @@ Escape・閉じるボタン・ダイアログ背景のクリックで閉じ、�
 
 永続化するアプリ設定は手動選択したテーマのみです。localStorageの`web-toolbox-theme`に`light`または`dark`を保存し、「システム」で削除します。読み書き失敗は捕捉し、保存できなくても現在のテーマ選択とアプリ動作を継続します。
 
-ツールのデータ取得のために外部へ通信するのはIP確認のみです。接続先、送信方針、外部サービスへの依存は[IPアドレス確認](#ipアドレス確認--ip-addressネットワーク)に集約しています。他ツールの入力を送信する処理はありません。ツールやExcelJSの動的importは同一サイトの配信アセットを読み込みます。外部フォント・解析サービス・外部スクリプトは使用しません。
+ツールのデータ取得のための外部通信はIP確認のipifyと、IP登録情報検索のRDAP.orgおよび標準リダイレクト先を例外とします。接続先・送信方針・外部依存は各ツールの仕様に記載しています。他ツールの入力を送信する処理はありません。ツールやExcelJSの動的importは同一サイトの配信アセットを読み込みます。外部フォント・解析サービス・外部スクリプトは使用しません。
 
-固定HTMLテンプレートにのみ`innerHTML`を使用し、利用者入力・変換結果・外部レスポンスはフォームの`value`または`textContent`で設定します。MarkdownのHTMLプレビューは行いません。IPレスポンスは`unknown`として型と形式を検証します。
+固定HTMLテンプレートにのみ`innerHTML`を使用し、利用者入力・変換結果・外部レスポンスはフォームの`value`または`textContent`で設定します。MarkdownのHTMLプレビューは行いません。IP・RDAPレスポンスは`unknown`として型と形式を検証します。
 
 ## ツール別詳細仕様
 
@@ -151,6 +153,32 @@ UIはリクエストのAbortController識別と破棄フラグで、古い取得
 `api.test.ts`はHTTP・JSON・両IP形式の境界値、通信障害、本文読み込み中を含む10秒タイムアウト、開始前／実行中の中止、タイマー解放を検証します。`index.test.ts`は両バージョンの成功・失敗の組み合わせ、連打抑止、独立表示、再取得、コピーと破棄後の更新抑制、高さ再計算を検証します。
 
 `tests/ip-address.spec.ts`は表示・再取得・実Clipboard API・エラー復帰・切り替え・狭幅両テーマを、`tests/ip-address-layout.spec.ts`はChromiumとFirefoxで長いIPv6の折り返し、広幅／狭幅間の伸縮、IPv4との高さ、手動選択を検証します。実APIへの到達性はモックテストの保証範囲外です。
+
+### IP登録情報検索 — `rdap-lookup`／ネットワーク
+
+#### 通信・解析
+
+`api.ts`は`https://rdap.org/ip/{IP}`へ直接fetchし、ブラウザ標準のリダイレクトに任せます。問い合わせ先判定・IANA Bootstrap・CORS回避プロキシ・`no-cors`は使いません。`credentials: 'omit'`、`referrerPolicy: 'no-referrer'`、`cache: 'no-store'`を指定し、Acceptを含む独自ヘッダーは追加しません。AbortControllerと10秒タイマーはJSON本文読み込みにも適用し、完了時にタイマーと中止リスナーを解放します。自動リトライはありません。
+
+入力は前後空白を除去し、既存のIP確認APIの`isIpv4`・`isIpv6`を再利用します。`logic.ts`は外部JSONを`unknown`から検証し、`objectClassName: 'ip network'`を要求します。任意フィールドの型不正・欠損は省略し、未知の拡張は生JSONに残します。`cidr0_cidrs`のIPv4／IPv6プレフィックスと整数の長さを検証し、CIDRを表示します。CIDRや所在地をIP範囲から推測しません。
+
+entityを反復処理でネスト内まで走査し、roles・jCardのfn／org／email／tel／adrを型検証して抽出します。orgが配列の場合は先頭成分だけを組織名とし、後続の部署・部門は抽出しません。単一文字列のorgはそのまま扱います。管理組織は明示的なregistrantのorg、なければfnのみから取得し、Abuseメールはabuse役割のみから抽出します。registrantとabuseを兼ねるentityからは両方を独立して抽出します。technical／administrativeなどの公開情報も役割名とともに表示し、役割を推測で補いません。eventsのregistration／last changedは応答の日時文字列を表示します。
+
+#### UI・遷移・破棄
+
+通常表示・直接アクセス・再読み込み・戻る／進むでは自動検索せず、検索ボタン／Enterで検索します。IP確認の成功したパネルだけにRDAPリンクを表示し、再取得時に非表示にします。routerの`setNavigationInput`はリンクをキーとするWeakMapに一時入力を保持します。通常の同一SPAリンク操作時だけcallback→main→tool-host→mountの任意引数に渡し、リンク破棄時にも解除します。URL・History state・永続ストレージへは記録しません。遅い動的importは既存のホスト世代管理に従い、別画面に入力を持ち越しません。修飾キーや別タブ操作は通常リンクのままで、入力を引き継ぎません。
+
+検索中はstatusで通知し、新規検索と入力変更は以前の通信を中止して結果を消去します。世代番号と破棄フラグで中止を無視する古い応答・コピー完了も反映しません。破棄時は通信とイベントリスナーを解除します。
+
+ネットワーク情報、管理組織とAbuse、役割別連絡先、登録情報、RDAPサーバーリンク、生JSONのdetails／コピーを表示します。欠損は省略または「情報なし」とし、国コードが実際の所在地を保証しないことを明示します。外部値はtextContentだけで描画し、リンクは認証情報を含まない絶対HTTPS URLだけを許可し、noopener／noreferrerを付けます。
+
+404・429・その他HTTP・通信障害・timeout・不正JSON・非IP Network応答を区別します。ブラウザで区別できない通信障害をCORSと断定しません。失敗時は検証済み入力IPから生成したRDAP.org外部確認リンクを表示します。検索対象IPと接続元IPがRDAP.orgと転送先へ伝わることを画面に明記します。
+
+#### 検証範囲
+
+`logic.test.ts`はネットワーク・CIDR・roles・jCard・深いentity・欠損・未知拡張・安全なURLを、`api.test.ts`はIPv4／IPv6・fetch設定・HTTP・JSON・通信・本文読み込み中を含むtimeout・Abort・タイマー解放を検証します。`index.test.ts`は明示検索・エラー・再検索競合・入力変更・破棄後の更新抑止・安全なJSON表示とコピーを確認します。router／hostも一時入力の受け渡しを検証します。`tests/rdap-lookup.spec.ts`は検索・JSONコピー・非保存・IP確認からの遷移・履歴・エラー復帰・320px両テーマ・キーボード操作をモックAPIで検証します。
+
+実サービスへのブラウザ接続・CORSはモックテストでは保証しません。RIRごとの接続確認は自動テストと分けて実施し、確認したOrigin・ブラウザと未確認事項を報告します。
 
 ### 全角・半角変換 — `width-converter`／テキスト・データ
 
@@ -274,19 +302,19 @@ textareaはCRLFをLFへ正規化するため、コピー時は表示欄の値で
 
 共通基盤では`router.test.ts`がURL・標準リンク操作・履歴通知、`tool-host.test.ts`が遅いimportの成功／失敗と新画面の競合、ホーム遷移、破棄契約、`components/home.test.ts`がRegistry順のカードと未ロード、`components/theme.test.ts`がOS追従・手動保存・ストレージ拒否・購読解除を検証します。
 
-`npm test`は通常のVitest実行、`npm run test:coverage`はV8 Coverageを有効にし、`text`と`json-summary`を出力します。`coverage.include`は`src/`のJS/TSコード全体を指定し、未importのソースも対象にします。test/spec・`__tests__`・型宣言を除外し、起動処理・共通UI・ルーター・ホスト・4ツールを含めます。最低閾値は設定せず、Playwrightのカバレッジを合算しません。Vitestと`@vitest/coverage-v8`は同一の完全バージョンに固定しています。
+`npm test`は通常のVitest実行、`npm run test:coverage`はV8 Coverageを有効にし、`text`と`json-summary`を出力します。`coverage.include`は`src/`のJS/TSコード全体を指定し、未importのソースも対象にします。test/spec・`__tests__`・型宣言を除外し、起動処理・共通UI・ルーター・ホスト・5ツールを含めます。最低閾値は設定せず、Playwrightのカバレッジを合算しません。Vitestと`@vitest/coverage-v8`は同一の完全バージョンに固定しています。
 
 ### E2Eと検証範囲
 
 [playwright.config.ts](../playwright.config.ts)はビルド済み`dist/`をVite previewで配信し、`http://127.0.0.1:4173/web-toolbox/`を使用します。E2Eコマンド自体はビルドしないため、事前の`npm run build`が必要です。サーバーは既存プロセスを再利用せず、指定ポートで起動します。CIでは`test.only`を禁止し、診断用に失敗時に1回再試行します。`failOnFlakyTests: true`により再試行でのみ成功したケースもコマンドを失敗させ、失敗時のtraceを保持します。
 
-Chromiumはホームと4ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
+Chromiumはホームと5ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
 
-`tests/smoke.spec.ts`の5ケースはChromium・Firefox共通です。ホームからの遷移・URL・戻る／進む・再読み込み、IPv4／IPv6表示と再取得、文字種選択と双方向の文字幅変換、Markdown／TSV変換とエラー復帰、JSTの24時間表選択とUTC入力・epoch出力を検証します。ブラウザのタイムゾーンをロサンゼルスに固定し、端末の時間帯に依存しない操作を確認します。
+`tests/smoke.spec.ts`の6ケースはChromium・Firefox共通です。ホームからの遷移・URL・戻る／進む・再読み込み、IPv4／IPv6表示と再取得、文字種選択と双方向の文字幅変換、Markdown／TSV変換とエラー復帰、JSTの24時間表選択とUTC入力・epoch出力、RDAPの明示検索とJSON表示を検証します。ブラウザのタイムゾーンをロサンゼルスに固定し、端末の時間帯に依存しない操作を確認します。
 
 Firefoxではスモークに加えて既存の`tests/ip-address-layout.spec.ts`を実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで維持します。詳細なコピー・ダウンロード・IME・モバイル操作などはChromium中心とし、Firefoxへ全ケースを複製しません。WebKitはSafari系のフォーム・レイアウト差の検出に有効ですが、追加ブラウザとOS依存の配備・実行のCI負荷が増えるため今回は追加しません。Safari固有の検証が必要になった時点で共通スモークへの追加を検討します。
 
-単体テストのfetchモックとE2E共通の`tests/fixtures.ts`でipifyを置換するため、実APIにはアクセスしません。CI成功だけでは実サービスの接続・CORS・IPv6到達性を保証せず、必要時に別途確認します。
+単体テストのfetchモックとE2E共通の`tests/fixtures.ts`でipify・RDAPを置換するため、実APIにはアクセスしません。CI成功だけでは実サービスの接続・CORS・IPv6到達性を保証せず、必要時に別途確認します。
 
 ## CI/CD・GitHub Pages
 

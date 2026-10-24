@@ -29,7 +29,7 @@ export function createToolHost(container: HTMLElement) {
   };
 
   return {
-    async show(tool: ToolDefinition | null | undefined): Promise<boolean> {
+    async show(tool: ToolDefinition | null | undefined, input?: string): Promise<boolean> {
       const current = ++generation;
       clear();
       container.removeAttribute('aria-busy');
@@ -47,7 +47,7 @@ export function createToolHost(container: HTMLElement) {
         const module = await tool.load();
         if (current !== generation) return false;
         container.replaceChildren();
-        dispose = module.mount(container);
+        dispose = input === undefined ? module.mount(container) : module.mount(container, input);
       } catch {
         if (current !== generation) return false;
         message('ツールを読み込めませんでした', 'ページを再読み込みするか、別のツールを選択してください。', true);
