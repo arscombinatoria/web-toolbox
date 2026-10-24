@@ -162,7 +162,7 @@ UIはリクエストのAbortController識別と破棄フラグで、古い取得
 
 入力は前後空白を除去し、既存のIP確認APIの`isIpv4`・`isIpv6`を再利用します。`logic.ts`は外部JSONを`unknown`から検証し、`objectClassName: 'ip network'`を要求します。任意フィールドの型不正・欠損は省略し、未知の拡張は生JSONに残します。`cidr0_cidrs`のIPv4／IPv6プレフィックスと整数の長さを検証し、CIDRを表示します。CIDRや所在地をIP範囲から推測しません。
 
-entityを反復処理でネスト内まで走査し、roles・jCardのfn／org／email／tel／adrを型検証して抽出します。管理組織は明示的なregistrant（abuseとの兼任を除く）のorg、なければfnのみから取得し、Abuseメールはabuse役割のみから抽出します。technical／administrativeなどの公開情報も役割名とともに表示し、役割を推測で補いません。eventsのregistration／last changedは応答の日時文字列を表示します。
+entityを反復処理でネスト内まで走査し、roles・jCardのfn／org／email／tel／adrを型検証して抽出します。orgが配列の場合は先頭成分だけを組織名とし、後続の部署・部門は抽出しません。単一文字列のorgはそのまま扱います。管理組織は明示的なregistrantのorg、なければfnのみから取得し、Abuseメールはabuse役割のみから抽出します。registrantとabuseを兼ねるentityからは両方を独立して抽出します。technical／administrativeなどの公開情報も役割名とともに表示し、役割を推測で補いません。eventsのregistration／last changedは応答の日時文字列を表示します。
 
 #### UI・遷移・破棄
 

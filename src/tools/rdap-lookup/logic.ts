@@ -74,7 +74,11 @@ export function parseRdap(data: unknown): RdapInfo {
         if (field[2] !== 'text') continue;
         const value = text(field[3]);
         if (field[0] === 'fn') contact.name = value;
-        if (field[0] === 'org') contact.organizations.push(...(Array.isArray(field[3]) ? strings(field[3]) : value ? [value] : []));
+        if (field[0] === 'org') {
+          // ORGの先頭成分が組織名。後続の部署・部門を組織名として扱わない。
+          const organization = Array.isArray(field[3]) ? text(field[3][0]) : value;
+          if (organization) contact.organizations.push(organization);
+        }
         if (field[0] === 'email' && value) contact.emails.push(value);
         if (field[0] === 'tel' && value) contact.phones.push(value);
         if (field[0] === 'adr') {
@@ -87,8 +91,8 @@ export function parseRdap(data: unknown): RdapInfo {
     if (contact.name || contact.handle || contact.organizations.length || contact.emails.length || contact.phones.length || contact.addresses.length) contacts.push(contact);
     if (Array.isArray(entity.entities)) pending.push(...[...entity.entities].reverse());
   }
-  // 管理組織は明示的なregistrantのみ。abuseやtechnicalから推測しない。
-  const organizations = [...new Set(contacts.filter((c) => c.roles.includes('registrant') && !c.roles.includes('abuse'))
+  // 管理組織は明示的なregistrantのみ。他の役割との兼任は許可する。
+  const organizations = [...new Set(contacts.filter((c) => c.roles.includes('registrant'))
     .flatMap((c) => c.organizations.length ? c.organizations : c.name ? [c.name] : []))];
   const abuseEmails = [...new Set(contacts.filter((c) => c.roles.includes('abuse')).flatMap((c) => c.emails))];
   const events: [string, string][] = [];
