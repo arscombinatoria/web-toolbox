@@ -7,8 +7,14 @@ const only = (category: keyof Categories): Categories => ({ ...none, [category]:
 
 describe('convertWidth', () => {
   it('指定の初期設定', () => {
-    expect(defaultCategories).toEqual({ alphanumeric: true, symbols: true, katakana: false, spaces: true });
-    expect(convertWidth('ＡＢＣ１２３！＠＃　ガギグ')).toBe('ABC123!@# ガギグ');
+    expect(defaultCategories).toEqual({ alphanumeric: true, symbols: false, katakana: false, spaces: true });
+    expect(convertWidth('ＡＢＣ１２３！＠＃　ガギグ')).toBe('ABC123！＠＃ ガギグ');
+    expect(convertWidth('ABC123!@# ガギグ', 'to-full')).toBe('ＡＢＣ１２３!@#　ガギグ');
+  });
+  it('記号を明示的にONにすると従来どおり双方向変換する', () => {
+    const categories = { ...defaultCategories, symbols: true };
+    expect(convertWidth('ＡＢＣ１２３！＠＃　ガギグ', 'to-half', categories)).toBe('ABC123!@# ガギグ');
+    expect(convertWidth('ABC123!@# ガギグ', 'to-full', categories)).toBe('ＡＢＣ１２３！＠＃　ガギグ');
   });
   it.each<[keyof Categories, string, string]>([
     ['alphanumeric', 'ＡＺａｚ０９！　ガ', 'AZaz09！　ガ'],

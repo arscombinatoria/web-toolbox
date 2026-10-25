@@ -40,6 +40,8 @@ test('スモーク: 文字種を選択して全角・半角を双方向に変換
   const input = page.getByRole('textbox', { name: '入力', exact: true });
   const output = page.getByRole('textbox', { name: '変換結果', exact: true });
   await input.fill('Ａ１！　ガ🙂');
+  await expect(output).toHaveValue('A1！ ガ🙂');
+  await page.getByRole('checkbox', { name: '記号' }).check();
   await expect(output).toHaveValue('A1! ガ🙂');
   await page.getByRole('checkbox', { name: 'カタカナ' }).check();
   await expect(output).toHaveValue('A1! ｶﾞ🙂');
