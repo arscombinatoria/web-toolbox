@@ -26,6 +26,7 @@
     "vitest": "5.0.5"
   },
   "dependencies": {
+    "@eslint-community/regexpp": "4.12.2",
     "exceljs": "^4.4.0"
   }
 }

@@ -94,3 +94,19 @@ test('スモーク: IP登録情報を明示検索し、JSONを表示する', asy
   await page.getByText('元のRDAP JSON', { exact: true }).click();
   await expect(page.locator('pre')).toContainText('"objectClassName": "ip network"');
 });
+
+
+test('スモーク: 正規表現をWorkerで描画し、構文エラーから復帰する', async ({ page }) => {
+  await page.goto('./?tool=regex-visualizer');
+  const input = page.getByRole('textbox', { name: '正規表現のパターン' });
+  const download = page.getByRole('button', { name: 'SVGをダウンロード' });
+  await expect(download).toBeEnabled();
+  await input.fill('(');
+  await expect(page.getByRole('alert')).toContainText('構文エラー');
+  await expect(page.locator('.regex-tool img')).toBeHidden();
+  await input.fill('[\\p{ASCII}--[A-Z]]+?');
+  await page.getByRole('checkbox', { name: /^v：/ }).check();
+  await expect(download).toBeEnabled();
+  await expect(page.getByRole('status')).toHaveText('図を更新しました。');
+  expect(await page.locator('.regex-tool img').evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+});

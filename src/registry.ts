@@ -39,6 +39,11 @@ export const tools: readonly ToolDefinition[] = [
     load: () => import('./tools/markdown-table/index'),
   },
   {
+    id: 'regex-visualizer', name: '正規表現の可視化', category: 'text-data',
+    description: 'JavaScriptの正規表現をRailroad Diagramで可視化',
+    load: () => import('./tools/regex-visualizer/index'),
+  },
+  {
     id: 'datetime', name: '日時・UTC変換', category: 'date-time',
     description: 'JST・UTCの24時間対応表と日時変換',
     load: () => import('./tools/datetime/index'),

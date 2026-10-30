@@ -1,0 +1,237 @@
+import { RegExpParser, RegExpSyntaxError, visitRegExpAST, type AST } from '@eslint-community/regexpp';
+import { FLAGS, MAX_PATTERN_LENGTH, type DiagramResult } from './protocol';
+
+// 正規表現の実行はしない。regexppのASTを、小さな構造図へ変換するアダプター。
+const MAX_NODES = 800;
+const MAX_DEPTH = 48;
+const MAX_DIMENSION = 16000;
+const MAX_AREA = 12_000_000;
+const MAX_SVG_LENGTH = 1_000_000;
+class DiagramLimit extends Error {}
+interface Rail { width: number; height: number; axis: number; svg: string }
+
+// XML 1.0非対応文字、不可視文字、単独サロゲートは見える表記にする。
+function visible(text: string, spaces = false): string {
+  return Array.from(text, char => {
+    const cp = char.codePointAt(0)!;
+    if (char === ' ') return spaces ? '␣' : ' ';
+    if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}]/u.test(char)
+      || (cp >= 0xd800 && cp <= 0xdfff) || cp === 0xfffe || cp === 0xffff) {
+      return `\\u{${cp.toString(16).toUpperCase()}}`;
+    }
+    return char;
+  }).join('');
+}
+function xml(text: string): string {
+  return text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
+}
+function checkSize(width: number, height: number): void {
+  if (!Number.isFinite(width + height) || width > MAX_DIMENSION || height > MAX_DIMENSION || width * height > MAX_AREA) {
+    throw new DiagramLimit('図の寸法が安全上限（各辺16,000px・面積1,200万px）を超えます。式を分割してください。');
+  }
+}
+function path(d: string): string { return `<path d="${d}"/>`; }
+function placed(rail: Rail, x: number, y: number): string { return `<g transform="translate(${x} ${y})">${rail.svg}</g>`; }
+function label(text: string, x: number, y: number, width: number): string {
+  return `<text x="${x}" y="${y}" text-anchor="middle" textLength="${width}" lengthAdjust="spacingAndGlyphs">${xml(text)}</text>`;
+}
+function units(char: string): number { return char.codePointAt(0)! > 255 ? 2 : 1; }
+function box(text: string, kind = 'literal'): Rail {
+  const lines = [''];
+  let length = 0;
+  for (const char of visible(text)) {
+    const size = units(char);
+    if (length + size > 66) { lines.push(''); length = 0; }
+    lines[lines.length - 1] += char; length += size;
+  }
+  const widths = lines.map(line => Array.from(line).reduce((n, char) => n + units(char) * 7.5, 0));
+  const width = Math.max(70, ...widths.map(w => w + 24));
+  const height = lines.length * 20 + 16;
+  return { width, height, axis: height / 2, svg: `<g class="${kind}"><rect width="${width}" height="${height}" rx="6"/>${lines.map((line, i) => label(line, width / 2, 22 + i * 20, widths[i]!)).join('')}</g>` };
+}
+function sequence(items: Rail[]): Rail {
+  if (!items.length) return box('空（0文字）', 'condition');
+  const axis = Math.max(...items.map(item => item.axis));
+  const height = axis + Math.max(...items.map(item => item.height - item.axis));
+  const width = items.reduce((sum, item) => sum + item.width, 0) + 24 * (items.length - 1);
+  checkSize(width, height);
+  let x = 0;
+  const svg = items.map((item, i) => {
+    const result = (i ? path(`M${x - 24} ${axis}h24`) : '') + placed(item, x, axis - item.axis);
+    x += item.width + 24;
+    return result;
+  }).join('');
+  return { width, height, axis, svg };
+}
+function choice(items: Rail[]): Rail {
+  if (items.length === 1) return items[0]!;
+  const width = Math.max(...items.map(item => item.width)) + 64;
+  const height = items.reduce((sum, item) => sum + item.height, 0) + 24 * (items.length - 1);
+  checkSize(width, height);
+  const axis = items[0]!.axis;
+  let y = 0;
+  const svg = items.map(item => {
+    const rowAxis = y + item.axis;
+    const result = path(`M0 ${axis}H16V${rowAxis}H32M${width - 32} ${rowAxis}H${width - 16}V${axis}H${width}`)
+      + placed(item, 32, y) + path(`M${32 + item.width} ${rowAxis}H${width - 32}`);
+    y += item.height + 24;
+    return result;
+  }).join('');
+  return { width, height, axis, svg };
+}
+function frame(body: Rail, title: string): Rail {
+  const heading = box(title, 'heading');
+  const width = Math.max(body.width + 32, heading.width + 16);
+  const height = body.height + heading.height + 20;
+  const axis = heading.height + 10 + body.axis;
+  checkSize(width, height);
+  return { width, height, axis, svg: `<g class="group"><rect width="${width}" height="${height}" rx="8"/></g>`
+    + placed(heading, 8, 0) + placed(body, 16, heading.height + 10)
+    + path(`M0 ${axis}H16M${body.width + 16} ${axis}H${width}`) };
+}
+function repeat(body: Rail, min: number, max: number, greedy: boolean, source: string): Rail {
+  // {0}には本体を通る経路がない。回数分のノード展開も行わない。
+  if (max === 0) return box('0回（本体を通らない・0文字）', 'condition');
+  const rail = frame(body, `繰り返し ${source}（合計回数）・${greedy ? '貪欲' : '非貪欲'}`);
+  const width = rail.width + 48;
+  const height = rail.height + 32;
+  const axis = rail.axis;
+  checkSize(width, height);
+  // 回数は枠の指定で制約する。矢印は繰り返す向きだけを示す。
+  let svg = placed(rail, 24, 0) + path(`M0 ${axis}H24M${width - 24} ${axis}H${width}`);
+  if (max > 1) {
+    svg += path(`M${width - 12} ${axis}V${height - 8}H12V${axis}M${width / 2 + 5} ${height - 13}l-5 5 5 5`);
+  }
+  if (min === 0) {
+    // 上側の迂回路のため、全体を下へ移す。
+    return { width, height: height + 24, axis: axis + 24,
+      svg: `<g transform="translate(0 24)">${svg}</g>` + path(`M0 ${axis + 24}H6V8H${width - 6}V${axis + 24}H${width}`) };
+  }
+  return { width, height, axis, svg };
+}
+
+export function createDiagram(pattern: string, flags: string): DiagramResult {
+  if (pattern.length > MAX_PATTERN_LENGTH) return { ok: false, kind: 'limit', message: `入力は${MAX_PATTERN_LENGTH.toLocaleString('en-US')} UTF-16コード単位以内にしてください。` };
+  try {
+    if (Array.from(flags).some(flag => !FLAGS.includes(flag as typeof FLAGS[number])) || new Set(flags).size !== flags.length) {
+      return { ok: false, kind: 'syntax', message: 'フラグは d g i m s u v y を重複せず指定してください。' };
+    }
+    if (flags.includes('u') && flags.includes('v')) return { ok: false, kind: 'syntax', message: 'u と v は同時に指定できません。' };
+    const parser = new RegExpParser({ ecmaVersion: 2025 });
+    const ast = parser.parsePattern(pattern, 0, pattern.length, { unicode: flags.includes('u'), unicodeSets: flags.includes('v') });
+    const captures = new Map<AST.CapturingGroup, number>();
+    let nodes = 0;
+    let depth = 0;
+    const enter = () => {
+      if (++nodes > MAX_NODES || ++depth > MAX_DEPTH) throw new DiagramLimit('構造の安全上限（800ノード・深さ48）を超えます。式を分割してください。');
+    };
+    const leave = () => { depth--; };
+    // regexppのVisitorは参照先・parentをたどらないため、循環するASTでも安全。
+    visitRegExpAST(ast, {
+      onPatternEnter: enter, onPatternLeave: leave,
+      onAlternativeEnter: enter, onAlternativeLeave: leave,
+      onGroupEnter: enter, onGroupLeave: leave,
+      onModifiersEnter: enter, onModifiersLeave: leave,
+      onModifierFlagsEnter: enter, onModifierFlagsLeave: leave,
+      onCapturingGroupEnter(node) { enter(); captures.set(node, captures.size + 1); }, onCapturingGroupLeave: leave,
+      onAssertionEnter: enter, onAssertionLeave: leave,
+      onQuantifierEnter: enter, onQuantifierLeave: leave,
+      onCharacterEnter: enter, onCharacterLeave: leave,
+      onCharacterSetEnter: enter, onCharacterSetLeave: leave,
+      onCharacterClassEnter: enter, onCharacterClassLeave: leave,
+      onCharacterClassRangeEnter: enter, onCharacterClassRangeLeave: leave,
+      onExpressionCharacterClassEnter: enter, onExpressionCharacterClassLeave: leave,
+      onClassIntersectionEnter: enter, onClassIntersectionLeave: leave,
+      onClassSubtractionEnter: enter, onClassSubtractionLeave: leave,
+      onClassStringDisjunctionEnter: enter, onClassStringDisjunctionLeave: leave,
+      onStringAlternativeEnter: enter, onStringAlternativeLeave: leave,
+      onBackreferenceEnter: enter, onBackreferenceLeave: leave,
+    });
+    const warnings = new Set<string>();
+    const conditions: { title: string; rail: Rail }[] = [];
+    const alternatives = (alts: AST.Alternative[], activeFlags = flags): Rail => choice(alts.map(alt => {
+      const items: Rail[] = [];
+      let literal = '';
+      const flush = () => { if (literal) { items.push(box(`文字列 “${literal}”`)); literal = ''; } };
+      for (const element of alt.elements) {
+        if (element.type === 'Character') literal += visible(String.fromCodePoint(element.value), true);
+        else { flush(); items.push(map(element, activeFlags)); }
+      }
+      flush();
+      return sequence(items);
+    }));
+    const map = (node: AST.Element, activeFlags: string): Rail => {
+      switch (node.type) {
+        case 'Character': return box(`文字 “${visible(String.fromCodePoint(node.value), true)}”`);
+        case 'CharacterSet': return box(node.kind === 'any' ? `任意の1文字${activeFlags.includes('s') ? '（改行を含む）' : '（改行を除く）'}` : `文字集合 ${visible(node.raw, true)}`, 'set');
+        case 'CharacterClass':
+          if (!node.negate && !node.elements.length) warnings.add('空の文字クラス [] は何にも一致しません。');
+          return box(`文字集合 ${visible(node.raw, true)}${!node.negate && !node.elements.length ? '（一致なし）' : ''}`, 'set');
+        case 'ExpressionCharacterClass':
+          return box(`Unicode集合 ${visible(node.raw, true)}（&& は共通部分、-- は差集合）`, 'set');
+        case 'CapturingGroup': return frame(alternatives(node.alternatives, activeFlags), `捕捉 #${captures.get(node)}${node.name ? ` <${node.name}>` : ''}`);
+        case 'Group': {
+          let localFlags = activeFlags;
+          if (node.modifiers) {
+            for (const [key, flag] of [['ignoreCase', 'i'], ['multiline', 'm'], ['dotAll', 's']] as const) {
+              if (node.modifiers.add[key] && !localFlags.includes(flag)) localFlags += flag;
+              if (node.modifiers.remove?.[key]) localFlags = localFlags.replace(flag, '');
+            }
+          }
+          return frame(alternatives(node.alternatives, localFlags), node.modifiers ? `局所フラグ ${node.modifiers.raw}（有効：${localFlags || 'なし'}）` : '非キャプチャグループ');
+        }
+        case 'Quantifier': return repeat(map(node.element, activeFlags), node.min, node.max, node.greedy, node.raw.slice(node.element.raw.length));
+        case 'Backreference': {
+          warnings.add('後方参照は捕捉済みの文字列に一致します。未参加・前方のグループへの参照は空文字列に一致する場合があります。参照は別の実行経路ではありません。');
+          const targets = Array.isArray(node.resolved) ? node.resolved : [node.resolved];
+          return box(`後方参照 ${visible(node.raw, true)} → ${targets.map(target => `#${captures.get(target)}`).join(' / ')} の捕捉文字列`, 'reference');
+        }
+        case 'Assertion': {
+          warnings.add('条件ノードは0文字のアサーションです。条件の内部図は主経路から独立し、内部の文字を主経路で消費しません。');
+          if (node.kind === 'lookahead' || node.kind === 'lookbehind') {
+            const number = conditions.length + 1;
+            const name = `${node.negate ? '否定' : '肯定'}${node.kind === 'lookahead' ? '先読み' : '後読み'}`;
+            const entry = { title: `条件${number}：${name}の内部構造${node.kind === 'lookbehind' ? '（ソース順表示・評価は右→左）' : ''}`, rail: box('') };
+            conditions.push(entry);
+            entry.rail = alternatives(node.alternatives, activeFlags);
+            return box(`条件${number}（0文字）${name} ${visible(node.raw, true)}`, 'condition');
+          }
+          const name = node.kind === 'word' ? (node.negate ? '非単語境界' : '単語境界')
+            : `${node.kind === 'start' ? '先頭' : '末尾'}${activeFlags.includes('m') ? '（行境界も含む）' : '（入力境界）'}`;
+          return box(`条件（0文字）${name} ${visible(node.raw, true)}`, 'condition');
+        }
+        default: {
+          const unsupported: never = node;
+          throw new Error(`描画未対応の構文です：${String(unsupported)}`);
+        }
+      }
+    };
+    const root = alternatives(ast.alternatives);
+    const sections = [{ title: '主構造（左 → 右）', rail: root }, ...conditions];
+    let width = Math.max(620, ...sections.map(section => section.rail.width + 80));
+    let height = 90;
+    const content: string[] = [];
+    for (const section of sections) {
+      const heading = box(section.title, 'heading');
+      width = Math.max(width, heading.width + 40);
+      content.push(placed(heading, 20, height)); height += heading.height + 8;
+      content.push(placed(section.rail, 40, height), path(`M20 ${height + section.rail.axis}H40M${section.rail.width + 40} ${height + section.rail.axis}h20`));
+      content.push(`<circle cx="20" cy="${height + section.rail.axis}" r="4"/><circle cx="${section.rail.width + 60}" cy="${height + section.rail.axis}" r="4"/>`);
+      height += section.rail.height + 32;
+      checkSize(width, height);
+    }
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>ECMAScript 正規表現の構造図</title><desc>条件は0文字。回数と優先順位はラベルで指定。マッチングは実行しません。</desc><style>
+svg{background:#fff;color:#172334;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+path{fill:none;stroke:#526174;stroke-width:2;stroke-linejoin:round}circle{fill:#245bc2}
+rect{fill:#edf3ff;stroke:#245bc2;stroke-width:1.5}text{fill:#172334;font-size:13px;stroke:none}
+.condition rect{fill:#f8fafc;stroke:#526174;stroke-dasharray:5 3}.reference rect{fill:#f8fafc;stroke:#245bc2;stroke-dasharray:2 2}
+.set rect{fill:#edf3ff}.group>rect{fill:none;stroke:#526174}.heading rect{fill:#fff;stroke:none}
+</style>${placed(box(`ECMAScript・フラグ：${flags || 'なし'}`, 'heading'), 20, 12)}${content.join('')}</svg>`;
+    if (svg.length > MAX_SVG_LENGTH) throw new DiagramLimit('SVGが安全上限（100万文字）を超えます。式を分割してください。');
+    return { ok: true, svg, warnings: [...warnings] };
+  } catch (error) {
+    if (error instanceof RegExpSyntaxError) return { ok: false, kind: 'syntax', message: error.message, position: error.index };
+    if (error instanceof DiagramLimit || error instanceof RangeError) return { ok: false, kind: 'limit', message: error instanceof DiagramLimit ? error.message : '構造が複雑すぎるため解析を中断しました。式を分割してください。' };
+    return { ok: false, kind: 'render', message: error instanceof Error ? error.message : '図を生成できませんでした。' };
+  }
+}
