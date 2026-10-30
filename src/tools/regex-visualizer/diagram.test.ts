@@ -34,6 +34,31 @@ describe('ECMAScriptの構造', () => {
     expect(diagram('a{1}').text).toContain('{1}');
   });
 
+  it.each(['(?:(?=a)){0}b', '(?:(?<=a)){0}b', '(?:(?=a)){0,0}b', '(?:(?<=a)){0,0}b'])('%sの実行されない条件を登録しない', pattern => {
+    const result = diagram(pattern);
+    expect(result.text).toContain('0回（本体を通らない・0文字）');
+    expect(result.text).toContain('文字列 “b”');
+    expect(result.text).not.toContain('内部構造');
+    expect(result.text).not.toContain('条件1');
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('1回の量指定子では先読みの内部図を維持する', () => {
+    const result = diagram('(?:(?=a)){1}b');
+    expect(result.text).toContain('条件1（0文字）');
+    expect(result.text).toContain('条件1：肯定先読みの内部構造');
+    expect(result.text).toContain('文字列 “a”');
+    expect(result.text).toContain('文字列 “b”');
+  });
+
+  it('0回の本体を省略しても全体の捕捉番号と後方参照先を維持する', () => {
+    const result = diagram('(?:(?=(a))){0}(b)\\2');
+    expect(result.text).not.toContain('内部構造');
+    expect(result.text).not.toContain('捕捉 #1');
+    expect(result.text).toContain('捕捉 #2');
+    expect(result.text).toContain('後方参照 \\2 → #2');
+  });
+
   it.each(['(?=ab)c', '(?!ab)c', '(?<=ab)c', '(?<!ab)c', '(?=(?<!x)y)z'])('アサーション%sは主経路から内部を分離', pattern => {
     const result = diagram(pattern);
     expect(result.text).toContain('条件1（0文字）');

@@ -90,8 +90,6 @@ function frame(body: Rail, title: string): Rail {
     + path(`M0 ${axis}H16M${body.width + 16} ${axis}H${width}`) };
 }
 function repeat(body: Rail, min: number, max: number, greedy: boolean, source: string): Rail {
-  // {0}には本体を通る経路がない。回数分のノード展開も行わない。
-  if (max === 0) return box('0回（本体を通らない・0文字）', 'condition');
   const rail = frame(body, `繰り返し ${source}（合計回数）・${greedy ? '貪欲' : '非貪欲'}`);
   const width = rail.width + 48;
   const height = rail.height + 32;
@@ -180,7 +178,10 @@ export function createDiagram(pattern: string, flags: string): DiagramResult {
           }
           return frame(alternatives(node.alternatives, localFlags), node.modifiers ? `局所フラグ ${node.modifiers.raw}（有効：${localFlags || 'なし'}）` : '非キャプチャグループ');
         }
-        case 'Quantifier': return repeat(map(node.element, activeFlags), node.min, node.max, node.greedy, node.raw.slice(node.element.raw.length));
+        case 'Quantifier':
+          // 0回の本体は変換せず、実行されない条件の内部図も登録しない。
+          if (node.max === 0) return box('0回（本体を通らない・0文字）', 'condition');
+          return repeat(map(node.element, activeFlags), node.min, node.max, node.greedy, node.raw.slice(node.element.raw.length));
         case 'Backreference': {
           warnings.add('後方参照は捕捉済みの文字列に一致します。未参加・前方のグループへの参照は空文字列に一致する場合があります。参照は別の実行経路ではありません。');
           const targets = Array.isArray(node.resolved) ? node.resolved : [node.resolved];
