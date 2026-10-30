@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures';
 
-const sample = '^(?<word>[A-Za-z]+)(?:-[0-9]{2,4})?$';
+const sample = '^([A-Za-z]+)(?:-[0-9]{2,4})?$';
 
 test('入力・再描画・構文エラー・意味上の注意・フラグ排他・空入力', async ({ page }) => {
   await page.goto('./?tool=regex-visualizer');
