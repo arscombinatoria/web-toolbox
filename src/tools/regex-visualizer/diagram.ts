@@ -36,29 +36,33 @@ function label(text: string, x: number, y: number, width: number): string {
   return `<text x="${x}" y="${y}" text-anchor="middle" textLength="${width}" lengthAdjust="spacingAndGlyphs">${xml(text)}</text>`;
 }
 function units(char: string): number { return char.codePointAt(0)! > 255 ? 2 : 1; }
-function box(text: string, kind = 'literal'): Rail {
-  const lines = [''];
-  let length = 0;
-  for (const char of visible(text)) {
-    const size = units(char);
-    if (length + size > 66) { lines.push(''); length = 0; }
-    lines[lines.length - 1] += char; length += size;
+function box(text: string | string[], kind = 'literal'): Rail {
+  const heading = kind === 'heading';
+  const lines: string[] = [];
+  for (const part of typeof text === 'string' ? [text] : text) {
+    lines.push('');
+    let length = 0;
+    for (const char of visible(part)) {
+      const size = units(char);
+      if (length + size > (kind === 'condition' ? 22 : 66)) { lines.push(''); length = 0; }
+      lines[lines.length - 1] += char; length += size;
+    }
   }
-  const widths = lines.map(line => Array.from(line).reduce((n, char) => n + units(char) * 7.5, 0));
-  const width = Math.max(70, ...widths.map(w => w + 24));
-  const height = lines.length * 20 + 16;
-  return { width, height, axis: height / 2, svg: `<g class="${kind}"><rect width="${width}" height="${height}" rx="6"/>${lines.map((line, i) => label(line, width / 2, 22 + i * 20, widths[i]!)).join('')}</g>` };
+  const widths = lines.map(line => Array.from(line).reduce((n, char) => n + units(char) * 6.5, 0));
+  const width = Math.max(40, ...widths.map(w => w + (heading ? 8 : 20)));
+  const height = lines.length * 18 + (heading ? 4 : 12);
+  return { width, height, axis: height / 2, svg: `<g class="${kind}"><rect width="${width}" height="${height}" rx="6"/>${lines.map((line, i) => label(line, width / 2, (heading ? 15 : 20) + i * 18, widths[i]!)).join('')}</g>` };
 }
 function sequence(items: Rail[]): Rail {
   if (!items.length) return box('空（0文字）', 'condition');
   const axis = Math.max(...items.map(item => item.axis));
   const height = axis + Math.max(...items.map(item => item.height - item.axis));
-  const width = items.reduce((sum, item) => sum + item.width, 0) + 24 * (items.length - 1);
+  const width = items.reduce((sum, item) => sum + item.width, 0) + 16 * (items.length - 1);
   checkSize(width, height);
   let x = 0;
   const svg = items.map((item, i) => {
-    const result = (i ? path(`M${x - 24} ${axis}h24`) : '') + placed(item, x, axis - item.axis);
-    x += item.width + 24;
+    const result = (i ? path(`M${x - 16} ${axis}h16`) : '') + placed(item, x, axis - item.axis);
+    x += item.width + 16;
     return result;
   }).join('');
   return { width, height, axis, svg };
@@ -81,31 +85,48 @@ function choice(items: Rail[]): Rail {
 }
 function frame(body: Rail, title: string): Rail {
   const heading = box(title, 'heading');
-  const width = Math.max(body.width + 32, heading.width + 16);
-  const height = body.height + heading.height + 20;
-  const axis = heading.height + 10 + body.axis;
+  const width = Math.max(body.width + 24, heading.width + 16);
+  const top = heading.height + 4;
+  const height = body.height + top + 12;
+  const axis = top + body.axis;
+  const x = (width - body.width) / 2;
   checkSize(width, height);
-  return { width, height, axis, svg: `<g class="group"><rect width="${width}" height="${height}" rx="8"/></g>`
-    + placed(heading, 8, 0) + placed(body, 16, heading.height + 10)
-    + path(`M0 ${axis}H16M${body.width + 16} ${axis}H${width}`) };
+  return { width, height, axis, svg: `<g class="group"><rect y="10" width="${width}" height="${height - 10}" rx="8"/></g>`
+    + placed(heading, 8, 0) + placed(body, x, top)
+    + path(`M0 ${axis}H${x}M${body.width + x} ${axis}H${width}`) };
+}
+function arrow(x: number, y: number, direction: 1 | -1): string {
+  return path(`M${x - direction * 4} ${y - 4}l${direction * 4} 4 ${-direction * 4} 4`);
 }
 function repeat(body: Rail, min: number, max: number, greedy: boolean, source: string): Rail {
-  const rail = frame(body, `繰り返し ${source}（合計回数）・${greedy ? '貪欲' : '非貪欲'}`);
-  const width = rail.width + 48;
-  const height = rail.height + 32;
-  const axis = rail.axis;
+  // 大きな整数も丸めず、原文から合計回数を表示する。
+  const quantifier = greedy ? source : source.slice(0, -1);
+  const counts = quantifier === '?' ? '0〜1回' : quantifier === '*' ? '0回以上' : quantifier === '+' ? '1回以上'
+    : quantifier.slice(1, -1).replace(/,(.+)/, '〜$1').replace(/,$/, '回以上') + (quantifier.endsWith(',}') ? '' : '回');
+  const heading = box(`${source} · 合計${counts}`, 'heading');
+  const priority = box(greedy ? '貪欲' : '非貪欲', 'heading');
+  const width = Math.max(body.width + 48, heading.width + 16);
+  const top = heading.height + (min === 0 ? 24 : 4);
+  const axis = top + body.axis;
+  const bottom = top + body.height;
+  const height = bottom + (max > 1 ? 24 : 4) + priority.height;
+  const x = (width - body.width) / 2;
   checkSize(width, height);
-  // 回数は枠の指定で制約する。矢印は繰り返す向きだけを示す。
-  let svg = placed(rail, 24, 0) + path(`M0 ${axis}H24M${width - 24} ${axis}H${width}`);
-  if (max > 1) {
-    svg += path(`M${width - 12} ${axis}V${height - 8}H12V${axis}M${width / 2 + 5} ${height - 13}l-5 5 5 5`);
-  }
+  let svg = placed(heading, (width - heading.width) / 2, 0) + placed(body, x, top)
+    + path(`M0 ${axis}H${x}M${x + body.width} ${axis}H${width}`)
+    + arrow(width - 3, axis, 1);
   if (min === 0) {
-    // 上側の迂回路のため、全体を下へ移す。
-    return { width, height: height + 24, axis: axis + 24,
-      svg: `<g transform="translate(0 24)">${svg}</g>` + path(`M0 ${axis + 24}H6V8H${width - 6}V${axis + 24}H${width}`) };
+    const y = heading.height + 8;
+    svg += `<g class="bypass">` + path(`M0 ${axis}Q12 ${axis} 12 ${axis - 12}V${y + 12}Q12 ${y} 24 ${y}H${width - 24}Q${width - 12} ${y} ${width - 12} ${y + 12}V${axis - 12}Q${width - 12} ${axis} ${width} ${axis}`)
+      + arrow(width / 2, y, 1) + '</g>';
   }
-  return { width, height, axis, svg };
+  if (max > 1) {
+    const y = bottom + 16;
+    svg += `<g class="loopback">` + path(`M${width - 24} ${axis}Q${width - 12} ${axis} ${width - 12} ${axis + 12}V${y - 12}Q${width - 12} ${y} ${width - 24} ${y}H24Q12 ${y} 12 ${y - 12}V${axis + 12}Q12 ${axis} 24 ${axis}`)
+      + arrow(width / 2, y, -1) + '</g>';
+  }
+  svg += placed(priority, (width - priority.width) / 2, height - priority.height);
+  return { width, height, axis, svg: `<g class="repeat">${svg}</g>` };
 }
 
 export function createDiagram(pattern: string, flags: string): DiagramResult {
@@ -195,11 +216,11 @@ export function createDiagram(pattern: string, flags: string): DiagramResult {
             const entry = { title: `条件${number}：${name}の内部構造${node.kind === 'lookbehind' ? '（ソース順表示・評価は右→左）' : ''}`, rail: box('') };
             conditions.push(entry);
             entry.rail = alternatives(node.alternatives, activeFlags);
-            return box(`条件${number}（0文字）${name} ${visible(node.raw, true)}`, 'condition');
+            return box([`条件${number}（0文字）`, `${name} ${visible(node.raw, true)}`], 'condition');
           }
           const name = node.kind === 'word' ? (node.negate ? '非単語境界' : '単語境界')
             : `${node.kind === 'start' ? '先頭' : '末尾'}${activeFlags.includes('m') ? '（行境界も含む）' : '（入力境界）'}`;
-          return box(`条件（0文字）${name} ${visible(node.raw, true)}`, 'condition');
+          return box(['条件（0文字）', `${name} ${visible(node.raw, true)}`], 'condition');
         }
         default: {
           const unsupported: never = node;
@@ -209,16 +230,19 @@ export function createDiagram(pattern: string, flags: string): DiagramResult {
     };
     const root = alternatives(ast.alternatives);
     const sections = [{ title: '主構造（左 → 右）', rail: root }, ...conditions];
-    let width = Math.max(620, ...sections.map(section => section.rail.width + 80));
-    let height = 90;
+    const metadata = box(`ECMAScript・フラグ：${flags || 'なし'}`, 'heading');
+    const headings = sections.map(section => box(section.title, 'heading'));
+    const width = Math.max(metadata.width + 32, ...sections.map((section, i) => Math.max(section.rail.width + 64, headings[i]!.width + 32)));
+    let height = metadata.height + 24;
     const content: string[] = [];
-    for (const section of sections) {
-      const heading = box(section.title, 'heading');
-      width = Math.max(width, heading.width + 40);
-      content.push(placed(heading, 20, height)); height += heading.height + 8;
-      content.push(placed(section.rail, 40, height), path(`M20 ${height + section.rail.axis}H40M${section.rail.width + 40} ${height + section.rail.axis}h20`));
-      content.push(`<circle cx="20" cy="${height + section.rail.axis}" r="4"/><circle cx="${section.rail.width + 60}" cy="${height + section.rail.axis}" r="4"/>`);
-      height += section.rail.height + 32;
+    for (const [i, section] of sections.entries()) {
+      const heading = headings[i]!;
+      content.push(placed(heading, 16, height)); height += heading.height + 12;
+      const x = (width - section.rail.width) / 2;
+      const axis = height + section.rail.axis;
+      content.push(placed(section.rail, x, height), path(`M${x - 16} ${axis}H${x}M${section.rail.width + x} ${axis}h16`), arrow(x - 3, axis, 1));
+      content.push(`<circle cx="${x - 16}" cy="${axis}" r="4"/><circle cx="${section.rail.width + x + 16}" cy="${axis}" r="4"/>`);
+      height += section.rail.height + 24;
       checkSize(width, height);
     }
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>ECMAScript 正規表現の構造図</title><desc>条件は0文字。回数と優先順位はラベルで指定。マッチングは実行しません。</desc><style>
@@ -227,7 +251,7 @@ path{fill:none;stroke:#526174;stroke-width:2;stroke-linejoin:round}circle{fill:#
 rect{fill:#edf3ff;stroke:#245bc2;stroke-width:1.5}text{fill:#172334;font-size:13px;stroke:none}
 .condition rect{fill:#f8fafc;stroke:#526174;stroke-dasharray:5 3}.reference rect{fill:#f8fafc;stroke:#245bc2;stroke-dasharray:2 2}
 .set rect{fill:#edf3ff}.group>rect{fill:none;stroke:#526174}.heading rect{fill:#fff;stroke:none}
-</style>${placed(box(`ECMAScript・フラグ：${flags || 'なし'}`, 'heading'), 20, 12)}${content.join('')}</svg>`;
+</style>${placed(metadata, 16, 12)}${content.join('')}</svg>`;
     if (svg.length > MAX_SVG_LENGTH) throw new DiagramLimit('SVGが安全上限（100万文字）を超えます。式を分割してください。');
     return { ok: true, svg, warnings: [...warnings] };
   } catch (error) {

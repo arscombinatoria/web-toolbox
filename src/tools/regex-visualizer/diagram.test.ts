@@ -15,10 +15,10 @@ describe('ECMAScriptの構造', () => {
   it.each([
     ['abc', '文字列 “abc”'], ['[a-zA-Z0-9_]', '文字集合 [a-zA-Z0-9_]'],
     ['[^a-z]', '文字集合 [^a-z]'], ['a|b|', '空（0文字）'],
-    ['a*', '*（合計回数）・貪欲'], ['a+', '+（合計回数）・貪欲'], ['a?', '?（合計回数）・貪欲'],
-    ['a{2,4}', '{2,4}（合計回数）・貪欲'], ['a{3,}', '{3,}（合計回数）・貪欲'],
-    ['a*?', '*?（合計回数）・非貪欲'], ['a+?', '+?（合計回数）・非貪欲'],
-    ['a??', '??（合計回数）・非貪欲'], ['a{2,4}?', '{2,4}?（合計回数）・非貪欲'],
+    ['a*', '* · 合計0回以上'], ['a+', '+ · 合計1回以上'], ['a?', '? · 合計0〜1回'],
+    ['a{2,4}', '{2,4} · 合計2〜4回'], ['a{3,}', '{3,} · 合計3回以上'],
+    ['a*?', '*? · 合計0回以上'], ['a+?', '+? · 合計1回以上'],
+    ['a??', '?? · 合計0〜1回'], ['a{2,4}?', '{2,4}? · 合計2〜4回'],
     ['(ab)(?:cd)', '非キャプチャグループ'], ['(?<name>a)\\k<name>', '捕捉 #1 <name>'],
     ['(a)\\1', '後方参照 \\1 → #1'], ['\\1(a)', '後方参照 \\1 → #1'],
     ['^a$\\b\\B', '非単語境界'], ['', '空（0文字）'], [' a ', '“␣a␣”'],
@@ -85,6 +85,51 @@ describe('ECMAScriptの構造', () => {
   ])('Unicode・集合・名前付きグループ %s', (pattern, flags) => { diagram(pattern, flags); });
 });
 
+describe('Railroadレイアウト', () => {
+  it.each([
+    ['a?', 1, 0, '0〜1回'], ['a*', 1, 1, '0回以上'], ['a+', 0, 1, '1回以上'],
+    ['a{2,4}', 0, 1, '2〜4回'], ['a{0,4}?', 1, 1, '0〜4回'],
+    ['a{1}', 0, 0, '1回'], ['a{0}', 0, 0, '0回'], ['a{0,0}', 0, 0, '0回'],
+  ])('%sの省略・戻り経路と合計回数', (pattern, bypasses, loops, counts) => {
+    const { document, text } = diagram(pattern);
+    expect(document.querySelectorAll('.bypass')).toHaveLength(bypasses);
+    expect(document.querySelectorAll('.loopback')).toHaveLength(loops);
+    expect(text).toContain(counts);
+    if (pattern !== 'a{0}' && pattern !== 'a{0,0}') {
+      expect(text).toContain(pattern.endsWith('}?') ? '非貪欲' : '貪欲');
+    }
+    expect(document.querySelectorAll('.group')).toHaveLength(0);
+    for (const bypass of document.querySelectorAll('.bypass')) {
+      expect(bypass.querySelectorAll('path')).toHaveLength(2);
+      expect(bypass.lastElementChild?.getAttribute('d')).toContain('l4 4 -4 4');
+    }
+    for (const loop of document.querySelectorAll('.loopback')) {
+      expect(loop.querySelectorAll('path')).toHaveLength(2);
+      expect(loop.lastElementChild?.getAttribute('d')).toContain('l-4 4 4 4');
+    }
+  });
+
+  it.each(['?', '*', '+', '{2,4}', '{3,}'])('%sの貪欲・非貪欲で経路と優先順位ラベルを維持', quantifier => {
+    const greedy = diagram(`a${quantifier}`).document;
+    const lazy = diagram(`a${quantifier}?`).document;
+    expect(greedy.querySelector('.repeat')?.lastElementChild?.textContent).toBe('貪欲');
+    expect(lazy.querySelector('.repeat')?.lastElementChild?.textContent).toBe('非貪欲');
+    for (const selector of ['.bypass', '.loopback']) {
+      expect(lazy.querySelectorAll(selector)).toHaveLength(greedy.querySelectorAll(selector).length);
+    }
+  });
+
+  it('サンプルと入れ子をコンパクトにし、短い式に固定の最小幅を設けない', () => {
+    const sample = diagram('^([A-Za-z]+)(?:-[0-9]{2,4})?$').document.documentElement;
+    expect(Number(sample.getAttribute('width'))).toBeLessThanOrEqual(980);
+    expect(Number(sample.getAttribute('height'))).toBeLessThanOrEqual(340);
+    const nested = diagram('((?:a+)?)');
+    expect(nested.document.querySelectorAll('.group')).toHaveLength(2);
+    expect(nested.document.querySelectorAll('.repeat')).toHaveLength(2);
+    expect(Number(diagram('a').document.documentElement.getAttribute('width'))).toBeLessThan(300);
+  });
+});
+
 describe('構文・警告・安全性・負荷', () => {
   it.each(['(', '[z-a]', 'a{4,2}', '*', '\\k<missing>', '(?<x>a)(?<x>b)'])('不正構文%sと位置', pattern => {
     expect(createDiagram(pattern, 'u')).toMatchObject({ ok: false, kind: 'syntax', position: expect.any(Number) });
@@ -117,7 +162,8 @@ describe('構文・警告・安全性・負荷', () => {
     expect(createDiagram('('.repeat(50) + 'a' + ')'.repeat(50), '')).toMatchObject({ ok: false, kind: 'limit' });
     expect(createDiagram(Array(350).fill('a').join('|'), '')).toMatchObject({ ok: false, kind: 'limit' });
     expect(createDiagram('(ab)'.repeat(150), '')).toMatchObject({ ok: false, kind: 'limit' });
-    expect(createDiagram(Array(80).fill('a*b*c*').join('|'), '')).toMatchObject({ ok: false, kind: 'limit' });
+    // コンパクト化後も面積制限を超える、長いラベルを持つ反復の選択肢。
+    expect(createDiagram(Array(60).fill('(a{1234567890123456789012345}b{1234567890123456789012345})*').join('|'), '')).toMatchObject({ ok: false, kind: 'limit', message: expect.stringContaining('面積') });
     expect(createDiagram('('.repeat(2000), '')).toMatchObject({ ok: false });
   });
 });
