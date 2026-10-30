@@ -104,7 +104,7 @@ function repeat(body: Rail, min: number, max: number, greedy: boolean, source: s
   const counts = quantifier === '?' ? '0〜1回' : quantifier === '*' ? '0回以上' : quantifier === '+' ? '1回以上'
     : quantifier.slice(1, -1).replace(/,(.+)/, '〜$1').replace(/,$/, '回以上') + (quantifier.endsWith(',}') ? '' : '回');
   const heading = box(`${source} · 合計${counts}`, 'heading');
-  const priority = box(greedy ? '貪欲' : '非貪欲', 'heading');
+  const priority = box(greedy ? '貪欲マッチ' : '非貪欲マッチ', 'heading');
   const width = Math.max(body.width + 48, heading.width + 16);
   const top = heading.height + (min === 0 ? 24 : 4);
   const axis = top + body.axis;
