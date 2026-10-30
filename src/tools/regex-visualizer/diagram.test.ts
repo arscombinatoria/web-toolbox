@@ -96,7 +96,7 @@ describe('Railroadレイアウト', () => {
     expect(document.querySelectorAll('.loopback')).toHaveLength(loops);
     expect(text).toContain(counts);
     if (pattern !== 'a{0}' && pattern !== 'a{0,0}') {
-      expect(text).toContain(pattern.endsWith('}?') ? '非貪欲' : '貪欲');
+      expect(text).toContain(pattern.endsWith('}?') ? '非貪欲マッチ' : '貪欲マッチ');
     }
     expect(document.querySelectorAll('.group')).toHaveLength(0);
     for (const bypass of document.querySelectorAll('.bypass')) {
@@ -112,8 +112,8 @@ describe('Railroadレイアウト', () => {
   it.each(['?', '*', '+', '{2,4}', '{3,}'])('%sの貪欲・非貪欲で経路と優先順位ラベルを維持', quantifier => {
     const greedy = diagram(`a${quantifier}`).document;
     const lazy = diagram(`a${quantifier}?`).document;
-    expect(greedy.querySelector('.repeat')?.lastElementChild?.textContent).toBe('貪欲');
-    expect(lazy.querySelector('.repeat')?.lastElementChild?.textContent).toBe('非貪欲');
+    expect(greedy.querySelector('.repeat')?.lastElementChild?.textContent).toBe('貪欲マッチ');
+    expect(lazy.querySelector('.repeat')?.lastElementChild?.textContent).toBe('非貪欲マッチ');
     for (const selector of ['.bypass', '.loopback']) {
       expect(lazy.querySelectorAll(selector)).toHaveLength(greedy.querySelectorAll(selector).length);
     }
