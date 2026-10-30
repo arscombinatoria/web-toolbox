@@ -153,7 +153,7 @@ export function mount(container: HTMLElement): () => void {
     } catch { status.textContent = 'SVGをダウンロードできませんでした。もう一度お試しください。'; }
   }, options);
   container.append(view);
-  input.value = '^(?<word>[A-Za-z]+)(?:-[0-9]{2,4})?$';
+  input.value = '^([A-Za-z]+)(?:-[0-9]{2,4})?$';
   update();
   return () => {
     if (disposed) return;
