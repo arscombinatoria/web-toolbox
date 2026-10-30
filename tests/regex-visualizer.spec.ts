@@ -113,9 +113,9 @@ test('実Workerの古い結果は入力変更後・ツール破棄後に表示�
   await expect(page.locator('.regex-tool')).toHaveCount(0);
 });
 
-for (const theme of ['light', 'dark']) {
-  test(`モバイル・${theme}で図内スクロール・キーボード・巨大入力から回復`, async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 }); await page.goto('./?tool=regex-visualizer');
+for (const [width, theme] of [[320, 'light'], [320, 'dark'], [390, 'light'], [390, 'dark']] as const) {
+  test(`モバイル${width}px・${theme}で図内スクロール・キーボード・巨大入力から回復`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 }); await page.goto('./?tool=regex-visualizer');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
     const input = page.getByRole('textbox', { name: '正規表現のパターン' });
     await input.fill('(?<capture>[a-z]+)(?:foo|bar|baz){2,5}\\k<capture>');
@@ -130,3 +130,57 @@ for (const theme of ['light', 'dark']) {
     await input.fill('a{0}'); await expect(button).toBeEnabled(); await expect(page.getByRole('alert')).toBeEmpty();
   });
 }
+
+for (const width of [1280, 1440]) {
+  for (const theme of ['light', 'dark']) {
+    test(`デスクトップ${width}px・${theme}で初期図を収め、小さい図を中央に配置`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto('./?tool=regex-visualizer');
+      await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+      const download = page.getByRole('button', { name: 'SVGをダウンロード' });
+      await expect(download).toBeEnabled();
+      const canvas = page.locator('.regex-canvas');
+      const image = canvas.locator('img');
+      expect(await canvas.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(await image.evaluate(node => node.clientWidth / (node as HTMLImageElement).naturalWidth)).toBeGreaterThanOrEqual(0.79);
+      await page.getByRole('textbox', { name: '正規表現のパターン' }).fill('a');
+      await expect(download).toBeEnabled();
+      const frame = (await canvas.boundingBox())!;
+      const picture = (await image.boundingBox())!;
+      expect(Math.abs(picture.x + picture.width / 2 - frame.x - frame.width / 2)).toBeLessThan(2);
+      expect(picture.y).toBeGreaterThan(frame.y);
+      // 幅の大きい式は、文字を際限なく縮めず、図の枠内で扱う。
+      await page.getByRole('textbox', { name: '正規表現のパターン' }).fill('(abcdef)+'.repeat(12));
+      await expect(download).toBeEnabled();
+      expect(await canvas.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await canvas.focus(); await page.keyboard.press('ArrowRight');
+      await expect.poll(() => canvas.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+    });
+  }
+}
+
+test('ダウンロードSVG内のラベル・経路がviewBoxに収まる', async ({ page, context }) => {
+  await page.goto('./?tool=regex-visualizer');
+  await page.getByRole('textbox', { name: '正規表現のパターン' }).fill('(?<outer>(?:a?|b*|c+|d{2,4}?))(?<=xy)z{0}');
+  const button = page.getByRole('button', { name: 'SVGをダウンロード' });
+  await expect(button).toBeEnabled();
+  const event = page.waitForEvent('download'); await button.click();
+  const svg = await readFile((await (await event).path())!, 'utf8');
+  const standalone = await context.newPage();
+  await standalone.goto(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`);
+  expect(await standalone.locator('svg').evaluate(root => {
+    const svg = root as unknown as SVGSVGElement;
+    const bounds = svg.viewBox.baseVal;
+    return [...svg.querySelectorAll<SVGGraphicsElement>('text, rect, path, circle')].every(node => {
+      const box = node.getBBox();
+      const matrix = svg.getCTM()!.inverse().multiply(node.getCTM()!);
+      return [new DOMPoint(box.x, box.y), new DOMPoint(box.x + box.width, box.y + box.height)].every(point => {
+        const p = point.matrixTransform(matrix);
+        return p.x >= 1 && p.y >= 1 && p.x <= bounds.width - 1 && p.y <= bounds.height - 1;
+      });
+    });
+  })).toBe(true);
+  await standalone.close();
+});

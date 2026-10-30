@@ -23,7 +23,7 @@ export function mount(container: HTMLElement): () => void {
     <aside class="regex-warnings" aria-label="意味上の注意" hidden><h2>意味上の注意</h2><ul></ul></aside>
     <h2>Railroad Diagram</h2>
     <p id="regex-legend">左から右に構造を読みます。破線の条件は0文字、点線は捕捉文字列への後方参照です。
-      繰り返しの合計回数と貪欲・非貪欲の優先順位は枠のラベルで指定します。集合の内部は原文表記です。</p>
+      上の右向き経路は省略、下の左向き経路は繰り返しです。合計回数と貪欲・非貪欲の優先順位は要素の上下のラベルで指定します。集合の内部は原文表記です。広い図はこの枠内でスクロールできます。</p>
     <div class="regex-canvas" tabindex="0" role="region" aria-label="正規表現の構造図（横にスクロールできます）" aria-describedby="regex-legend"><img alt="正規表現のRailroad Diagram" hidden></div>
     <p>入力・結果はブラウザ内だけで処理し、送信・保存しません。マッチングは実行しません。</p>
     <details><summary>対応範囲と制約</summary>
@@ -89,6 +89,7 @@ export function mount(container: HTMLElement): () => void {
       url = URL.createObjectURL(svgBlob);
       image.onload = () => {
         if (disposed || current !== revision) return;
+        image.style.setProperty('--diagram-min-width', `${image.naturalWidth * 0.8}px`);
         status.textContent = '図を更新しました。'; download.disabled = false;
       };
       image.onerror = () => {
