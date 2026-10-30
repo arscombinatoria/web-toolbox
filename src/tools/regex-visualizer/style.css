@@ -1,0 +1,18 @@
+.regex-tool { min-width: 0; }
+.regex-tool > label { display: block; font-weight: 600; }
+.regex-tool textarea { display: block; width: 100%; min-width: 0; max-width: 100%; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--text); font: inherit; resize: vertical; overflow-wrap: anywhere; }
+.regex-tool fieldset { min-width: 0; margin: var(--space-3) 0; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); }
+.regex-tool legend { padding: 0 var(--space-1); font-weight: 600; }
+.regex-flags, .regex-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.regex-flags label { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 2.75rem; padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.regex-flags label:has(:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.regex-flags input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; }
+.regex-tool button:disabled { opacity: 0.55; cursor: default; }
+.regex-tool p:not(.tool-description), .regex-tool details, .regex-warnings { font-size: 0.875rem; color: var(--muted); overflow-wrap: anywhere; }
+.regex-tool h2 { font-size: 1rem; }
+.regex-tool [role="status"] { min-height: 1.7em; }
+.regex-tool #regex-error { color: var(--text); }
+.regex-warnings { border-left: 3px solid var(--accent); padding: 0 var(--space-2); }
+.regex-canvas { max-width: 100%; min-width: 0; max-height: 70vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+.regex-canvas img { display: block; max-width: none; }
+.regex-tool summary { cursor: pointer; }
