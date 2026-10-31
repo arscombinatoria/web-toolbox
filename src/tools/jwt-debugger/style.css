@@ -1,0 +1,12 @@
+.jwt-tool label { display: block; font-weight: 600; margin-top: var(--space-2); }
+.jwt-tool textarea, .jwt-tool input, .jwt-tool select { display: block; width: 100%; min-width: 0; max-width: 100%; margin: var(--space-1) 0 var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--text); font: inherit; }
+.jwt-tool textarea { resize: vertical; }
+.jwt-editors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.jwt-editors > div { min-width: 0; }
+.jwt-tool p, .jwt-tool dd { overflow-wrap: anywhere; }
+.jwt-tool dd { white-space: pre-wrap; margin: var(--space-1) 0 var(--space-2); }
+.jwt-tool dt { font-weight: 600; }
+.jwt-tool p { color: var(--muted); }
+.jwt-tool [role="alert"] { color: var(--text); }
+.jwt-tool button:disabled { opacity: 0.55; cursor: default; }
+@media (max-width: 1050px) { .jwt-editors { grid-template-columns: minmax(0, 1fr); } }

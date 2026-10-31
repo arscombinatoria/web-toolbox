@@ -9,7 +9,7 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
   await expect(page).toHaveTitle('Web Toolbox');
   await expect(page.locator('.home').getByText('日々の作業を、少し手軽に。', { exact: true })).toBeVisible();
   await expect(page.getByText('ブラウザで使える、小さな便利ツール集です。', { exact: true })).toBeVisible();
-  await expect(page.locator('.tool-card')).toHaveCount(6);
+  await expect(page.locator('.tool-card')).toHaveCount(7);
   await expect(home).toHaveAttribute('aria-current', 'page');
   const initialHistory = await page.evaluate(() => history.length);
   await home.click();
@@ -201,7 +201,7 @@ test('ホームはアプリのチャンクだけを読み込み、外部通信�
   const requests: string[] = [];
   page.on('request', request => requests.push(request.url()));
   await page.goto('./');
-  await expect(page.locator('.tool-card')).toHaveCount(6);
+  await expect(page.locator('.tool-card')).toHaveCount(7);
   // load完了までの全通信を確認し、動的チャンクや外部リクエストがないことを検証する。
   await page.waitForLoadState('networkidle');
   expect(requests.every(url => new URL(url).origin === new URL(page.url()).origin)).toBe(true);

@@ -2,7 +2,7 @@
 
 ## 概要・設計方針
 
-Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・IP登録情報検索・全角／半角変換・Markdown表変換・正規表現の可視化・JST／UTC日時変換の6ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
+Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・IP登録情報検索・全角／半角変換・Markdown表変換・正規表現の可視化・JST／UTC日時変換・JWTデバッガーの7ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
 
 Vanilla TypeScript（strict）、ES Modules、Vite、HTML/CSS、ブラウザ標準APIを使用します。UIフレームワークや状態管理ライブラリは使用せず、各ツールのDOM操作と通信・変換処理を分離しています。共通UIはRegistryのメタデータから生成し、ツール本体は必要時に読み込みます。
 
@@ -42,6 +42,8 @@ web-toolbox/
         index.ts / logic.ts / xlsx.ts / style.css
       regex-visualizer/
         index.ts / runner.ts / protocol.ts / worker.ts / diagram.ts / style.css
+      jwt-debugger/
+        index.ts / logic.ts / verify.ts / style.css
       datetime/
         index.ts / logic.ts / style.css
   tests/                           # Playwrightのスモーク・詳細操作・IP欄レイアウト
@@ -59,9 +61,9 @@ web-toolbox/
 
 [src/registry.ts](../src/registry.ts)の`ToolDefinition`は`id`、`name`、`description`、`category`、`load`を持ちます。`load`は固定パスを指定した動的importです。URLの文字列をimportパスに直接使用しません。共通の`ToolModule`型もRegistryで定義します。
 
-`categories`の配列順はサイドバーのカテゴリ順、`tools`の配列順はカテゴリ内のツール順とホームのカード順になります。現在のツール順はIP確認、IP登録情報検索、全角・半角、Markdown表、正規表現、日時です。ホームはツール登録に含めず、`components/home.ts`で表示します。
+`categories`の配列順はサイドバーのカテゴリ順、`tools`の配列順はカテゴリ内のツール順とホームのカード順になります。現在のツール順はIP確認、IP登録情報検索、全角・半角、Markdown表、正規表現、JWT、日時です。ホームはツール登録に含めず、`components/home.ts`で表示します。
 
-ホームのカードはRegistryのID・名前・説明から生成します。ホーム表示時にはツールの`load`を呼ばず、ツール本体・正規表現Worker・regexpp・ExcelJSを読み込まず、ipify・RDAPにも通信しません。ExcelJSはMarkdown表のダウンロード操作時にさらに遅延読み込みします。
+ホームのカードはRegistryのID・名前・説明から生成します。ホーム表示時にはツールの`load`を呼ばず、ツール本体・正規表現Worker・regexpp・ExcelJS・joseを読み込まず、ipify・RDAPにも通信しません。ExcelJSはMarkdown表のダウンロード操作時、joseはJWTの署名検証操作時にさらに遅延読み込みします。
 
 ## ルーティング・画面ライフサイクル
 
@@ -117,7 +119,7 @@ Escape・閉じるボタン・ダイアログ背景のクリックで閉じ、�
 
 永続化するアプリ設定は手動選択したテーマのみです。localStorageの`web-toolbox-theme`に`light`または`dark`を保存し、「システム」で削除します。読み書き失敗は捕捉し、保存できなくても現在のテーマ選択とアプリ動作を継続します。
 
-ツールのデータ取得のための外部通信はIP確認のipifyと、IP登録情報検索のRDAP.orgおよび標準リダイレクト先を例外とします。接続先・送信方針・外部依存は各ツールの仕様に記載しています。他ツールの入力を送信する処理はありません。ツールやExcelJSの動的importは同一サイトの配信アセットを読み込みます。外部フォント・解析サービス・外部スクリプトは使用しません。
+ツールのデータ取得のための外部通信はIP確認のipifyと、IP登録情報検索のRDAP.orgおよび標準リダイレクト先を例外とします。接続先・送信方針・外部依存は各ツールの仕様に記載しています。他ツールの入力を送信する処理はありません。ツールやExcelJS・joseの動的importは同一サイトの配信アセットを読み込みます。外部フォント・解析サービス・外部スクリプトは使用しません。
 
 固定HTMLテンプレートにのみ`innerHTML`を使用し、利用者入力・変換結果・外部レスポンスはフォームの`value`または`textContent`で設定します。MarkdownのHTMLプレビューは行いません。IP・RDAPレスポンスは`unknown`として型と形式を検証します。
 
@@ -370,15 +372,15 @@ SVG文字列を`innerHTML`へ挿入せず、`image/svg+xml`のBlob URLを`img.sr
 
 共通基盤では`router.test.ts`がURL・標準リンク操作・履歴通知、`tool-host.test.ts`が遅いimportの成功／失敗と新画面の競合、ホーム遷移、破棄契約、`components/home.test.ts`がRegistry順のカードと未ロード、`components/theme.test.ts`がOS追従・手動保存・ストレージ拒否・購読解除を検証します。
 
-`npm test`は通常のVitest実行、`npm run test:coverage`はV8 Coverageを有効にし、`text`と`json-summary`を出力します。`coverage.include`は`src/`のJS/TSコード全体を指定し、未importのソースも対象にします。test/spec・`__tests__`・型宣言を除外し、起動処理・共通UI・ルーター・ホスト・6ツールを含めます。最低閾値は設定せず、Playwrightのカバレッジを合算しません。Vitestと`@vitest/coverage-v8`は同一の完全バージョンに固定しています。
+`npm test`は通常のVitest実行、`npm run test:coverage`はV8 Coverageを有効にし、`text`と`json-summary`を出力します。`coverage.include`は`src/`のJS/TSコード全体を指定し、未importのソースも対象にします。test/spec・`__tests__`・型宣言を除外し、起動処理・共通UI・ルーター・ホスト・7ツールを含めます。最低閾値は設定せず、Playwrightのカバレッジを合算しません。Vitestと`@vitest/coverage-v8`は同一の完全バージョンに固定しています。
 
 ### E2Eと検証範囲
 
 [playwright.config.ts](../playwright.config.ts)はビルド済み`dist/`をVite previewで配信し、`http://127.0.0.1:4173/web-toolbox/`を使用します。E2Eコマンド自体はビルドしないため、事前の`npm run build`が必要です。サーバーは既存プロセスを再利用せず、指定ポートで起動します。CIでは`test.only`を禁止し、診断用に失敗時に1回再試行します。`failOnFlakyTests: true`により再試行でのみ成功したケースもコマンドを失敗させ、失敗時のtraceを保持します。
 
-Chromiumはホームと6ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
+Chromiumはホームと7ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
 
-`tests/smoke.spec.ts`の7ケースはChromium・Firefox共通です。ホームからの遷移・URL・戻る／進む・再読み込み、IPv4／IPv6表示と再取得、文字種選択と双方向の文字幅変換、Markdown／TSV変換とエラー復帰、JSTの24時間表選択とUTC入力・epoch出力、RDAPの明示検索とJSON表示、正規表現のWorker描画・Unicode集合・構文エラーからの復帰を検証します。ブラウザのタイムゾーンをロサンゼルスに固定し、端末の時間帯に依存しない操作を確認します。
+`tests/smoke.spec.ts`の8ケースはChromium・Firefox共通です。ホームからの遷移・URL・戻る／進む・再読み込み、IPv4／IPv6表示と再取得、文字種選択と双方向の文字幅変換、Markdown／TSV変換とエラー復帰、JSTの24時間表選択とUTC入力・epoch出力、RDAPの明示検索とJSON表示、正規表現のWorker描画・Unicode集合・構文エラーからの復帰、JWTのデコード・実署名検証とエラー復帰を検証します。ブラウザのタイムゾーンをロサンゼルスに固定し、端末の時間帯に依存しない操作を確認します。
 
 Firefoxではスモークに加えて既存の`tests/ip-address-layout.spec.ts`を実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで維持します。詳細なコピー・ダウンロード・IME・モバイル操作などはChromium中心とし、Firefoxへ全ケースを複製しません。WebKitはSafari系のフォーム・レイアウト差の検出に有効ですが、追加ブラウザとOS依存の配備・実行のCI負荷が増えるため今回は追加しません。Safari固有の検証が必要になった時点で共通スモークへの追加を検討します。
 
@@ -416,3 +418,19 @@ SVGはE2E成功後に生成してPages成果物に含め、READMEが公開SVGを
 デプロイジョブは`main`へのpushに限り、CI成功後にGitHub公式Pages Actionsで`dist/`を`github-pages` environmentへ公開します。ActionsはコミットSHAに固定しています。ワークフローの基本権限は`contents: read`で、デプロイジョブのみに`pages: write`と`id-token: write`を付与します。
 
 ワークフローのconcurrencyはworkflow名とrefの組み合わせで、PRの古い実行だけをキャンセルします。デプロイジョブは別途`pages`グループで直列化し、実行中のデプロイをキャンセルしません。リポジトリのPages Source・Actions許可・environment制限の設定手順はREADMEを参照してください。設定ファイルやローカルテストだけでは公開成功を確定できず、マージ後のActionsと公開URLで確認します。
+
+## JWTデバッガーの詳細
+
+`jwt-debugger`をテキスト・データカテゴリへ登録。`logic.ts`は256KiBのUTF-8入力上限、3セグメント、厳密なBase64URL（非ゼロ末尾ビットも拒否）、fatal UTF-8、JSONオブジェクトを検証し、形式別エラーを返します。Header/Payloadは配列・nullを拒否。署名空欄はnoneのデコード用途として許容します。
+
+Claimsはiss/sub/aud/exp/nbf/iat/jtiを説明し、audの文字列配列も扱います。NumericDateは有限数値で評価し、expは現在時刻がexp以上で期限切れ、nbfは現在時刻が到達したら利用可能、未来iatは警告のみです。UTC/JST双方のDate表現範囲を確認し、小数秒の比較はNumber値で行います。表示はDateのミリ秒精度、JSTはUTC+09:00固定です。1秒ごとに端末時計で再評価し、破棄時にタイマー解除します。発行者・Audienceの期待値照合、時計ずれ許容値は扱いません。
+
+`verify.ts`は検証操作時のみバンドル済みjoseを動的importし、compactVerifyで署名だけを確認します。明示選択したHS256/RS256/ES256の許可リストとHeaderのalg一致を要求し、importSPKIとjose/Web Cryptoでキー種別・曲線等を確認します。none、その他alg、b64:falseやcrit拡張は検証不可。Base64 Secretはパディングを含む標準Base64を厳密にデコードします。エラーは固定メッセージに置換し、入力やライブラリエラーをログに出しません。
+
+UIは安全なvalue/textContent、readonly出力、独立したClaims・署名状態を使用します。入力・キー・方式変更、クリア、破棄で世代を更新し、検証・コピー完了時に世代と破棄状態を確認します。中止不能な暗号処理は完了後の表示を抑制し、破棄時はリスナー・タイマー・DOM入力と表示をクリアします。JavaScript文字列やWeb Crypto内部メモリの物理消去は保証できません。外部取得、URL/History/ストレージ/Cookie保存は行いません。
+
+隣接Vitestテストは形式・Unicode・NumericDate境界、実際にテスト用キーで署名したHS256/RS256/ES256の成功・不一致・改ざん・不正キー・非対応alg、UI競合・破棄・非保存を検証します。`tests/jwt-debugger.spec.ts`は実署名、コピー成功/失敗、直接アクセス・再読み込み・履歴、両テーマ・狭い幅・キーボード、非通信・非保存を確認します。
+
+JWTの表示・コピーは`json.ts`で構文検証済みの元JSONを字句単位に走査し、文字列外の空白のみ整形します。数値トークン・文字列リテラル・キー順・重複キーを保持し、Number値の再出力は行いません。深いJSONの出力膨張を抑えるためインデントは32階層で上限にします。`decodeJwt`は元のUTF-8文字列、表示JSON、解析済みオブジェクトを分離して返します。
+
+日時Claimsはトップレベルの数値トークンをNumberの最短十進表記と係数・桁位置で比較します。丸め、オーバーフロー、アンダーフローで十進値が変わった場合は日時・期限判定を控え、精度警告を表示します。通常の0.1等の小数は従来どおり受理します（IEEE 754の二進表現が十進小数と完全一致することは要求しません）。巨大指数を展開せず、重複キーはJSON.parseと同じく最後の値に対応させます。表示の精度保持と、Number／Dateによる評価・ミリ秒表示の制約は独立しています。

@@ -4,7 +4,7 @@
 
 ![Coverage](https://arscombinatoria.github.io/web-toolbox/coverage.svg)
 
-ブラウザで使える小さな便利ツール集です。IPアドレス確認、全角・半角変換、Markdown表変換、正規表現の可視化、JST・UTC日時変換を提供する、バックエンドを持たない静的SPAです。
+ブラウザで使える小さな便利ツール集です。IPアドレス確認、全角・半角変換、Markdown表変換、正規表現の可視化、JWTデバッガー、JST・UTC日時変換を提供する、バックエンドを持たない静的SPAです。
 
 トップページのカードやサイドバーからツールを選べます。ヘッダーの「Web Toolbox」またはメニューの「ホーム」からトップページに戻れます。個別URLへの直接アクセス、再読み込み、ブラウザの戻る・進むに対応しています。モバイルではヘッダーからメニューを開けます。
 
@@ -21,6 +21,7 @@
 | [全角・半角変換](https://arscombinatoria.github.io/web-toolbox/?tool=width-converter) | 英数字・記号・カタカナ・スペースの双方向変換 |
 | [Markdown表変換](https://arscombinatoria.github.io/web-toolbox/?tool=markdown-table) | Markdown表とExcel貼り付け用TSVの相互変換、XLSX出力（XLSX読み込みは非対応） |
 | [正規表現の可視化](https://arscombinatoria.github.io/web-toolbox/?tool=regex-visualizer) | JavaScript正規表現の構造をRailroad Diagramで表示、SVG出力 |
+| [JWTデバッガー](https://arscombinatoria.github.io/web-toolbox/?tool=jwt-debugger) | JWTのデコード、Claims・UTC/JST日時評価、HS256・RS256・ES256署名検証 |
 | [JST・UTC日時変換](https://arscombinatoria.github.io/web-toolbox/?tool=datetime) | JST・UTCの24時間対応表と日時変換 |
 
 ## IPアドレス確認
@@ -159,3 +160,11 @@ npm run preview
 
 - [詳細設計書](docs/architecture.md)：変換規則、内部処理、ライフサイクル、検証対象、CI/CDの詳細を記載しています。
 - [開発・実装規約](AGENTS.md)：開発時の作業範囲と実装・検証の規約を記載しています。
+
+## JWTデバッガー
+
+JWTを貼り付けるとHeader・Payloadの整形JSON、alg・typ、SignatureのBase64URLとバイト長、標準Claimsを表示します。Header・Payloadは元の数値表現・文字列エスケープを保持して表示し、個別にコピーできます。Numberの精度で保持できない日時Claimsは判定せず警告します。NumericDateは有限の小数秒も受理し、Unix秒・UTC・JSTとexp／nbf／iatの状態を端末時計で評価します。
+
+署名検証はアルゴリズムを選び、キーを入力して「検証」を押します。HS256はUTF-8 Secret（初期状態でマスク）、または明示選択したBase64 Secret、RS256・ES256はSPKI PEM公開鍵を使用します。署名一致・不一致・未検証・検証不可を区別し、入力変更で未検証に戻ります。**デコード成功・期限内・署名一致のいずれも、発行者やAudienceを含めたJWT全体の信頼性を保証しません。**
+
+入力・結果は外部送信・保存せず、画面を離れると破棄します。各入力は256KiBまで。3セグメントのCompact JWSのみ対応し、alg: noneはデコードのみです。JWT生成・署名、JWE復号、JWKS取得、jku・x5u・kidからの外部取得には対応しません。

@@ -44,6 +44,11 @@ export const tools: readonly ToolDefinition[] = [
     load: () => import('./tools/regex-visualizer/index'),
   },
   {
+    id: 'jwt-debugger', name: 'JWTデバッガー', category: 'text-data',
+    description: 'JWTのデコード・Claims確認・署名検証',
+    load: () => import('./tools/jwt-debugger/index'),
+  },
+  {
     id: 'datetime', name: '日時・UTC変換', category: 'date-time',
     description: 'JST・UTCの24時間対応表と日時変換',
     load: () => import('./tools/datetime/index'),
