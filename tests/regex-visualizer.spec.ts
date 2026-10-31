@@ -265,7 +265,7 @@ test('テーマ変更は再解析せず、表示と保存SVGの配色・構造�
         ['.canvas-background', 'fill', 'page'], ['.literal text', 'fill', 'text'],
         ['path', 'stroke', 'muted'], ['.heading text', 'fill', 'muted'],
         ['.literal rect', 'fill', 'accent-soft'], ['.literal rect', 'stroke', 'accent'],
-        ['.condition rect', 'fill', 'surface'], ['.group > rect', 'stroke', 'border'],
+        ['.condition rect', 'fill', 'surface'], ['.group > rect', 'stroke', 'muted'],
       ];
       const probe = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); root.append(probe);
       const matches = pairs.every(([selector, property, token]) => {

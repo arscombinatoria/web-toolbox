@@ -252,7 +252,7 @@ svg[data-theme="dark"]{--page:#131922;--surface:#1b2430;--text:#edf2f9;--muted:#
 path{fill:none;stroke:var(--muted);stroke-width:2;stroke-linejoin:round}circle{fill:var(--accent)}
 rect{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}text{fill:var(--text);font-size:13px;stroke:none}
 .condition rect{fill:var(--surface);stroke:var(--muted);stroke-dasharray:5 3}.reference rect{fill:var(--surface);stroke:var(--accent);stroke-dasharray:2 2}
-.set rect{fill:var(--accent-soft)}.group>rect{fill:none;stroke:var(--border)}.heading rect{fill:var(--page);stroke:none}.heading text{fill:var(--muted)}
+.set rect{fill:var(--accent-soft)}.group>rect{fill:none;stroke:var(--muted)}.heading rect{fill:var(--page);stroke:none}.heading text{fill:var(--muted)}
 .canvas-background{fill:var(--page);stroke:none}
 </style><rect class="canvas-background" width="${width}" height="${height}"/>${placed(metadata, 16, 12)}${content.join('')}</svg>`;
     if (svg.length > MAX_SVG_LENGTH) throw new DiagramLimit('SVGが安全上限（100万文字）を超えます。式を分割してください。');

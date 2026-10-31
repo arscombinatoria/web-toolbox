@@ -191,5 +191,6 @@ it('SVGに既存の両テーマのトークンと全面の不透明な背景を�
   expect(background.nextElementSibling?.tagName).toBe('g');
   expect(style).toContain('.canvas-background{fill:var(--page);stroke:none}');
   expect(style).not.toContain('prefers-color-scheme');
+  expect(style).toContain('.group>rect{fill:none;stroke:var(--muted)}');
   expect(style).toContain('stroke-dasharray:5 3'); expect(style).toContain('stroke-dasharray:2 2');
 });
