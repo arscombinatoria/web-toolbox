@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import ExcelJS from 'exceljs-community';
 import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures';
 

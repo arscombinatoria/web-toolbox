@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import ExcelJS from 'exceljs-community';
 import { validateTable, type TableData } from './logic';
 
 // 巨大なワークブックを作らずにExcelの上限を検証できるよう、生成と分離する。
