@@ -110,3 +110,60 @@ it('中止・IME変換・破棄後にWorker・イベント・タイマーが画�
   ui.dispose(); ui.fill('after dispose'); late(new MessageEvent('message', { data: { id, ok: true, svg: 'late', warnings: [] } }));
   expect(ui.create).not.toHaveBeenCalled(); expect(vi.getTimerCount()).toBe(0); expect(document.body.children).toHaveLength(0);
 });
+
+it('テーマだけを連続変更して基本SVGを再利用し、古い画像イベントとURLを破棄する', async () => {
+  vi.stubGlobal('Blob', (await import('node:buffer')).Blob);
+  document.documentElement.dataset.theme = 'light';
+  const ui = setup(); ui.tick();
+  const base = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><title>図</title><text>&lt;safe&gt;</text></svg>';
+  FakeWorker.instances[0]!.finish({ ok: true, svg: base, warnings: ['条件の注意'] });
+  ui.image.dispatchEvent(new Event('load'));
+  const input = ui.input.value;
+  const loads = [ui.image.onload!]; const errors = [ui.image.onerror!];
+  for (const theme of ['dark', 'light', 'dark']) {
+    document.documentElement.dataset.theme = theme;
+    await Promise.resolve();
+    expect(ui.download.disabled).toBe(true);
+    expect(ui.image.style.visibility).toBe('hidden');
+    expect(ui.image.hidden).toBe(false);
+    loads.push(ui.image.onload!); errors.push(ui.image.onerror!);
+  }
+  for (const load of loads.slice(0, -1)) load.call(ui.image, new Event('load'));
+  for (const error of errors.slice(0, -1)) error.call(ui.image, new Event('error'));
+  expect(ui.download.disabled).toBe(true); expect(ui.error.textContent).toBe('');
+  expect(ui.image.src).toBe('blob:regex-4');
+  ui.image.dispatchEvent(new Event('load'));
+  expect(ui.download.disabled).toBe(false); expect(ui.image.style.visibility).toBe('');
+  expect(FakeWorker.instances).toHaveLength(1); expect(ui.input.value).toBe(input);
+  expect(document.querySelectorAll('.regex-warnings li')).toHaveLength(1);
+  const svgs = await Promise.all(ui.create.mock.calls.map(async call => (call[0] as Blob).text()));
+  expect(svgs.map(svg => new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement.dataset.theme)).toEqual(['light', 'dark', 'light', 'dark']);
+  for (const svg of svgs) expect(svg.replace(/ data-theme="(?:light|dark)"/, '')).toBe(base);
+  ui.download.click();
+  expect(ui.create.mock.calls[4]![0]).toBe(ui.create.mock.calls[3]![0]);
+  const staleLoad = ui.image.onload!;
+  ui.fill('next'); staleLoad.call(ui.image, new Event('load'));
+  document.documentElement.dataset.theme = 'light'; await Promise.resolve();
+  expect(ui.create).toHaveBeenCalledTimes(5); expect(ui.download.disabled).toBe(true);
+  ui.dispose();
+  document.documentElement.dataset.theme = 'dark'; await Promise.resolve();
+  expect(ui.create).toHaveBeenCalledTimes(5);
+  expect(ui.revoke.mock.calls.map(call => call[0]).sort()).toEqual(['blob:regex-1', 'blob:regex-2', 'blob:regex-3', 'blob:regex-4', 'blob:regex-5']);
+  delete document.documentElement.dataset.theme;
+});
+
+it('解析中のテーマ変更はWorkerを再作成せず、完了時のテーマを採用して破棄時に監視を解除する', async () => {
+  vi.stubGlobal('Blob', (await import('node:buffer')).Blob);
+  const ui = setup(); ui.tick();
+  document.documentElement.dataset.theme = 'dark'; await Promise.resolve();
+  expect(ui.create).not.toHaveBeenCalled(); expect(FakeWorker.instances).toHaveLength(1);
+  FakeWorker.instances[0]!.finish();
+  expect(await (ui.create.mock.calls[0]![0] as Blob).text()).toContain('data-theme="dark"');
+  const staleLoad = ui.image.onload!; const staleError = ui.image.onerror!;
+  ui.dispose();
+  document.documentElement.dataset.theme = 'light'; await Promise.resolve();
+  staleLoad.call(ui.image, new Event('load')); staleError.call(ui.image, new Event('error'));
+  expect(ui.create).toHaveBeenCalledOnce(); expect(ui.revoke).toHaveBeenCalledExactlyOnceWith('blob:regex-1');
+  expect(document.body.children).toHaveLength(0);
+  delete document.documentElement.dataset.theme;
+});

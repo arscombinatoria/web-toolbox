@@ -246,12 +246,15 @@ export function createDiagram(pattern: string, flags: string): DiagramResult {
       checkSize(width, height);
     }
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>ECMAScript 正規表現の構造図</title><desc>条件は0文字。回数と優先順位はラベルで指定。マッチングは実行しません。</desc><style>
-svg{background:#fff;color:#172334;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-path{fill:none;stroke:#526174;stroke-width:2;stroke-linejoin:round}circle{fill:#245bc2}
-rect{fill:#edf3ff;stroke:#245bc2;stroke-width:1.5}text{fill:#172334;font-size:13px;stroke:none}
-.condition rect{fill:#f8fafc;stroke:#526174;stroke-dasharray:5 3}.reference rect{fill:#f8fafc;stroke:#245bc2;stroke-dasharray:2 2}
-.set rect{fill:#edf3ff}.group>rect{fill:none;stroke:#526174}.heading rect{fill:#fff;stroke:none}
-</style>${placed(metadata, 16, 12)}${content.join('')}</svg>`;
+/* main.cssの既存トークン。Blob画像と保存ファイルでも単体で解決できるよう内包する。 */
+svg{--page:#f8fafc;--surface:#ffffff;--text:#172334;--muted:#526174;--border:#dce3ec;--accent:#245bc2;--accent-soft:#edf3ff;background:var(--page);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+svg[data-theme="dark"]{--page:#131922;--surface:#1b2430;--text:#edf2f9;--muted:#b3bfd0;--border:#364253;--accent:#99bcff;--accent-soft:#263a5a}
+path{fill:none;stroke:var(--muted);stroke-width:2;stroke-linejoin:round}circle{fill:var(--accent)}
+rect{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}text{fill:var(--text);font-size:13px;stroke:none}
+.condition rect{fill:var(--surface);stroke:var(--muted);stroke-dasharray:5 3}.reference rect{fill:var(--surface);stroke:var(--accent);stroke-dasharray:2 2}
+.set rect{fill:var(--accent-soft)}.group>rect{fill:none;stroke:var(--border)}.heading rect{fill:var(--page);stroke:none}.heading text{fill:var(--muted)}
+.canvas-background{fill:var(--page);stroke:none}
+</style><rect class="canvas-background" width="${width}" height="${height}"/>${placed(metadata, 16, 12)}${content.join('')}</svg>`;
     if (svg.length > MAX_SVG_LENGTH) throw new DiagramLimit('SVGが安全上限（100万文字）を超えます。式を分割してください。');
     return { ok: true, svg, warnings: [...warnings] };
   } catch (error) {

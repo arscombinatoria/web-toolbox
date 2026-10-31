@@ -34,7 +34,7 @@ export function mount(container: HTMLElement): () => void {
         d/g/y は検索時の動作フラグで、構造の分岐は増やしません。i の文字展開や検索開始位置、バックトラッキングの実行順は再現しません。
         図は意味解析の完全な検証ではなく、到達不能な分岐や空になるUnicode集合をすべて検出するものではありません。</p>
       <p>安全上限は入力4,096 UTF-16コード単位、800 ASTノード、深さ48、図の各辺16,000px・面積1,200万px、SVG100万文字、処理4秒です。
-        超過時は切り詰めず理由を表示します。図は両テーマで読める白いキャンバスで表示・保存します。</p>
+        超過時は切り詰めず理由を表示します。図は選択中のテーマで表示し、同じ配色で保存します。</p>
     </details>`;
   const tool = findTool('regex-visualizer')!;
   view.querySelector('h1')!.textContent = tool.name;
@@ -62,6 +62,10 @@ export function mount(container: HTMLElement): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let url: string | undefined;
   let svgBlob: Blob | undefined;
+  let baseSvg: string | undefined;
+  const root = document.documentElement;
+  const currentTheme = () => root.dataset.theme === 'dark' ? 'dark' : 'light';
+  let renderedTheme = currentTheme();
   let disposed = false;
   let revision = 0;
   let composing = false;
@@ -74,6 +78,41 @@ export function mount(container: HTMLElement): () => void {
     url = undefined; svgBlob = undefined;
   };
   const showError = (text: string) => { error.textContent = text; status.textContent = ''; };
+  const renderImage = () => {
+    if (disposed || !baseSvg) return;
+    const current = revision;
+    const previousUrl = url;
+    renderedTheme = currentTheme();
+    download.disabled = true;
+    // テーマ更新中も画像の領域を保持し、旧配色の描画だけを隠す。
+    image.style.visibility = 'hidden';
+    try {
+      // 生成器の固定ルートだけに固定属性を追加する。入力やDOMの属性値は挿入しない。
+      const svg = baseSvg.replace(/^<svg\b/, `<svg data-theme="${renderedTheme}"`);
+      svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+      const nextUrl = URL.createObjectURL(svgBlob);
+      url = nextUrl;
+      if (previousUrl) URL.revokeObjectURL(previousUrl);
+      image.onload = () => {
+        if (disposed || current !== revision || url !== nextUrl) return;
+        image.style.setProperty('--diagram-min-width', `${image.naturalWidth * 0.8}px`);
+        image.style.visibility = '';
+        status.textContent = '図を更新しました。'; download.disabled = false;
+      };
+      image.onerror = () => {
+        if (disposed || current !== revision || url !== nextUrl) return;
+        clearImage(); showError('描画エラー：SVGを表示できませんでした。');
+      };
+      image.src = nextUrl; image.hidden = false;
+      status.textContent = 'SVGを読み込んでいます。';
+    } catch {
+      clearImage(); showError('描画エラー：SVGの表示用URLを作成できませんでした。');
+    }
+  };
+  const themeObserver = new MutationObserver(() => {
+    if (currentTheme() !== renderedTheme) renderImage();
+  });
+  themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
   const receive = (result: DiagramResult) => {
     if (disposed) return;
     cancelButton.disabled = true;
@@ -83,34 +122,19 @@ export function mount(container: HTMLElement): () => void {
       input.setAttribute('aria-invalid', String(result.kind === 'syntax'));
       return;
     }
-    const current = revision;
-    try {
-      svgBlob = new Blob([result.svg], { type: 'image/svg+xml;charset=utf-8' });
-      url = URL.createObjectURL(svgBlob);
-      image.onload = () => {
-        if (disposed || current !== revision) return;
-        image.style.setProperty('--diagram-min-width', `${image.naturalWidth * 0.8}px`);
-        status.textContent = '図を更新しました。'; download.disabled = false;
-      };
-      image.onerror = () => {
-        if (disposed || current !== revision) return;
-        clearImage(); showError('描画エラー：SVGを表示できませんでした。');
-      };
-      image.src = url; image.hidden = false;
-      const list = warnings.querySelector('ul')!;
-      for (const warning of result.warnings) {
-        const item = document.createElement('li'); item.textContent = warning; list.append(item);
-      }
-      warnings.hidden = !result.warnings.length;
-      status.textContent = 'SVGを読み込んでいます。';
-    } catch {
-      clearImage(); showError('描画エラー：SVGの表示用URLを作成できませんでした。');
+    baseSvg = result.svg;
+    renderImage();
+    const list = warnings.querySelector('ul')!;
+    for (const warning of result.warnings) {
+      const item = document.createElement('li'); item.textContent = warning; list.append(item);
     }
+    warnings.hidden = !result.warnings.length;
   };
   const runner = createRunner(receive);
   const invalidate = () => {
     revision++; runner.cancel();
     clearTimeout(timer); timer = undefined;
+    baseSvg = undefined;
     clearImage();
     error.textContent = ''; status.textContent = '';
     input.setAttribute('aria-invalid', 'false');
@@ -158,7 +182,7 @@ export function mount(container: HTMLElement): () => void {
   update();
   return () => {
     if (disposed) return;
-    disposed = true; invalidate(); runner.dispose(); listeners.abort();
+    disposed = true; themeObserver.disconnect(); invalidate(); runner.dispose(); listeners.abort();
     for (const [downloadUrl, release] of downloads) { clearTimeout(release); URL.revokeObjectURL(downloadUrl); }
     downloads.clear(); view.remove();
   };

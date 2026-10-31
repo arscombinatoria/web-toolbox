@@ -13,7 +13,7 @@
 .regex-tool [role="status"] { min-height: 1.7em; }
 .regex-tool #regex-error { color: var(--text); }
 .regex-warnings { border-left: 3px solid var(--accent); padding: 0 var(--space-2); }
-.regex-canvas { width: 100%; contain: inline-size; overscroll-behavior: contain; max-width: 100%; min-width: 0; max-height: 70vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+.regex-canvas { width: 100%; contain: inline-size; overscroll-behavior: contain; max-width: 100%; min-width: 0; max-height: 70vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); }
 /* 自然幅の80%より縮めず、長い図は領域内でスクロールする。 */
 .regex-canvas img { display: block; width: auto; height: auto; max-width: 100%; min-width: var(--diagram-min-width, 0px); margin: var(--space-2) auto; }
 .regex-canvas img[hidden] { display: none; }
