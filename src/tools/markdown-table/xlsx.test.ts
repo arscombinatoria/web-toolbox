@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import ExcelJS from 'exceljs';
+import ExcelJS, { type Worksheet } from 'exceljs-community';
 import { generateXlsx, validateXlsxTable } from './xlsx';
 
-async function readXlsx(rows: string[][]): Promise<ExcelJS.Worksheet> {
+async function readXlsx(rows: string[][]): Promise<Worksheet> {
   const bytes = await generateXlsx({ rows });
   expect(bytes).toBeInstanceOf(Uint8Array);
   expect(Array.from(bytes.slice(0, 2))).toEqual([80, 75]);
