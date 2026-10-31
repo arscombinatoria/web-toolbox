@@ -421,6 +421,8 @@ SVGはE2E成功後に生成してPages成果物に含め、READMEが公開SVGを
 
 ## JWTデバッガーの詳細
 
+`sample.ts`に公開学習用のUTF-8 Secretと、事前にHS256署名した固定Compact JWSを定義します。mount時に入力へ設定して既存のdecodeを実行し、署名は未検証のまま操作を待ちます。初期デモSecretはJWT入力変更時に消去しますが、Secretを手動編集した時点で初期値扱いを解除し、以後のJWT変更では保持します。アルゴリズム変更とクリアでは従来どおりキーを消去します。クリア後は空のまま、再読み込み・ツール復帰による新しいmountでのみサンプルを再設定します。入力やキーは保存しません。
+
 `jwt-debugger`をテキスト・データカテゴリへ登録。`logic.ts`は256KiBのUTF-8入力上限、3セグメント、厳密なBase64URL（非ゼロ末尾ビットも拒否）、fatal UTF-8、JSONオブジェクトを検証し、形式別エラーを返します。Header/Payloadは配列・nullを拒否。署名空欄はnoneのデコード用途として許容します。
 
 Claimsはiss/sub/aud/exp/nbf/iat/jtiを説明し、audの文字列配列も扱います。NumericDateは有限数値で評価し、expは現在時刻がexp以上で期限切れ、nbfは現在時刻が到達したら利用可能、未来iatは警告のみです。UTC/JST双方のDate表現範囲を確認し、小数秒の比較はNumber値で行います。表示はDateのミリ秒精度、JSTはUTC+09:00固定です。1秒ごとに端末時計で再評価し、破棄時にタイマー解除します。発行者・Audienceの期待値照合、時計ずれ許容値は扱いません。

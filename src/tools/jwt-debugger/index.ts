@@ -1,6 +1,7 @@
 import { findTool } from '../../registry';
 import { analyzeClaims, decodeJwt, MAX_BYTES } from './logic';
 import { algorithms, type Algorithm, verifySignature } from './verify';
+import { DEMO_SECRET, SAMPLE_JWT } from './sample';
 import './style.css';
 
 export function mount(container: HTMLElement): () => void {
@@ -11,7 +12,8 @@ export function mount(container: HTMLElement): () => void {
     <h1 tabindex="-1"></h1><p class="tool-description"></p>
     <p id="jwt-privacy">入力内容はブラウザ内で処理し、外部送信・保存しません。デコード成功は署名の正当性を意味しません。</p>
     <p>3セグメントのCompact JWS専用です。JWE（5セグメント）は非対応です。各入力の上限は256KiBです。</p>
-    <label for="jwt-input">JWT入力</label><textarea id="jwt-input" rows="5" spellcheck="false" autocomplete="off" aria-describedby="jwt-privacy"></textarea>
+    <label for="jwt-input">JWT入力</label><textarea id="jwt-input" rows="5" spellcheck="false" autocomplete="off" aria-describedby="jwt-privacy jwt-sample"></textarea>
+    <p id="jwt-sample">初回表示には署名検証を試せるサンプルJWTとデモ用Secretを設定しています。デモ用Secretは公開された学習用キーであり、実際の認証システムでは使用できません。</p>
     <button type="button" data-clear>入力をクリア</button><p role="alert" data-error></p>
     <div class="jwt-editors">
       <div><label for="jwt-header">Header</label><textarea id="jwt-header" rows="10" readonly spellcheck="false"></textarea><button type="button" data-copy="header">Headerをコピー</button></div>
@@ -50,6 +52,7 @@ export function mount(container: HTMLElement): () => void {
   const options = { signal: listeners.signal };
   let disposed = false;
   let revision = 0;
+  let hasInitialDemoSecret = true;
   let decoded: ReturnType<typeof decodeJwt> | undefined;
   const invalidate = () => {
     query('[data-warning]').textContent = '';
@@ -89,11 +92,16 @@ export function mount(container: HTMLElement): () => void {
     copies.forEach(button => { button.disabled = !header.value; });
     updateClaims(); invalidate();
   };
-  input.addEventListener('input', decode, options);
-  for (const field of [secret, publicKey]) field.addEventListener('input', invalidate, options);
+  input.addEventListener('input', () => {
+    if (hasInitialDemoSecret) { secret.value = ''; hasInitialDemoSecret = false; }
+    decode();
+  }, options);
+  secret.addEventListener('input', () => { hasInitialDemoSecret = false; invalidate(); }, options);
+  publicKey.addEventListener('input', invalidate, options);
   encoding.addEventListener('change', invalidate, options);
   alg.addEventListener('change', () => {
     secret.value = publicKey.value = '';
+    hasInitialDemoSecret = false;
     query('[data-secret-fields]').hidden = alg.value !== 'HS256';
     query('[data-public-fields]').hidden = alg.value === 'HS256';
     invalidate();
@@ -104,6 +112,7 @@ export function mount(container: HTMLElement): () => void {
     query('[data-reveal]').setAttribute('aria-pressed', String(secret.type === 'text'));
   }, options);
   query('[data-clear]').addEventListener('click', () => {
+    hasInitialDemoSecret = false;
     input.value = secret.value = publicKey.value = ''; secret.type = 'password';
     query('[data-reveal]').textContent = 'Secretを表示'; query('[data-reveal]').setAttribute('aria-pressed', 'false');
     decode(); input.focus();
@@ -125,6 +134,7 @@ export function mount(container: HTMLElement): () => void {
     }
   }, options);
   const timer = window.setInterval(updateClaims, 1000);
+  input.value = SAMPLE_JWT; secret.value = DEMO_SECRET;
   container.append(view); decode();
   return () => {
     disposed = true; decoded = undefined; revision++; listeners.abort(); window.clearInterval(timer);
