@@ -1,7 +1,7 @@
 import { checkSize, decodeBase64, decodeJwt } from './logic';
 export const algorithms = ['HS256', 'RS256', 'ES256'] as const;
 export type Algorithm = typeof algorithms[number];
-export type Verification = { state: 'match' | 'mismatch' | 'unavailable'; message: string };
+export type Verification = { state: 'match' | 'mismatch' | 'unavailable'; message: string; warning?: string };
 export async function verifySignature(token: string, algorithm: string, keyText: string, encoding: string): Promise<Verification> {
   const unavailable = (message: string): Verification => ({ state: 'unavailable', message: `検証不可: ${message}` });
   try {
@@ -20,7 +20,10 @@ export async function verifySignature(token: string, algorithm: string, keyText:
     } catch { return unavailable('キー形式が不正です。Secretの形式、またはSPKI PEMとキー種別を確認してください。'); }
     try {
       await compactVerify(token.trim(), key, { algorithms: [algorithm] });
-      return { state: 'match', message: '署名一致' };
+      return { state: 'match', message: '署名一致',
+        ...(algorithm === 'HS256' && key instanceof Uint8Array && key.length < 32
+          ? { warning: 'HS256のSecretが32バイト未満であり、RFC 7518の鍵長要件を満たしていません。' } : {}),
+      };
     } catch (error) {
       if (error instanceof errors.JWSSignatureVerificationFailed) return { state: 'mismatch', message: '署名不一致' };
       return unavailable('キー種別・サイズ、またはJWS形式が不正です。');

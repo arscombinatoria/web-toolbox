@@ -28,3 +28,16 @@ it.each(['none', 'HS512', 'unknown'])('%sは成功にしない', async alg => {
   const token = `${Buffer.from(JSON.stringify({ alg })).toString('base64url')}.e30.`;
   expect((await verifySignature(token, alg, secret, 'utf8')).state).toBe('unavailable');
 });
+it.each(['utf8', 'base64'])('短いSecret警告のバイト境界: %s', async encoding => {
+  for (const length of [31, 32]) {
+    const text = 'あ'.repeat(10) + 'a'.repeat(length - 30);
+    const key = new TextEncoder().encode(text);
+    const token = await new SignJWT({}).setProtectedHeader({ alg: 'HS256' }).sign(key);
+    const input = encoding === 'utf8' ? text : Buffer.from(key).toString('base64');
+    const result = await verifySignature(token, 'HS256', input, encoding);
+    expect(result.state).toBe('match');
+    expect(Boolean(result.warning)).toBe(length < 32);
+    const wrong = await verifySignature(token, 'HS256', encoding === 'utf8' ? 'wrong' : 'd3Jvbmc=', encoding);
+    expect(wrong.state).toBe('mismatch'); expect(wrong.warning).toBeUndefined();
+  }
+});

@@ -1,6 +1,6 @@
 import { findTool } from '../../registry';
 import { analyzeClaims, decodeJwt, MAX_BYTES } from './logic';
-import { verifySignature } from './verify';
+import { algorithms, type Algorithm, verifySignature } from './verify';
 import './style.css';
 
 export function mount(container: HTMLElement): () => void {
@@ -20,7 +20,7 @@ export function mount(container: HTMLElement): () => void {
     <p>結果は選択して手動でもコピーできます。</p><p data-meta></p>
     <label for="jwt-signature">Signature（Base64URL）</label><textarea id="jwt-signature" rows="2" readonly></textarea><p data-bytes></p>
     <h2>Claims・日時評価（署名とは独立）</h2><p>現在の端末時計で評価します。期限内でもJWT全体の有効性・安全性は保証されません。</p><dl data-claims></dl>
-    <h2>署名検証</h2><label for="jwt-alg">検証アルゴリズム・キー種別</label>
+    <h2>署名検証</h2><p data-alg-help></p><p data-warning role="status"></p><label for="jwt-alg">検証アルゴリズム・キー種別</label>
     <select id="jwt-alg"><option>HS256</option><option>RS256</option><option>ES256</option></select>
     <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="password" autocomplete="off" spellcheck="false">
     <button type="button" data-reveal aria-pressed="false">Secretを表示</button>
@@ -50,7 +50,17 @@ export function mount(container: HTMLElement): () => void {
   const options = { signal: listeners.signal };
   let disposed = false;
   let revision = 0;
-  const invalidate = () => { revision++; result.textContent = '未検証'; copyStatus.textContent = ''; verify.disabled = !header.value; };
+  const invalidate = () => {
+    query('[data-warning]').textContent = '';
+    let help = '';
+    if (header.value) {
+      const declared: unknown = (JSON.parse(header.value) as Record<string, unknown>).alg;
+      help = typeof declared !== 'string' || !algorithms.includes(declared as Algorithm)
+        ? 'Headerのalgは未指定・不正または非対応です。署名検証はできません。'
+        : declared !== alg.value ? `検証アルゴリズムで${declared}を選択してください。` : '';
+    } else if (input.value.trim()) help = 'JWTの形式を確認してください。';
+    query('[data-alg-help]').textContent = help;
+    revision++; result.textContent = '未検証'; copyStatus.textContent = ''; verify.disabled = !header.value; };
   const updateClaims = () => {
     const list = query('[data-claims]');
     list.replaceChildren();
@@ -101,7 +111,7 @@ export function mount(container: HTMLElement): () => void {
     verify.disabled = true; result.textContent = '検証中…';
     const outcome = await verifySignature(input.value, alg.value, alg.value === 'HS256' ? secret.value : publicKey.value, encoding.value);
     if (disposed || current !== revision) return;
-    result.textContent = outcome.message; verify.disabled = false;
+    result.textContent = outcome.message; query('[data-warning]').textContent = outcome.warning ?? ''; verify.disabled = false;
   }, options);
   for (const button of copies) button.addEventListener('click', async () => {
     const current = revision;

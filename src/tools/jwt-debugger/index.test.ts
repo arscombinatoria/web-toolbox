@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { mount } from './index';
 import { verifySignature, type Verification } from './verify';
-vi.mock('./verify', () => ({ verifySignature: vi.fn() }));
+vi.mock('./verify', () => ({ algorithms: ['HS256', 'RS256', 'ES256'], verifySignature: vi.fn() }));
 const token = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.';
 let dispose: (() => void) | undefined;
 afterEach(() => { dispose?.(); document.body.replaceChildren(); vi.unstubAllGlobals(); });
@@ -50,4 +50,14 @@ it('コピー完了前の入力変更で古い通知を抑止する', async () =
   document.querySelector<HTMLButtonElement>('[data-copy="header"]')!.click();
   fill('input', '!'); finish(); await Promise.resolve(); await Promise.resolve();
   expect(document.querySelector('[data-copy-status]')!.textContent).toBe('');
+});
+
+it('Header algに応じて明示選択を案内する', () => {
+  dispose = mount(document.body);
+  fill('input', 'eyJhbGciOiJSUzI1NiJ9.e30.');
+  expect(document.querySelector('[data-alg-help]')!.textContent).toContain('RS256を選択');
+  const select = field('alg'); select.value = 'RS256'; select.dispatchEvent(new Event('change'));
+  expect(document.querySelector('[data-alg-help]')!.textContent).toBe('');
+  fill('input', 'eyJhbGciOiJub25lIn0.e30.');
+  expect(document.querySelector('[data-alg-help]')!.textContent).toContain('非対応');
 });

@@ -48,7 +48,7 @@ for (const theme of ['light', 'dark']) for (const width of [1280, 320]) {
     await page.goto('./?tool=jwt-debugger');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
     await page.getByLabel('JWT入力', { exact: true }).fill('eyJhbGciOiJub25lIn0.eyJzdWIiOiI8c2NyaXB0PiJ9.');
-    await expect(page.getByLabel('Payload', { exact: true })).toHaveValue(/<script>/);
+    expect(await page.getByLabel('Payload', { exact: true }).inputValue()).toContain('<script>');
     const header = await page.getByLabel('Header', { exact: true }).boundingBox();
     const payload = await page.getByLabel('Payload', { exact: true }).boundingBox();
     if (width === 1280) expect(header!.y).toBe(payload!.y);
