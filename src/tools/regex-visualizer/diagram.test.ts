@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createDiagram } from './diagram';
 import { FLAGS, MAX_PATTERN_LENGTH } from './protocol';
 
@@ -166,4 +167,30 @@ describe('構文・警告・安全性・負荷', () => {
     expect(createDiagram(Array(60).fill('(a{1234567890123456789012345}b{1234567890123456789012345})*').join('|'), '')).toMatchObject({ ok: false, kind: 'limit', message: expect.stringContaining('面積') });
     expect(createDiagram('('.repeat(2000), '')).toMatchObject({ ok: false });
   });
+});
+
+it('SVGに既存の両テーマのトークンと全面の不透明な背景を内包する', () => {
+  const themeCss = readFileSync('src/styles/main.css', 'utf8');
+  const { document } = diagram('(?<x>a+)?(?=b)\\k<x>');
+  const style = document.querySelector('style')!.textContent!;
+  for (const [siteSelector, svgSelector] of [[':root', 'svg'], [':root[data-theme="dark"]', 'svg[data-theme="dark"]']]) {
+    const site = themeCss.slice(themeCss.indexOf(siteSelector + ' {')).split('}')[0]!;
+    const embedded = style.slice(style.indexOf(svgSelector + '{')).split('}')[0]!;
+    for (const token of ['page', 'surface', 'text', 'muted', 'border', 'accent', 'accent-soft']) {
+      const match = site.match(new RegExp('--' + token + ':\\s*(#[a-f0-9]+);'));
+      expect(match, siteSelector + ' ' + token + ' ' + site).not.toBeNull();
+      const value = match![1];
+      expect(embedded).toContain('--' + token + ':' + value);
+    }
+  }
+  const root = document.documentElement;
+  const background = root.querySelector('.canvas-background')!;
+  expect(background.parentElement).toBe(root);
+  expect(background.getAttribute('width')).toBe(root.getAttribute('width'));
+  expect(background.getAttribute('height')).toBe(root.getAttribute('height'));
+  expect(background.nextElementSibling?.tagName).toBe('g');
+  expect(style).toContain('.canvas-background{fill:var(--page);stroke:none}');
+  expect(style).not.toContain('prefers-color-scheme');
+  expect(style).toContain('.group>rect{fill:none;stroke:var(--muted)}');
+  expect(style).toContain('stroke-dasharray:5 3'); expect(style).toContain('stroke-dasharray:2 2');
 });

@@ -1,7 +1,22 @@
 import { readFile } from 'node:fs/promises';
+import type { Locator } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 const sample = '^([A-Za-z]+)(?:-[0-9]{2,4})?$';
+
+async function settleScroll(canvas: Locator) {
+  // キー操作のアニメーション終了を待ち、テーマ変更だけの影響を比較する。
+  await canvas.evaluate(async node => {
+    let previous = node.scrollLeft;
+    let stable = 0;
+    while (stable < 3) {
+      await new Promise(requestAnimationFrame);
+      const current = node.scrollLeft;
+      stable = current === previous ? stable + 1 : 0;
+      previous = current;
+    }
+  });
+}
 
 test('入力・再描画・構文エラー・意味上の注意・フラグ排他・空入力', async ({ page }) => {
   await page.goto('./?tool=regex-visualizer');
@@ -126,6 +141,12 @@ for (const [width, theme] of [[320, 'light'], [320, 'dark'], [390, 'light'], [39
     await canvas.focus(); await expect(canvas).toBeFocused(); await page.keyboard.press('ArrowRight');
     await expect.poll(() => canvas.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
     expect(await page.locator('.regex-tool img').evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await settleScroll(canvas);
+    const before = await canvas.evaluate(node => ({ x: node.scrollLeft, y: node.scrollTop, width: node.scrollWidth, height: node.scrollHeight }));
+    const oldUrl = await page.locator('.regex-tool img').getAttribute('src');
+    await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme === 'light' ? 'dark' : 'light');
+    await expect(page.locator('.regex-tool img')).not.toHaveAttribute('src', oldUrl!); await expect(button).toBeEnabled();
+    expect(await canvas.evaluate(node => ({ x: node.scrollLeft, y: node.scrollTop, width: node.scrollWidth, height: node.scrollHeight }))).toEqual(before);
     await input.fill('a'.repeat(4097)); await expect(page.getByRole('alert')).toContainText('安全上限'); await expect(button).toBeDisabled();
     await input.fill('a{0}'); await expect(button).toBeEnabled(); await expect(page.getByRole('alert')).toBeEmpty();
   });
@@ -157,6 +178,12 @@ for (const width of [1280, 1440]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await canvas.focus(); await page.keyboard.press('ArrowRight');
       await expect.poll(() => canvas.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+      await settleScroll(canvas);
+      const before = await canvas.evaluate(node => ({ x: node.scrollLeft, y: node.scrollTop, width: node.scrollWidth, height: node.scrollHeight }));
+      const oldUrl = await image.getAttribute('src');
+      await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme === 'light' ? 'dark' : 'light');
+      await expect(image).not.toHaveAttribute('src', oldUrl!); await expect(download).toBeEnabled();
+      expect(await canvas.evaluate(node => ({ x: node.scrollLeft, y: node.scrollTop, width: node.scrollWidth, height: node.scrollHeight }))).toEqual(before);
     });
   }
 }
@@ -173,7 +200,10 @@ test('ダウンロードSVG内のラベル・経路がviewBoxに収まる', asyn
   expect(await standalone.locator('svg').evaluate(root => {
     const svg = root as unknown as SVGSVGElement;
     const bounds = svg.viewBox.baseVal;
-    return [...svg.querySelectorAll<SVGGraphicsElement>('text, rect, path, circle')].every(node => {
+    const background = svg.querySelector<SVGRectElement>(':scope > .canvas-background')!;
+    const backdrop = background.getBBox();
+    if (backdrop.x !== 0 || backdrop.y !== 0 || backdrop.width !== bounds.width || backdrop.height !== bounds.height) return false;
+    return [...svg.querySelectorAll<SVGGraphicsElement>('text, rect, path, circle')].filter(node => node !== background).every(node => {
       const box = node.getBBox();
       const matrix = svg.getCTM()!.inverse().multiply(node.getCTM()!);
       return [new DOMPoint(box.x, box.y), new DOMPoint(box.x + box.width, box.y + box.height)].every(point => {
@@ -183,4 +213,101 @@ test('ダウンロードSVG内のラベル・経路がviewBoxに収まる', asyn
     });
   })).toBe(true);
   await standalone.close();
+});
+
+type ThemeTrace = { workers: number; posts: number; created: string[]; revoked: string[] };
+
+test('テーマ変更は再解析せず、表示と保存SVGの配色・構造を維持し、破棄時にURLを解放する', async ({ page, context }) => {
+  await page.addInitScript(() => {
+    const trace: ThemeTrace = { workers: 0, posts: 0, created: [], revoked: [] };
+    (window as unknown as { themeTrace: ThemeTrace }).themeTrace = trace;
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(...args: ConstructorParameters<typeof Worker>) { super(...args); trace.workers++; }
+      postMessage(message: unknown, options: Transferable[] | StructuredSerializeOptions = []) {
+        trace.posts++;
+        if (Array.isArray(options)) super.postMessage(message, options); else super.postMessage(message, options);
+      }
+    };
+    const create = URL.createObjectURL; const revoke = URL.revokeObjectURL;
+    URL.createObjectURL = blob => { const url = create.call(URL, blob); trace.created.push(url); return url; };
+    URL.revokeObjectURL = url => { trace.revoked.push(url); revoke.call(URL, url); };
+  });
+  await page.goto('./?tool=regex-visualizer');
+  const input = page.getByRole('textbox', { name: '正規表現のパターン' });
+  await input.fill('(?<x>a+)?(?=b)\\k<x>');
+  const download = page.getByRole('button', { name: 'SVGをダウンロード' });
+  await expect(download).toBeEnabled();
+  const initialTrace = await page.evaluate(() => (window as unknown as { themeTrace: ThemeTrace }).themeTrace);
+  let structure: string | undefined;
+  for (const theme of ['light', 'dark'] as const) {
+    await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+    await expect(download).toBeEnabled();
+    const displayed = await page.locator('.regex-canvas img').evaluate(async node => fetch((node as HTMLImageElement).src).then(response => response.text()));
+    expect(displayed).toContain(`data-theme="${theme}"`);
+    const stripped = displayed.replace(/ data-theme="(?:light|dark)"/, '');
+    if (structure) expect(stripped).toBe(structure); else structure = stripped;
+    const colors = await page.evaluate(() => {
+      const css = getComputedStyle(document.documentElement);
+      return Object.fromEntries(['page', 'surface', 'text', 'muted', 'border', 'accent', 'accent-soft'].map(token => [token, css.getPropertyValue(`--${token}`).trim()]));
+    });
+    expect(await page.locator('.regex-canvas').evaluate(node => getComputedStyle(node).backgroundColor)).toBe(theme === 'dark' ? 'rgb(19, 25, 34)' : 'rgb(248, 250, 252)');
+    const event = page.waitForEvent('download'); await download.click();
+    const saved = await readFile((await (await event).path())!, 'utf8');
+    expect(saved).toBe(displayed);
+    // 保存先のOSテーマが逆でも、保存時の配色を保つ。
+    const standalone = await context.newPage();
+    await standalone.emulateMedia({ colorScheme: theme === 'light' ? 'dark' : 'light' });
+    await standalone.goto(`data:image/svg+xml;base64,${Buffer.from(saved).toString('base64')}`);
+    expect(await standalone.locator('parsererror').count()).toBe(0);
+    const actual = await standalone.locator('svg').evaluate((root, colors) => {
+      const pairs = [
+        ['.canvas-background', 'fill', 'page'], ['.literal text', 'fill', 'text'],
+        ['path', 'stroke', 'muted'], ['.heading text', 'fill', 'muted'],
+        ['.literal rect', 'fill', 'accent-soft'], ['.literal rect', 'stroke', 'accent'],
+        ['.condition rect', 'fill', 'surface'], ['.group > rect', 'stroke', 'muted'],
+      ];
+      const probe = document.createElementNS('http://www.w3.org/2000/svg', 'rect'); root.append(probe);
+      const matches = pairs.every(([selector, property, token]) => {
+        probe.style.fill = colors[token!]!;
+        return getComputedStyle(root.querySelector(selector!)!).getPropertyValue(property!) === getComputedStyle(probe).fill;
+      });
+      probe.remove();
+      return { matches, condition: getComputedStyle(root.querySelector('.condition rect')!).strokeDasharray, reference: getComputedStyle(root.querySelector('.reference rect')!).strokeDasharray };
+    }, colors);
+    expect(actual).toEqual({ matches: true, condition: '5px, 3px', reference: '2px, 2px' });
+    await expect(standalone.locator('svg')).toHaveAttribute('role', 'img');
+    await expect(standalone.locator('title')).toHaveText('ECMAScript 正規表現の構造図');
+    await expect(standalone.locator('desc')).toContainText('マッチングは実行しません');
+    await standalone.close();
+  }
+  await page.evaluate(async () => {
+    for (const theme of ['light', 'dark', 'light', 'dark']) {
+      document.documentElement.dataset.theme = theme; await Promise.resolve();
+    }
+  });
+  await expect(download).toBeEnabled();
+  const finalSvg = await page.locator('.regex-canvas img').evaluate(async node => fetch((node as HTMLImageElement).src).then(response => response.text()));
+  expect(finalSvg).toContain('data-theme="dark"');
+  expect(finalSvg.replace(/ data-theme="(?:light|dark)"/, '')).toBe(structure);
+  await expect(input).toHaveValue('(?<x>a+)?(?=b)\\k<x>');
+  const trace = await page.evaluate(() => (window as unknown as { themeTrace: ThemeTrace }).themeTrace);
+  expect(trace.workers).toBe(initialTrace.workers); expect(trace.posts).toBe(initialTrace.posts);
+  await page.getByRole('link', { name: '全角・半角変換', exact: true }).click();
+  await page.getByRole('combobox', { name: 'テーマ' }).selectOption('light');
+  const disposed = await page.evaluate(() => (window as unknown as { themeTrace: ThemeTrace }).themeTrace);
+  expect(disposed.created).toEqual(trace.created);
+  expect(disposed.revoked.sort()).toEqual(disposed.created.sort());
+});
+
+test('システムテーマ変更でも保持したSVGだけを更新する', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./?tool=regex-visualizer');
+  const button = page.getByRole('button', { name: 'SVGをダウンロード' }); await expect(button).toBeEnabled();
+  await expect(page.getByRole('combobox', { name: 'テーマ' })).toHaveValue('system');
+  const image = page.locator('.regex-canvas img');
+  const first = await image.getAttribute('src');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(image).not.toHaveAttribute('src', first!); await expect(button).toBeEnabled();
+  expect(await image.evaluate(async node => fetch((node as HTMLImageElement).src).then(response => response.text()))).toContain('data-theme="dark"');
 });
