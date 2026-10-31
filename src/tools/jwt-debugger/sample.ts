@@ -1,0 +1,4 @@
+// 公開された学習用キー。実際の認証システムでは使用しない。
+export const DEMO_SECRET = 'web-toolbox-demo-hs256-secret-only!';
+// 上記UTF-8 Secretで事前にHS256署名したCompact JWS。
+export const SAMPLE_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2V4YW1wbGUuY29tIiwic3ViIjoiZGVtby11c2VyLTAwMSIsImF1ZCI6IndlYi10b29sYm94LWRlbW8iLCJuYW1lIjoi44K144Oz44OX44Or44Om44O844K244O8IiwiaWF0IjoxNzY3MjI1NjAwLCJleHAiOjIwNTEyMjI0MDB9.78XeS_Flzh8T8RzRZDgcpXZ2svFmW1QRmItqjZS-wAc';

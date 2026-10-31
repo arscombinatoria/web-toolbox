@@ -1,3 +1,4 @@
+import { DEMO_SECRET, SAMPLE_JWT } from './sample';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mount } from './index';
 import { verifySignature, type Verification } from './verify';
@@ -78,4 +79,35 @@ it('元の数値表現を表示・コピーし、精度警告を入力変更で�
   }
   fill('input', token);
   expect(document.querySelector('[data-claims]')!.textContent).not.toContain('数値精度');
+});
+
+it('初期サンプルを解析し、自動検証せず、初期デモSecretだけをJWT変更で消去する', () => {
+  vi.mocked(verifySignature).mockClear();
+  dispose = mount(document.body);
+  expect(field('input').value).toBe(SAMPLE_JWT);
+  expect(JSON.parse(field('header').value)).toEqual({ alg: 'HS256', typ: 'JWT' });
+  expect(JSON.parse(field('payload').value).name).toBe('サンプルユーザー');
+  expect(field('signature').value).toBe(SAMPLE_JWT.split('.')[2]);
+  expect(document.querySelector('[data-claims]')!.textContent).toContain('UTC');
+  expect(document.querySelector('[data-claims]')!.textContent).toContain('JST');
+  expect(field('alg').value).toBe('HS256'); expect(field('encoding').value).toBe('utf8');
+  expect(field('secret').value).toBe(DEMO_SECRET); expect(field('secret').type).toBe('password');
+  expect(document.querySelector('[data-verification]')!.textContent).toBe('未検証');
+  expect(verifySignature).not.toHaveBeenCalled();
+  fill('input', token); expect(field('secret').value).toBe('');
+});
+it.each(['my-secret', DEMO_SECRET])('手動編集したSecretは同じデモ文字列でも保持する: %s', value => {
+  dispose = mount(document.body); fill('secret', value); fill('input', token);
+  expect(field('secret').value).toBe(value);
+});
+it('クリアでは全入力と解析結果を消し、再mountでサンプルを戻す', () => {
+  dispose = mount(document.body); fill('public', 'public-key');
+  document.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+  for (const id of ['input', 'secret', 'public', 'header', 'payload', 'signature']) expect(field(id).value).toBe('');
+  expect(document.querySelector('[data-claims]')!.textContent).toBe('');
+  expect(document.querySelector('[data-verification]')!.textContent).toBe('未検証');
+  dispose(); dispose = mount(document.body);
+  expect(field('input').value).toBe(SAMPLE_JWT); expect(field('secret').value).toBe(DEMO_SECRET);
+  field('alg').value = 'RS256'; field('alg').dispatchEvent(new Event('change'));
+  expect(field('secret').value).toBe(''); expect(field('public').value).toBe('');
 });

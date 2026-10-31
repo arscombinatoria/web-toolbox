@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { decodeJwt } from './logic';
+import { DEMO_SECRET, SAMPLE_JWT } from './sample';
 import { expect, it } from 'vitest';
 import { SignJWT, generateKeyPair, exportSPKI } from 'jose';
 import { verifySignature } from './verify';
@@ -40,4 +42,13 @@ it.each(['utf8', 'base64'])('短いSecret警告のバイト境界: %s', async en
     const wrong = await verifySignature(token, 'HS256', encoding === 'utf8' ? 'wrong' : 'd3Jvbmc=', encoding);
     expect(wrong.state).toBe('mismatch'); expect(wrong.warning).toBeUndefined();
   }
+});
+
+it('固定サンプルのHeader・Payloadと実署名が指定のデモSecretに一致する', async () => {
+  const decoded = decodeJwt(SAMPLE_JWT);
+  expect(decoded.header).toEqual({ alg: 'HS256', typ: 'JWT' });
+  expect(decoded.payload).toEqual({ iss: 'https://example.com', sub: 'demo-user-001', aud: 'web-toolbox-demo', name: 'サンプルユーザー', iat: 1767225600, exp: 2051222400 });
+  expect(decoded.signatureBytes).toBe(32);
+  expect((await verifySignature(SAMPLE_JWT, 'HS256', DEMO_SECRET, 'utf8')).state).toBe('match');
+  expect((await verifySignature(SAMPLE_JWT, 'HS256', 'wrong', 'utf8')).state).toBe('mismatch');
 });
