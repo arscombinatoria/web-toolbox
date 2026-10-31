@@ -110,3 +110,21 @@ test('スモーク: 正規表現をWorkerで描画し、構文エラーから復
   await expect(page.getByRole('status')).toHaveText('図を更新しました。');
   expect(await page.locator('.regex-tool img').evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 });
+
+test('スモーク: JWTのデコード・実署名検証・不正入力からの復帰', async ({ page }) => {
+  const { SignJWT } = await import('jose');
+  const secret = 'test-only-smoke-secret';
+  const token = await new SignJWT({ sub: 'JWT smoke', exp: 0 }).setProtectedHeader({ alg: 'HS256' }).sign(new TextEncoder().encode(secret));
+  await page.goto('./?tool=jwt-debugger');
+  await page.getByLabel('JWT入力', { exact: true }).fill(token);
+  await expect(page.getByLabel('Payload', { exact: true })).toHaveValue(/JWT smoke/);
+  await page.getByLabel('共有Secret', { exact: true }).fill(secret);
+  await page.getByRole('button', { name: '検証', exact: true }).click();
+  await expect(page.locator('[data-verification]')).toHaveText('署名一致');
+  await expect(page.locator('[data-claims]')).toContainText('期限切れ');
+  await page.getByLabel('JWT入力', { exact: true }).fill('invalid');
+  await expect(page.getByLabel('Payload', { exact: true })).toHaveValue('');
+  await expect(page.locator('[data-verification]')).toHaveText('未検証');
+  await page.getByLabel('JWT入力', { exact: true }).fill(token);
+  await expect(page.getByLabel('Payload', { exact: true })).toHaveValue(/JWT smoke/);
+});
