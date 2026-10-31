@@ -10,3 +10,57 @@
 .jwt-tool [role="alert"] { color: var(--text); }
 .jwt-tool button:disabled { opacity: 0.55; cursor: default; }
 @media (max-width: 1050px) { .jwt-editors { grid-template-columns: minmax(0, 1fr); } }
+
+.jwt-tool {
+  --jwt-blue: #245bc2;
+  --jwt-green: #21713d;
+  --jwt-orange: #a3480b;
+  --jwt-purple: #7945ac;
+}
+:root[data-theme="dark"] .jwt-tool {
+  --jwt-blue: #99bcff;
+  --jwt-green: #89d5a2;
+  --jwt-orange: #ffb675;
+  --jwt-purple: #d0a5f3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .jwt-tool {
+    --jwt-blue: #99bcff;
+    --jwt-green: #89d5a2;
+    --jwt-orange: #ffb675;
+    --jwt-purple: #d0a5f3;
+  }
+}
+.jwt-highlight { position: relative; min-width: 0; margin: var(--space-1) 0 var(--space-2); background: var(--page); border-radius: var(--radius); }
+.jwt-highlight textarea, .jwt-highlight-layer {
+  font: inherit;
+  font-variant-ligatures: none;
+  letter-spacing: normal;
+  tab-size: 8;
+  text-align: start;
+  direction: ltr;
+  unicode-bidi: plaintext;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.jwt-highlight textarea { position: relative; margin: 0; }
+.jwt-highlight-layer {
+  position: absolute; top: 1px; left: 1px;
+  margin: 0; padding: var(--space-2); border: 0;
+  overflow: hidden; pointer-events: none; user-select: none;
+  color: var(--text); visibility: hidden; display: none;
+}
+/* Preserve the final empty line's scroll extent without changing the source DOM. */
+.jwt-highlight-layer::after { content: '\200b'; }
+.jwt-highlight-active .jwt-highlight-layer { visibility: visible; display: block; }
+.jwt-tool .jwt-highlight-active textarea { background: transparent; color: transparent; caret-color: var(--text); }
+.jwt-highlight-active textarea::selection { color: HighlightText; background: Highlight; }
+.jwt-token-header, .jwt-token-number { color: var(--jwt-orange); }
+.jwt-token-payload, .jwt-token-literal { color: var(--jwt-purple); }
+.jwt-token-signature, .jwt-token-string { color: var(--jwt-green); }
+.jwt-token-key { color: var(--jwt-blue); }
+@media (forced-colors: active), print {
+  .jwt-highlight .jwt-highlight-layer { visibility: hidden; display: none; }
+  .jwt-tool .jwt-highlight textarea { color: var(--text); background: var(--page); caret-color: auto; }
+}
