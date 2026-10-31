@@ -110,7 +110,7 @@ it.each(['resolve', 'reject'] as const)('ホーム遷移後の旧importの%sを�
   expect(await navigation).toBe(false);
   expect(mount).not.toHaveBeenCalled();
   expect(container.querySelector('h1')?.textContent).toBe('Web Toolbox');
-  expect(container.querySelectorAll('.tool-card')).toHaveLength(6);
+  expect(container.querySelectorAll('.tool-card')).toHaveLength(7);
   expect(container.hasAttribute('aria-busy')).toBe(false);
   host.destroy();
 });
