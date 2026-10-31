@@ -111,3 +111,50 @@ it('クリアでは全入力と解析結果を消し、再mountでサンプル�
   field('alg').value = 'RS256'; field('alg').dispatchEvent(new Event('change'));
   expect(field('secret').value).toBe(''); expect(field('public').value).toBe('');
 });
+
+it('表示層を操作してもコピー・検証はtextarea.valueを使用し、破棄時に監視を解除する', async () => {
+  const disconnect = vi.fn();
+  vi.stubGlobal('ResizeObserver', class { observe = vi.fn(); disconnect = disconnect; });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  vi.mocked(verifySignature).mockResolvedValue({ state: 'match', message: '署名一致' });
+  dispose = mount(document.body);
+  const layers = [...document.querySelectorAll<HTMLElement>('.jwt-highlight-layer')];
+  for (const id of ['input', 'header', 'payload']) {
+    const layer = field(id).parentElement!.querySelector('pre')!;
+    expect(layer.textContent).toBe(field(id).value);
+    expect(layer.getAttribute('aria-hidden')).toBe('true');
+  }
+  layers.forEach(layer => { layer.textContent = '<img src=x> altered'; });
+  document.querySelector<HTMLButtonElement>('[data-copy="payload"]')!.click();
+  document.querySelector<HTMLButtonElement>('[data-verify]')!.click();
+  await Promise.resolve();
+  expect(writeText).toHaveBeenLastCalledWith(field('payload').value);
+  expect(verifySignature).toHaveBeenLastCalledWith(SAMPLE_JWT, 'HS256', DEMO_SECRET, 'utf8');
+  const input = field('input');
+  input.dispatchEvent(new Event('compositionstart'));
+  expect(input.parentElement!.classList.contains('jwt-highlight-active')).toBe(false);
+  input.dispatchEvent(new Event('compositionend'));
+  expect(input.parentElement!.classList.contains('jwt-highlight-active')).toBe(true);
+  dispose();
+  expect(disconnect).toHaveBeenCalledTimes(3);
+  expect(layers.every(layer => layer.textContent === '')).toBe(true);
+  input.dispatchEvent(new Event('compositionend'));
+  expect(layers.every(layer => layer.textContent === '')).toBe(true);
+});
+
+it('描画上限でプレーン表示にしてもデコード・検証・コピーを無効化しない', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  dispose = mount(document.body);
+  const source = '{"many":[' + '0,'.repeat(3000) + '0]}';
+  const segment = btoa(source).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  fill('input', `e30.${segment}.`);
+  const layer = field('payload').parentElement!.querySelector('pre')!;
+  expect(layer.children).toHaveLength(0);
+  expect(layer.textContent).toBe(field('payload').value);
+  expect(document.querySelector<HTMLButtonElement>('[data-verify]')!.disabled).toBe(false);
+  document.querySelector<HTMLButtonElement>('[data-copy="payload"]')!.click();
+  await Promise.resolve();
+  expect(writeText).toHaveBeenLastCalledWith(field('payload').value);
+});

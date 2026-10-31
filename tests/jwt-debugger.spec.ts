@@ -51,6 +51,11 @@ for (const theme of ['light', 'dark']) for (const width of [1280, 320]) {
     await page.goto('./?tool=jwt-debugger');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
     await page.getByLabel('JWT入力', { exact: true }).fill('eyJhbGciOiJub25lIn0.eyJzdWIiOiI8c2NyaXB0PiJ9.');
+    for (const id of ['input', 'header', 'payload']) {
+      const field = page.locator(`#jwt-${id}`);
+      await expect(field.locator('..')).toHaveClass(/jwt-highlight-active/);
+      expect(await field.locator('..').locator('pre').textContent()).toBe(await field.inputValue());
+    }
     expect(await page.getByLabel('Payload', { exact: true }).inputValue()).toContain('<script>');
     const header = await page.getByLabel('Header', { exact: true }).boundingBox();
     const payload = await page.getByLabel('Payload', { exact: true }).boundingBox();
@@ -114,4 +119,130 @@ test('初期サンプルの署名検証・Secret編集・クリア・ツール�
   await expect(input).toHaveValue(SAMPLE_JWT); await expect(key).toHaveValue(DEMO_SECRET);
   expect(await page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage }, state: history.state, cookie: document.cookie }))).toEqual({ local: {}, session: {}, state: null, cookie: '' });
   expect(requests.every(url => new URL(url).origin === new URL(page.url()).origin && !url.includes(SAMPLE_JWT) && !url.includes(DEMO_SECRET))).toBe(true);
+});
+
+for (const theme of ['light', 'dark']) {
+  test(`ハイライトの色・元文字列・選択・Undo/Redo ${theme}`, async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto('./?tool=jwt-debugger');
+    await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+    const input = page.locator('#jwt-input');
+    const wrapper = page.locator('.jwt-highlight').first();
+    const layer = wrapper.locator('pre');
+    await expect(wrapper).toHaveClass(/jwt-highlight-active/);
+    await expect(layer).toHaveAttribute('aria-hidden', 'true');
+    await expect(layer).toHaveCSS('pointer-events', 'none');
+    expect(await layer.textContent()).toBe(SAMPLE_JWT);
+    const colors = await layer.locator('span').evaluateAll(spans => spans.map(span => getComputedStyle(span).color));
+    expect(new Set(colors).size).toBe(3);
+    for (const id of ['header', 'payload']) {
+      const field = page.locator(`#jwt-${id}`);
+      expect(await field.locator('..').locator('pre').textContent()).toBe(await field.inputValue());
+      await expect(field.locator('..').locator('.jwt-token-key').first()).toBeVisible();
+    }
+    const source = '{"nested":[{"text":"<img src=x onerror=alert(1)>日本語😀\\u65e5","bool":true,"nil":null}],"n":9223372036854775807,"f":1.2300e+10,"z":-0}';
+    const segment = Buffer.from(source).toString('base64url');
+    const token = `${segment}.${segment}.`;
+    await input.fill(token);
+    for (const id of ['header', 'payload']) {
+      const field = page.locator(`#jwt-${id}`);
+      const output = await field.inputValue();
+      const jsonLayer = field.locator('..').locator('pre');
+      expect(await jsonLayer.textContent()).toBe(output);
+      for (const kind of ['key', 'string', 'number', 'literal']) await expect(jsonLayer.locator(`.jwt-token-${kind}`).first()).toBeVisible();
+      expect(await jsonLayer.locator('img,script').count()).toBe(0);
+      const contrasts = await jsonLayer.locator('span').evaluateAll(spans => {
+        const luminance = (color: string) => {
+          const [r, g, b] = color.match(/[\d.]+/g)!.slice(0, 3).map(value => {
+            const channel = Number(value) / 255;
+            return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+        };
+        return spans.map(span => {
+          const foreground = luminance(getComputedStyle(span).color);
+          const background = luminance(getComputedStyle(span.closest('.jwt-highlight')!).backgroundColor);
+          return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+        });
+      });
+      expect(contrasts.every(contrast => contrast >= 4.5)).toBe(true);
+      await field.focus(); await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.press('ControlOrMeta+C');
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(output);
+    }
+    await input.focus(); await expect(input).toHaveCSS('outline-style', 'solid');
+    await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.press('ControlOrMeta+C');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(token);
+    await page.keyboard.press('End'); await page.keyboard.type('x');
+    await expect(input).toHaveValue(token + 'x');
+    await page.keyboard.press('ControlOrMeta+Z'); await expect(input).toHaveValue(token);
+    await page.keyboard.press('ControlOrMeta+Shift+Z'); await expect(input).toHaveValue(token + 'x');
+    await page.keyboard.press('Backspace'); await expect(input).toHaveValue(token);
+    await input.fill('a.b');
+    expect(await layer.textContent()).toBe('a.b');
+    await expect(wrapper).not.toHaveClass(/jwt-highlight-active/);
+    await expect(page.locator('#jwt-payload').locator('..').locator('pre')).toBeEmpty();
+    // Paste into the real textarea, using the browser clipboard.
+    await page.evaluate(value => navigator.clipboard.writeText(value), SAMPLE_JWT);
+    await input.focus(); await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.press('ControlOrMeta+V');
+    await expect(input).toHaveValue(SAMPLE_JWT);
+    expect(await layer.textContent()).toBe(SAMPLE_JWT);
+    await page.getByRole('button', { name: '入力をクリア' }).click();
+    await expect(layer).toBeEmpty();
+  });
+}
+
+test('長いJWTの折り返し・スクロール・リサイズ・256KiBと描画上限', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('./?tool=jwt-debugger');
+  const input = page.locator('#jwt-input');
+  const segment = Buffer.from('{"s":"' + 'a'.repeat(30000) + '"}').toString('base64url');
+  await input.fill(`e30.${segment}.`);
+  const dimensions = async () => input.evaluate(field => {
+    const layer = field.parentElement!.querySelector('pre')!;
+    return { width: field.clientWidth, scrollWidth: field.scrollWidth, height: field.clientHeight, scrollHeight: field.scrollHeight,
+      layerWidth: layer.clientWidth, layerHeight: layer.clientHeight, layerScrollHeight: layer.scrollHeight,
+      top: field.scrollTop, layerTop: layer.scrollTop, left: field.scrollLeft, layerLeft: layer.scrollLeft };
+  });
+  await expect.poll(async () => (await dimensions()).layerWidth).toBe((await dimensions()).width);
+  let sizes = await dimensions();
+  expect(sizes.scrollWidth).toBe(sizes.width);
+  expect(Math.abs(sizes.layerScrollHeight - sizes.scrollHeight)).toBeLessThanOrEqual(1);
+  expect(sizes.scrollHeight).toBeGreaterThan(sizes.height);
+  await input.evaluate(field => { field.scrollTop = field.scrollHeight; });
+  await expect.poll(async () => { const d = await dimensions(); return Math.abs(d.top - d.layerTop); }).toBeLessThanOrEqual(1);
+  await input.evaluate(field => { field.style.height = '250px'; });
+  await expect.poll(async () => (await dimensions()).layerHeight).toBe((await dimensions()).height);
+  sizes = await dimensions(); expect(sizes.left).toBe(sizes.layerLeft);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const source = '{"many":[' + '0,'.repeat(6000) + '0]}';
+  const many = Buffer.from(source).toString('base64url');
+  await input.fill(`e30.${many}.`);
+  const payload = page.locator('#jwt-payload');
+  await expect(payload).toHaveValue(/"many"/);
+  await expect(payload.locator('..')).not.toHaveClass(/jwt-highlight-active/);
+  expect(await payload.locator('..').locator('pre').textContent()).toBe(await payload.inputValue());
+  await expect(page.getByRole('button', { name: '検証', exact: true })).toBeEnabled();
+  const limit = 'e30.' + 'a'.repeat(256 * 1024 - 5) + '.';
+  await input.fill(limit);
+  expect(await input.inputValue()).toBe(limit);
+  expect(await input.locator('..').locator('pre').textContent()).toBe(limit);
+  await page.getByRole('button', { name: '入力をクリア' }).click();
+  await expect(input).toHaveValue('');
+});
+
+test('IME変換中とforced-colorsではネイティブ文字表示へ戻す', async ({ page }) => {
+  await page.goto('./?tool=jwt-debugger');
+  const input = page.locator('#jwt-input');
+  const wrapper = input.locator('..');
+  await input.dispatchEvent('compositionstart');
+  await input.fill('日本語');
+  await expect(wrapper).not.toHaveClass(/jwt-highlight-active/);
+  await expect(input).not.toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+  await input.fill(SAMPLE_JWT);
+  await input.dispatchEvent('compositionend');
+  await expect(wrapper).toHaveClass(/jwt-highlight-active/);
+  await page.emulateMedia({ forcedColors: 'active' });
+  await expect(wrapper.locator('pre')).toHaveCSS('visibility', 'hidden');
+  await expect(input).not.toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+  await expect(input).toHaveValue(SAMPLE_JWT);
 });

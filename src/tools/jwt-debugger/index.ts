@@ -2,6 +2,7 @@ import { findTool } from '../../registry';
 import { analyzeClaims, decodeJwt, MAX_BYTES } from './logic';
 import { algorithms, type Algorithm, verifySignature } from './verify';
 import { DEMO_SECRET, SAMPLE_JWT } from './sample';
+import { highlightJson, highlightJwt, renderHighlight } from './highlight';
 import './style.css';
 
 export function mount(container: HTMLElement): () => void {
@@ -50,6 +51,37 @@ export function mount(container: HTMLElement): () => void {
   for (const field of [input, secret, publicKey]) field.maxLength = MAX_BYTES;
   const listeners = new AbortController();
   const options = { signal: listeners.signal };
+  const editors = [input, header, payload].map(field => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'jwt-highlight';
+    const layer = document.createElement('pre');
+    layer.className = 'jwt-highlight-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    field.before(wrapper);
+    wrapper.append(layer, field);
+    let composing = false;
+    const syncScroll = () => { layer.scrollTop = field.scrollTop; layer.scrollLeft = field.scrollLeft; };
+    const syncSize = () => {
+      layer.style.width = `${field.clientWidth}px`;
+      layer.style.height = `${field.clientHeight}px`;
+      syncScroll();
+    };
+    const update = () => {
+      if (composing) return;
+      const colored = renderHighlight(layer, field === input ? highlightJwt(field.value) : highlightJson(field.value));
+      // Without resize observation, keep the native, visible textarea.
+      wrapper.classList.toggle('jwt-highlight-active', colored && Boolean(observer));
+      syncSize();
+    };
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(syncSize);
+    observer?.observe(field);
+    field.addEventListener('scroll', syncScroll, options);
+    field.addEventListener('compositionstart', () => {
+      composing = true; wrapper.classList.remove('jwt-highlight-active');
+    }, options);
+    field.addEventListener('compositionend', () => { composing = false; update(); }, options);
+    return { update, destroy: () => { observer?.disconnect(); layer.replaceChildren(); } };
+  });
   let disposed = false;
   let revision = 0;
   let hasInitialDemoSecret = true;
@@ -89,6 +121,7 @@ export function mount(container: HTMLElement): () => void {
         query('[data-bytes]').textContent = `Signature: ${decoded.signatureBytes} バイト`;
       }
     } catch (error) { query('[data-error]').textContent = error instanceof Error ? error.message : '解析できません。'; }
+    editors.forEach(editor => editor.update());
     copies.forEach(button => { button.disabled = !header.value; });
     updateClaims(); invalidate();
   };
@@ -138,6 +171,7 @@ export function mount(container: HTMLElement): () => void {
   container.append(view); decode();
   return () => {
     disposed = true; decoded = undefined; revision++; listeners.abort(); window.clearInterval(timer);
+    editors.forEach(editor => editor.destroy());
     for (const field of [input, header, payload, signature, secret, publicKey]) field.value = '';
     view.replaceChildren(); view.remove();
   };
