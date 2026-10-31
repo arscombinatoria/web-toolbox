@@ -2,7 +2,7 @@
 
 ## 概要・設計方針
 
-Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・IP登録情報検索・全角／半角変換・Markdown表変換・正規表現の可視化・JST／UTC日時変換・JWTデバッガーの7ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
+Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・IP登録情報検索・全角／半角変換・Markdown表変換・JavaScript正規表現ビジュアライザー・JST／UTC日時変換・JWTデバッガーの7ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
 
 Vanilla TypeScript（strict）、ES Modules、Vite、HTML/CSS、ブラウザ標準APIを使用します。UIフレームワークや状態管理ライブラリは使用せず、各ツールのDOM操作と通信・変換処理を分離しています。共通UIはRegistryのメタデータから生成し、ツール本体は必要時に読み込みます。
 
@@ -266,7 +266,7 @@ textareaはCRLFをLFへ正規化するため、コピー時は表示欄の値で
 
 `tests/markdown-table.spec.ts`は両方向・エラー・クリア・再訪時の入力破棄、実Clipboard APIと失敗、XLSX遅延読み込み・実ダウンロード・再読み込み、非送信・非保存、モバイル両テーマとキーボード操作を検証します。
 
-### 正規表現の可視化 — `regex-visualizer`／テキスト・データ
+### JavaScript正規表現ビジュアライザー — `regex-visualizer`／テキスト・データ
 
 #### ライブラリ評価と採用理由
 

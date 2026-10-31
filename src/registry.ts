@@ -39,7 +39,7 @@ export const tools: readonly ToolDefinition[] = [
     load: () => import('./tools/markdown-table/index'),
   },
   {
-    id: 'regex-visualizer', name: '正規表現の可視化', category: 'text-data',
+    id: 'regex-visualizer', name: 'JavaScript正規表現ビジュアライザー', category: 'text-data',
     description: 'JavaScriptの正規表現をRailroad Diagramで可視化',
     load: () => import('./tools/regex-visualizer/index'),
   },
