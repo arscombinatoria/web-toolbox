@@ -13,6 +13,52 @@ function setup() {
   return { dispose, fill, download };
 }
 
+it('初期サンプルを変換してコピーとダウンロードを有効にする', () => {
+  const dispose = mount(document.body);
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  const output = document.querySelector<HTMLTextAreaElement>('#table-output')!;
+  expect(input.value).toBe('| 品名 | 数量 | 備考 |\n| --- | --- | --- |\n| りんご | 3 | 青森県産 |\n| みかん | 5 | 愛媛県産 |');
+  expect(output.value).toBe('品名\t数量\t備考\nりんご\t3\t青森県産\nみかん\t5\t愛媛県産');
+  expect(document.querySelector<HTMLButtonElement>('[data-copy]')!.disabled).toBe(false);
+  expect(document.querySelector<HTMLButtonElement>('[data-download]')!.disabled).toBe(false);
+  dispose();
+});
+
+it('方向切り替えは変換結果を渡し、空・エラー時は入力を保持する', () => {
+  const dispose = mount(document.body);
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  const output = document.querySelector<HTMLTextAreaElement>('#table-output')!;
+  const direction = (value: 'excel' | 'markdown') => {
+    const radio = document.querySelector<HTMLInputElement>(`[name="table-direction"][value="${value}"]`)!;
+    radio.checked = true;
+    radio.dispatchEvent(new Event('change'));
+  };
+
+  direction('markdown');
+  expect(input.value).toBe('品名\t数量\t備考\nりんご\t3\t青森県産\nみかん\t5\t愛媛県産');
+  expect(output.value).toBe('| 品名 | 数量 | 備考 |\n| --- | --- | --- |\n| りんご | 3 | 青森県産 |\n| みかん | 5 | 愛媛県産 |');
+  direction('excel');
+  expect(input.value).toBe('| 品名 | 数量 | 備考 |\n| --- | --- | --- |\n| りんご | 3 | 青森県産 |\n| みかん | 5 | 愛媛県産 |');
+
+  input.value = ''; input.dispatchEvent(new Event('input'));
+  direction('markdown');
+  expect(input.value).toBe('');
+  expect(output.value).toBe('');
+  expect(document.querySelector<HTMLButtonElement>('[data-copy]')!.disabled).toBe(true);
+
+  input.value = '"unclosed'; input.dispatchEvent(new Event('input'));
+  direction('excel');
+  expect(input.value).toBe('"unclosed');
+  expect(document.querySelector('[role="alert"]')!.textContent).toContain('ヘッダー');
+  expect(document.querySelector<HTMLButtonElement>('[data-copy]')!.disabled).toBe(true);
+
+  document.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+  direction('markdown');
+  expect(input.value).toBe('');
+  expect(document.querySelector('[role="alert"]')!.textContent).toBe('');
+  dispose();
+});
+
 it('生成中の入力変更・破棄後はダウンロードしない', async () => {
   let finish!: (bytes: Uint8Array<ArrayBuffer>) => void;
   vi.mocked(generateXlsx).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
