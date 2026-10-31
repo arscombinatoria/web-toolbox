@@ -2,33 +2,66 @@ import ExcelJS from 'exceljs-community';
 import { readFile } from 'node:fs/promises';
 import { expect, test } from './fixtures';
 
-test('方向切り替え・結果更新・エラー・クリア・既存ツールとの切り替え', async ({ page }) => {
+test('初期サンプル・方向切り替え・編集・空入力・エラー・クリア・既存ツール切り替え', async ({ page }) => {
   await page.goto('./?tool=markdown-table');
   const input = page.getByRole('textbox', { name: '入力', exact: true });
   const output = page.getByRole('textbox', { name: '変換結果', exact: true });
+  const markdown = '| 品名 | 数量 | 備考 |\n| --- | --- | --- |\n| りんご | 3 | 青森県産 |\n| みかん | 5 | 愛媛県産 |';
+  const tsv = '品名\t数量\t備考\r\nりんご\t3\t青森県産\r\nみかん\t5\t愛媛県産';
+  await expect(input).toHaveValue(markdown);
+  await expect(output).toHaveValue(tsv.replace(/\r\n/g, '\n'));
+  await expect(page.getByRole('radio', { name: 'Markdown → Excel' })).toBeChecked();
+  await expect(page.getByRole('button', { name: '結果をコピー' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Excelをダウンロード' })).toBeEnabled();
+
+  await page.getByRole('radio', { name: 'Excel → Markdown' }).check();
+  await expect(input).toHaveValue(tsv.replace(/\r\n/g, '\n'));
+  await expect(output).toHaveValue(markdown);
+  await expect(page.getByRole('button', { name: 'Excelをダウンロード' })).toBeHidden();
+  await page.getByRole('radio', { name: 'Markdown → Excel' }).check();
+  await expect(input).toHaveValue(markdown);
+  await expect(output).toHaveValue(tsv.replace(/\r\n/g, '\n'));
+
   await input.fill('| 品名 | 説明 |\n| --- | --- |\n| りんご | 青森<br>甘い |');
   await expect(output).toHaveValue('品名\t説明\nりんご\t"青森\n甘い"');
   await expect(output).toHaveAttribute('readonly', '');
   await page.getByRole('radio', { name: 'Excel → Markdown' }).check();
-  await expect(page.getByRole('button', { name: 'Excelをダウンロード' })).toBeHidden();
-  await input.fill('品名\t説明\r\nりんご\t"青森\n甘い"');
+  await expect(input).toHaveValue('品名\t説明\nりんご\t"青森\n甘い"');
   await expect(output).toHaveValue('| 品名 | 説明 |\n| --- | --- |\n| りんご | 青森<br>甘い |');
-  await input.fill('"unclosed');
-  await expect(page.getByRole('alert')).toContainText('引用符');
-  await expect(output).toHaveValue('');
-  await expect(page.getByRole('button', { name: '結果をコピー' })).toBeDisabled();
   await page.getByRole('radio', { name: 'Markdown → Excel' }).check();
-  await input.fill('a|b\n---|---\nx');
-  await expect(page.getByRole('alert')).toContainText('列数');
+  await expect(output).toHaveValue('品名\t説明\nりんご\t"青森\n甘い"');
+
   await page.getByRole('button', { name: '入力をクリア' }).click();
   await expect(input).toHaveValue('');
-  await expect(input).toBeFocused();
+  await page.getByRole('radio', { name: 'Excel → Markdown' }).check();
+  await expect(input).toHaveValue('');
+  await expect(output).toHaveValue('');
+  await expect(page.getByRole('button', { name: '結果をコピー' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Excelをダウンロード' })).toBeHidden();
+
+  await page.getByRole('radio', { name: 'Markdown → Excel' }).check();
+  await input.fill('"unclosed');
+  await expect(page.getByRole('alert')).toContainText('ヘッダー');
+  await expect(output).toHaveValue('');
+  await page.getByRole('radio', { name: 'Excel → Markdown' }).check();
+  await expect(input).toHaveValue('"unclosed');
+  await expect(page.getByRole('alert')).toContainText('引用符');
+  await expect(page.getByRole('button', { name: '結果をコピー' })).toBeDisabled();
+  await page.getByRole('radio', { name: 'Markdown → Excel' }).check();
+  await expect(input).toHaveValue('"unclosed');
+  await expect(page.getByRole('alert')).toContainText('ヘッダー');
+
+  await page.getByRole('button', { name: '入力をクリア' }).click();
+  await page.getByRole('radio', { name: 'Excel → Markdown' }).check();
+  await expect(input).toHaveValue('');
   await expect(page.getByRole('alert')).toBeEmpty();
+  await page.getByRole('radio', { name: 'Markdown → Excel' }).check();
   await page.getByRole('link', { name: '全角・半角変換', exact: true }).click();
   await input.fill('Ａ');
   await expect(output).toHaveValue('A');
   await page.goBack();
-  await expect(input).toHaveValue('');
+  await expect(input).toHaveValue(markdown);
+  await expect(output).toHaveValue(tsv.replace(/\r\n/g, '\n'));
 });
 
 test('実Clipboard API・失敗通知・遅延ロード・実XLSXダウンロード・非保存', async ({ page, context }) => {
@@ -40,10 +73,9 @@ test('実Clipboard API・失敗通知・遅延ロード・実XLSXダウンロー
     if (['xhr', 'fetch'].includes(request.resourceType())) dataRequests.push(request.url());
   });
   await page.goto('./?tool=markdown-table');
-  await page.getByRole('textbox', { name: '入力', exact: true }).fill('| 番号 | 説明 |\n| --- | --- |\n| 00123 | 青森<br>甘い |');
   await page.getByRole('button', { name: '結果をコピー' }).click();
   await expect(page.getByRole('status')).toHaveText('コピーしました。');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('番号\t説明\r\n00123\t"青森\n甘い"');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('品名\t数量\t備考\r\nりんご\t3\t青森県産\r\nみかん\t5\t愛媛県産');
   expect(scripts.some(url => /\/xlsx-/.test(url))).toBe(false);
   const downloadEvent = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Excelをダウンロード' }).click();
@@ -52,14 +84,13 @@ test('実Clipboard API・失敗通知・遅延ロード・実XLSXダウンロー
   const book = new ExcelJS.Workbook();
   await book.xlsx.load(new Uint8Array(await readFile((await download.path())!)).buffer);
   const sheet = book.getWorksheet('Table')!;
-  expect(sheet.getCell('A2').value).toBe('00123');
+  expect(sheet.getCell('A2').value).toBe('りんご');
   expect(sheet.getCell('A2').type).toBe(ExcelJS.ValueType.String);
-  expect(sheet.getCell('B2').value).toBe('青森\n甘い');
+  expect(sheet.getCell('B2').value).toBe('3');
   expect(scripts.some(url => /\/xlsx-/.test(url))).toBe(true);
   await page.getByRole('radio', { name: 'Excel → Markdown' }).check();
-  await page.getByRole('textbox', { name: '入力', exact: true }).fill('h\nx');
   await page.getByRole('button', { name: '結果をコピー' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('| h |\n| --- |\n| x |');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('| 品名 | 数量 | 備考 |\n| --- | --- | --- |\n| りんご | 3 | 青森県産 |\n| みかん | 5 | 愛媛県産 |');
   await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { value: undefined }); });
   await page.getByRole('button', { name: '結果をコピー' }).click();
   await expect(page.getByRole('status')).toContainText('コピーできませんでした');

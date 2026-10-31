@@ -2,6 +2,8 @@ import { findTool } from '../../registry';
 import { parseMarkdown, parseTsv, toMarkdown, toTsv, type TableData } from './logic';
 import './style.css';
 
+const INITIAL_SAMPLE = '| 品名 | 数量 | 備考 |\n| --- | --- | --- |\n| りんご | 3 | 青森県産 |\n| みかん | 5 | 愛媛県産 |';
+
 export function mount(container: HTMLElement): () => void {
   const view = document.createElement('div');
   view.className = 'table-tool';
@@ -63,7 +65,7 @@ export function mount(container: HTMLElement): () => void {
     download.disabled = downloading || !table.rows.length;
     download.hidden = !toExcel();
   };
-  const update = () => {
+  const updateInput = () => {
     revision++;
     status.textContent = '';
     error.textContent = '';
@@ -80,10 +82,19 @@ export function mount(container: HTMLElement): () => void {
     input.setAttribute('aria-invalid', String(Boolean(error.textContent)));
     buttons();
   };
-  input.addEventListener('input', update, options);
-  view.addEventListener('change', update, options);
+  const updateDirection = () => {
+    // 直前の変換に成功した場合のみ、その結果を次の入力として渡す。
+    // 失敗時は入力を残し、新しい方向で再検証してエラー表示を更新する。
+    if (!error.textContent) input.value = output.value;
+    updateInput();
+  };
+  input.value = INITIAL_SAMPLE;
+  input.addEventListener('input', updateInput, options);
+  view.querySelectorAll<HTMLInputElement>('input[name="table-direction"]').forEach(radio => {
+    radio.addEventListener('change', updateDirection, options);
+  });
   view.querySelector('[data-clear]')!.addEventListener('click', () => {
-    input.value = ''; update(); input.focus();
+    input.value = ''; updateInput(); input.focus();
   }, options);
   copy.addEventListener('click', async () => {
     if (copying || !table.rows.length) return;
@@ -128,7 +139,7 @@ export function mount(container: HTMLElement): () => void {
     }
   }, options);
   container.append(view);
-  update();
+  updateInput();
   return () => {
     disposed = true;
     listeners.abort();
