@@ -66,7 +66,7 @@ test('SVGの実ダウンロード・単体表示・入力の非送信と非保�
 test('画面遷移・再読み込み・履歴で入力は復元せず、ホームは遅延読み込みを維持', async ({ page }) => {
   const scripts: string[] = []; page.on('request', request => { if (request.resourceType() === 'script') scripts.push(request.url()); });
   await page.goto('./'); expect(scripts.some(url => /regex-visualizer-|worker-/.test(url))).toBe(false);
-  await page.locator('.tool-card').filter({ has: page.getByRole('heading', { name: '正規表現の可視化' }) }).click();
+  await page.locator('.tool-card').filter({ has: page.getByRole('heading', { name: 'JavaScript正規表現ビジュアライザー' }) }).click();
   await expect(page).toHaveURL(/tool=regex-visualizer/);
   const input = page.getByRole('textbox', { name: '正規表現のパターン' });
   await input.fill('private-input'); await expect(page.getByRole('button', { name: 'SVGをダウンロード' })).toBeEnabled();

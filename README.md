@@ -4,7 +4,7 @@
 
 ![Coverage](https://arscombinatoria.github.io/web-toolbox/coverage.svg)
 
-ブラウザで使える小さな便利ツール集です。IPアドレス確認、全角・半角変換、Markdown表変換、正規表現の可視化、JWTデバッガー、JST・UTC日時変換を提供する、バックエンドを持たない静的SPAです。
+ブラウザで使える小さな便利ツール集です。IPアドレス確認、全角・半角変換、Markdown表変換、JavaScript正規表現ビジュアライザー、JWTデバッガー、JST・UTC日時変換を提供する、バックエンドを持たない静的SPAです。
 
 トップページのカードやサイドバーからツールを選べます。ヘッダーの「Web Toolbox」またはメニューの「ホーム」からトップページに戻れます。個別URLへの直接アクセス、再読み込み、ブラウザの戻る・進むに対応しています。モバイルではヘッダーからメニューを開けます。
 
@@ -20,7 +20,7 @@
 | [IP登録情報検索](https://arscombinatoria.github.io/web-toolbox/?tool=rdap-lookup) | IPv4・IPv6のネットワーク・管理組織・公開連絡先検索、RDAP JSON表示・コピー |
 | [全角・半角変換](https://arscombinatoria.github.io/web-toolbox/?tool=width-converter) | 英数字・記号・カタカナ・スペースの双方向変換 |
 | [Markdown表変換](https://arscombinatoria.github.io/web-toolbox/?tool=markdown-table) | Markdown表とExcel貼り付け用TSVの相互変換、XLSX出力（XLSX読み込みは非対応） |
-| [正規表現の可視化](https://arscombinatoria.github.io/web-toolbox/?tool=regex-visualizer) | JavaScript正規表現の構造をRailroad Diagramで表示、SVG出力 |
+| [JavaScript正規表現ビジュアライザー](https://arscombinatoria.github.io/web-toolbox/?tool=regex-visualizer) | JavaScript正規表現の構造をRailroad Diagramで表示、SVG出力 |
 | [JWTデバッガー](https://arscombinatoria.github.io/web-toolbox/?tool=jwt-debugger) | JWTのデコード、Claims・UTC/JST日時評価、HS256・RS256・ES256署名検証 |
 | [JST・UTC日時変換](https://arscombinatoria.github.io/web-toolbox/?tool=datetime) | JST・UTCの24時間対応表と日時変換 |
 
@@ -63,7 +63,7 @@ RDAP.org（`https://rdap.org/ip/{IP}`）へブラウザから直接問い合わ�
 
 `<br>`、`<br/>`、`<br />`はセル内改行と相互変換します。コードスパン内とエスケープされたタグは文字列として保持し、その他の装飾・HTMLは解釈しません。セル内のパイプはコードスパン内でもエスケープが必要です。セル両端のASCIIスペース各1文字を構文上の余白として除去し、それ以上は保持します。詳しい空白・改行・エスケープ規則は[詳細設計書](docs/architecture.md)を参照してください。
 
-## 正規表現の可視化
+## JavaScript正規表現ビジュアライザー
 
 `/`で囲まずにJavaScript（ECMAScript）のパターンを入力し、`d g i m s u v y`のフラグを選びます。`u`と`v`は排他選択です。前後の空白は保持し、入力から200ms後に自動更新します。空入力は「空（0文字）」として描画します。
 

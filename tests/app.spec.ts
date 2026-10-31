@@ -14,7 +14,7 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
   const initialHistory = await page.evaluate(() => history.length);
   await home.click();
   expect(await page.evaluate(() => history.length)).toBe(initialHistory);
-  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', '正規表現の可視化', '日時・UTC変換']) {
+  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', 'JavaScript正規表現ビジュアライザー', '日時・UTC変換']) {
     const card = page.locator('.tool-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
     await card.focus();
     await page.keyboard.press('Enter');
