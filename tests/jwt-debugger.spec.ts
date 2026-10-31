@@ -59,3 +59,20 @@ for (const theme of ['light', 'dark']) for (const width of [1280, 320]) {
     await page.keyboard.press('Enter'); await expect(page.locator('[data-verification]')).toContainText('検証不可');
   });
 }
+
+test('元のJSONの大きな整数と小数を表示・コピーする', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const source = '{"id":9223372036854775807,"tiny":1e-400,"fraction":0.1234567890123456789012345,"exp":100.00000000000000001}';
+  const segment = Buffer.from(source).toString('base64url');
+  await page.goto('./?tool=jwt-debugger');
+  await page.getByLabel('JWT入力', { exact: true }).fill(`${segment}.${segment}.`);
+  for (const part of ['Header', 'Payload']) {
+    const output = await page.getByLabel(part, { exact: true }).inputValue();
+    expect(output).toContain('9223372036854775807');
+    expect(output).toContain('0.1234567890123456789012345');
+    expect(output).toContain('1e-400');
+    await page.getByRole('button', { name: `${part}をコピー`, exact: true }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(output);
+  }
+  await expect(page.locator('[data-claims]')).toContainText('数値精度');
+});

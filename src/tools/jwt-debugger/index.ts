@@ -50,6 +50,7 @@ export function mount(container: HTMLElement): () => void {
   const options = { signal: listeners.signal };
   let disposed = false;
   let revision = 0;
+  let decoded: ReturnType<typeof decodeJwt> | undefined;
   const invalidate = () => {
     query('[data-warning]').textContent = '';
     let help = '';
@@ -64,21 +65,22 @@ export function mount(container: HTMLElement): () => void {
   const updateClaims = () => {
     const list = query('[data-claims]');
     list.replaceChildren();
-    if (!payload.value) return;
-    for (const claim of analyzeClaims(JSON.parse(payload.value) as Record<string, unknown>)) {
+    if (!decoded) return;
+    for (const claim of analyzeClaims(decoded.payload, Date.now() / 1000, decoded.impreciseClaims)) {
       const term = document.createElement('dt'); term.textContent = `${claim.name}: ${claim.description}`;
       const detail = document.createElement('dd'); detail.textContent = claim.detail;
       list.append(term, detail);
     }
   };
   const decode = () => {
+    decoded = undefined;
     header.value = payload.value = signature.value = '';
     query('[data-error]').textContent = query('[data-meta]').textContent = query('[data-bytes]').textContent = '';
     try {
       if (input.value.trim()) {
-        const decoded = decodeJwt(input.value);
-        header.value = JSON.stringify(decoded.header, null, 2);
-        payload.value = JSON.stringify(decoded.payload, null, 2);
+        decoded = decodeJwt(input.value);
+        header.value = decoded.headerJson;
+        payload.value = decoded.payloadJson;
         signature.value = decoded.signature;
         query('[data-meta]').textContent = `alg: ${JSON.stringify(decoded.header.alg) ?? '未指定'} / typ: ${JSON.stringify(decoded.header.typ) ?? '未指定'}`;
         query('[data-bytes]').textContent = `Signature: ${decoded.signatureBytes} バイト`;
@@ -125,7 +127,7 @@ export function mount(container: HTMLElement): () => void {
   const timer = window.setInterval(updateClaims, 1000);
   container.append(view); decode();
   return () => {
-    disposed = true; revision++; listeners.abort(); window.clearInterval(timer);
+    disposed = true; decoded = undefined; revision++; listeners.abort(); window.clearInterval(timer);
     for (const field of [input, header, payload, signature, secret, publicKey]) field.value = '';
     view.replaceChildren(); view.remove();
   };
