@@ -360,7 +360,7 @@ SVG文字列を`innerHTML`へ挿入せず、`image/svg+xml`のBlob URLを`img.sr
 
 コピー成功・失敗をstatusで通知し、入力更新の世代番号と破棄フラグで古い完了通知を抑制します。破棄時は時計タイマーを止め、AbortControllerで入力・ボタン・`visibilitychange`などのリスナーを解除します。
 
-`logic.test.ts`は全24行、月末・年末・うるう年・0〜99年・入出力年境界、不正入力、秒省略、ISO・Unixの正負出力を検証します。epochの前後1秒と0秒、UTC／JSTの往復、入力範囲外になる境界出力も確認します。ローカル依存性はNode.js 24のTypeScript読み込みで別プロセスを起動し、`UTC`・`Asia/Tokyo`・`America/Los_Angeles`・`Pacific/Kiritimati`で夏時間切り替え日の変換・24時間表を比較します。`index.test.ts`は固定時計とfake timerで日付境界・再表示・破棄、コピー待機中の変更／破棄を確認します。
+`logic.test.ts`は全24行、月末・年末・うるう年・0〜99年・入出力年境界、不正入力、秒省略、ISO・Unixの正負出力を検証します。epochの前後1秒と0秒、UTC／JSTの往復、入力範囲外になる境界出力も確認します。ローカル依存性はNode.js 26のTypeScript読み込みで別プロセスを起動し、`UTC`・`Asia/Tokyo`・`America/Los_Angeles`・`Pacific/Kiritimati`で夏時間切り替え日の変換・24時間表を比較します。`index.test.ts`は固定時計とfake timerで日付境界・再表示・破棄、コピー待機中の変更／破棄を確認します。
 
 `tests/datetime.spec.ts`は固定時計と`America/Los_Angeles`のローカルゾーンで、表とハイライト、日付・行の選択、詳細変換、不正入力、実コピーと失敗、モバイル両テーマ、時間帯更新、切り替えを検証します。
 
@@ -390,7 +390,7 @@ Firefoxではスモークに加えて既存の`tests/ip-address-layout.spec.ts`�
 
 ### 実行環境とパイプライン
 
-Node.jsは24 LTSを使用し、[.nvmrc](../.nvmrc)の`24`と[package.json](../package.json)の`engines: 24.x`でローカル・CIのメジャーバージョンを揃えます。`build`は`npm run typecheck && vite build`で、`typecheck`は`tsc --noEmit`です。
+Node.jsは26 LTSを使用し、[.nvmrc](../.nvmrc)の`26`と[package.json](../package.json)の`engines: 26.x`でローカル・CIのメジャーバージョンを揃えます。`build`は`npm run typecheck && vite build`で、`typecheck`は`tsc --noEmit`です。
 
 [.github/workflows/ci-pages.yml](../.github/workflows/ci-pages.yml)はPRと`main`へのpushで起動します。CIジョブは次の順に実行します。
 
