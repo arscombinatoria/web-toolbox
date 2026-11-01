@@ -87,7 +87,7 @@ RDAP.org（`https://rdap.org/ip/{IP}`）へブラウザから直接問い合わ�
 
 - Vanilla TypeScript（strict）、Vite、HTML/CSS、ブラウザ標準APIを使用しています。
 - 単体テストはVitest + jsdom、E2EテストはPlaywrightを使用しています。
-- 開発・CIではNode.js **24 LTS**とnpmを使用します。メジャーバージョンは`.nvmrc`と`package.json`の`engines`で指定しています。
+- 開発・CIではNode.js **26 LTS**とnpmを使用します。メジャーバージョンは`.nvmrc`と`package.json`の`engines`で指定しています。
 - モダンブラウザを対象としています。自動E2E検証はChromiumの詳細シナリオと、Chromium・Firefox共通の主要機能スモーク／IPアドレス欄のレイアウトを対象としています。
 
 UIフレームワーク、外部フォント、アイコンライブラリは使用していません。XLSX生成にはExcelJS 4.4から移行したexceljs-community 5.2.1（MIT）を使用し、ダウンロード操作時に同一サイトのバンドルから動的に読み込みます。
@@ -102,7 +102,7 @@ npm ci
 npm run dev
 ```
 
-[ローカル開発サーバー](http://localhost:5173/web-toolbox/)を開いてください。`nvm`を使用しない場合は、Node.js 24を別途インストールしてください。
+[ローカル開発サーバー](http://localhost:5173/web-toolbox/)を開いてください。`nvm`を使用しない場合は、Node.js 26を別途インストールしてください。
 
 ### テスト・ビルド
 

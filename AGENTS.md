@@ -27,7 +27,7 @@ GitHub Pagesで公開する、バックエンドを持たない静的SPA。ツ�
 
 ## 技術・コーディング規約
 
-- Vanilla TypeScript（strict）、Vite、ES Modules、HTML/CSSを使用する。Node.jsは`.nvmrc`と`package.json`の指定（現在24 LTS）に合わせ、依存導入は`npm ci`を使う。
+- Vanilla TypeScript（strict）、Vite、ES Modules、HTML/CSSを使用する。Node.jsは`.nvmrc`と`package.json`の指定（現在26 LTS）に合わせ、依存導入は`npm ci`を使う。
 - ブラウザ標準APIを優先し、UIフレームワーク・状態管理ライブラリは導入しない。原則`any`を使わず、外部データは`unknown`として型・形式を検証する。
 - 既存の命名・フォーマットに合わせる。コメントは処理の言い換えより理由・制約を説明する。
 
