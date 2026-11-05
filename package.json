@@ -28,6 +28,6 @@
   "dependencies": {
     "@eslint-community/regexpp": "4.12.2",
     "exceljs-community": "5.2.1",
-    "jose": "^6.2.14"
+    "jose": "^6.2.15"
   }
 }
