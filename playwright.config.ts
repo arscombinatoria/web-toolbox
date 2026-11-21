@@ -11,7 +11,7 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:4173/web-toolbox/', trace: 'retain-on-failure' },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', testMatch: ['smoke.spec.ts', 'ip-address-layout.spec.ts'], use: { ...devices['Desktop Firefox'] } },
+    { name: 'firefox', testMatch: ['smoke.spec.ts', 'ip-address-layout.spec.ts', 'image-converter.spec.ts'], use: { ...devices['Desktop Firefox'] } },
   ],
   webServer: {
     command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',

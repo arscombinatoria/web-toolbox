@@ -2,7 +2,7 @@
 
 ## 概要・設計方針
 
-Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・IP登録情報検索・全角／半角変換・Markdown表変換・JavaScript正規表現ビジュアライザー・JST／UTC日時変換・JWTデバッガーの7ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
+Web Toolboxは、GitHub Pagesで配信するバックエンドのない静的SPAです。ホーム画面と、IPアドレス確認・IP登録情報検索・全角／半角変換・Markdown表変換・JavaScript正規表現ビジュアライザー・JST／UTC日時変換・JWTデバッガー・画像変換の8ツールで構成します。本書は現行実装の内部設計、変換規則、制約、設計判断と検証範囲を記載します。利用方法と開発手順は[README](../README.md)、エージェント向けの実装規約は[AGENTS.md](../AGENTS.md)を参照してください。
 
 Vanilla TypeScript（strict）、ES Modules、Vite、HTML/CSS、ブラウザ標準APIを使用します。UIフレームワークや状態管理ライブラリは使用せず、各ツールのDOM操作と通信・変換処理を分離しています。共通UIはRegistryのメタデータから生成し、ツール本体は必要時に読み込みます。
 
@@ -44,6 +44,8 @@ web-toolbox/
         index.ts / runner.ts / protocol.ts / worker.ts / diagram.ts / style.css
       jwt-debugger/
         index.ts / logic.ts / verify.ts / style.css
+      image-converter/
+        index.ts / encoder.ts / style.css
       datetime/
         index.ts / logic.ts / style.css
   tests/                           # Playwrightのスモーク・詳細操作・IP欄レイアウト
@@ -61,7 +63,7 @@ web-toolbox/
 
 [src/registry.ts](../src/registry.ts)の`ToolDefinition`は`id`、`name`、`description`、`category`、`load`を持ちます。`load`は固定パスを指定した動的importです。URLの文字列をimportパスに直接使用しません。共通の`ToolModule`型もRegistryで定義します。
 
-`categories`の配列順はサイドバーのカテゴリ順、`tools`の配列順はカテゴリ内のツール順とホームのカード順になります。現在のツール順はIP確認、IP登録情報検索、全角・半角、Markdown表、正規表現、JWT、日時です。ホームはツール登録に含めず、`components/home.ts`で表示します。
+`categories`の配列順はサイドバーのカテゴリ順、`tools`の配列順はカテゴリ内のツール順とホームのカード順になります。現在のツール順はIP確認、IP登録情報検索、全角・半角、Markdown表、正規表現、JWT、日時、画像変換です。ホームはツール登録に含めず、`components/home.ts`で表示します。
 
 ホームのカードはRegistryのID・名前・説明から生成します。ホーム表示時にはツールの`load`を呼ばず、ツール本体・正規表現Worker・regexpp・ExcelJS・joseを読み込まず、ipify・RDAPにも通信しません。ExcelJSはMarkdown表のダウンロード操作時、joseはJWTの署名検証操作時にさらに遅延読み込みします。
 
@@ -115,7 +117,7 @@ Escape・閉じるボタン・ダイアログ背景のクリックで閉じ、�
 
 ## セキュリティ・データ保護
 
-ツール入力・変換結果・取得したIPは、URL・ログ・localStorage・sessionStorageなどへ保存しません。ブラウザ内の画面状態として保持し、切り替え時に破棄します。XLSXの明示的なダウンロードとClipboard APIへの書き込みは利用者操作による出力です。
+ツール入力・変換結果・取得したIPは、URL・ログ・localStorage・sessionStorageなどへ保存しません。ブラウザ内の画面状態として保持し、切り替え時に破棄します。画像・XLSXの明示的なダウンロードとClipboard APIへの書き込みは利用者操作による出力です。
 
 永続化するアプリ設定は手動選択したテーマのみです。localStorageの`web-toolbox-theme`に`light`または`dark`を保存し、「システム」で削除します。読み書き失敗は捕捉し、保存できなくても現在のテーマ選択とアプリ動作を継続します。
 
@@ -364,6 +366,16 @@ SVG文字列を`innerHTML`へ挿入せず、`image/svg+xml`のBlob URLを`img.sr
 
 `tests/datetime.spec.ts`は固定時計と`America/Los_Angeles`のローカルゾーンで、表とハイライト、日付・行の選択、詳細変換、不正入力、実コピーと失敗、モバイル両テーマ、時間帯更新、切り替えを検証します。
 
+### 画像変換 — `image-converter`
+
+`encoder.ts`は先頭12バイトまでのシグネチャと、指定があればMIME型を照合し、`createImageBitmap`でデコードします。ファイルサイズを先に制限し、画像要素の寸法・画素数をビットマップ生成前に確認します。一時的な入力URLは読み込みの中止・成功・失敗時に解放します。JPEGは白を塗ってから画像を描き、PNGは透明な画布に描きます。`toBlob`の結果が空または指定MIME型と違う場合は失敗です。出力サイズと品質の対応はブラウザに依存します。
+
+`index.ts`は同一の寸法と配置で元のビットマップと結果のプレビューを重ねます。標準range入力はCSSのクリップ位置だけを変更します。透明画素から反対側の画像が透けないよう左右両方をクリップします。サイズ増減率は「（出力 − 入力）÷ 入力 × 100」で求めます。
+
+入力・設定変更・破棄で世代番号を進め、保存を無効にします。品質変更は最後の入力から180ms待ち、デコード・変換・結果プレビューの完了時に世代を照合します。古いビットマップは閉じ、結果のObject URLはプレビューと保存で共有して更新・破棄時に解放します。エンコード用Canvasは完了時に寸法をゼロにし、画面破棄時にはリスナーとタイマーも解除します。
+
+Vitestで形式検証、白背景と品質指定、サイズ増減、連続入力と古い完了処理を検証します。`tests/image-converter.spec.ts`はChromium・Firefoxで実際の画像を選択・ドロップし、両形式の保存、比較操作、狭幅の両テーマ、失敗後の再入力を確認します。
+
 ## テスト方針
 
 ### 単体テストとカバレッジ
@@ -372,13 +384,13 @@ SVG文字列を`innerHTML`へ挿入せず、`image/svg+xml`のBlob URLを`img.sr
 
 共通基盤では`router.test.ts`がURL・標準リンク操作・履歴通知、`tool-host.test.ts`が遅いimportの成功／失敗と新画面の競合、ホーム遷移、破棄契約、`components/home.test.ts`がRegistry順のカードと未ロード、`components/theme.test.ts`がOS追従・手動保存・ストレージ拒否・購読解除を検証します。
 
-`npm test`は通常のVitest実行、`npm run test:coverage`はV8 Coverageを有効にし、`text`と`json-summary`を出力します。`coverage.include`は`src/`のJS/TSコード全体を指定し、未importのソースも対象にします。test/spec・`__tests__`・型宣言を除外し、起動処理・共通UI・ルーター・ホスト・7ツールを含めます。最低閾値は設定せず、Playwrightのカバレッジを合算しません。Vitestと`@vitest/coverage-v8`は同一の完全バージョンに固定しています。
+`npm test`は通常のVitest実行、`npm run test:coverage`はV8 Coverageを有効にし、`text`と`json-summary`を出力します。`coverage.include`は`src/`のJS/TSコード全体を指定し、未importのソースも対象にします。test/spec・`__tests__`・型宣言を除外し、起動処理・共通UI・ルーター・ホスト・8ツールを含めます。最低閾値は設定せず、Playwrightのカバレッジを合算しません。Vitestと`@vitest/coverage-v8`は同一の完全バージョンに固定しています。
 
 ### E2Eと検証範囲
 
 [playwright.config.ts](../playwright.config.ts)はビルド済み`dist/`をVite previewで配信し、`http://127.0.0.1:4173/web-toolbox/`を使用します。E2Eコマンド自体はビルドしないため、事前の`npm run build`が必要です。サーバーは既存プロセスを再利用せず、指定ポートで起動します。CIでは`test.only`を禁止し、診断用に失敗時に1回再試行します。`failOnFlakyTests: true`により再試行でのみ成功したケースもコマンドを失敗させ、失敗時のtraceを保持します。
 
-Chromiumはホームと7ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
+Chromiumはホームと8ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
 
 `tests/smoke.spec.ts`の8ケースはChromium・Firefox共通です。ホームからの遷移・URL・戻る／進む・再読み込み、IPv4／IPv6表示と再取得、文字種選択と双方向の文字幅変換、Markdown／TSV変換とエラー復帰、JSTの24時間表選択とUTC入力・epoch出力、RDAPの明示検索とJSON表示、正規表現のWorker描画・Unicode集合・構文エラーからの復帰、JWTのデコード・実署名検証とエラー復帰を検証します。ブラウザのタイムゾーンをロサンゼルスに固定し、端末の時間帯に依存しない操作を確認します。
 
