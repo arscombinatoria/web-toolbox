@@ -9,12 +9,12 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
   await expect(page).toHaveTitle('Web Toolbox');
   await expect(page.locator('.home').getByText('日々の作業を、少し手軽に。', { exact: true })).toBeVisible();
   await expect(page.getByText('ブラウザで使える、小さな便利ツール集です。', { exact: true })).toBeVisible();
-  await expect(page.locator('.tool-card')).toHaveCount(7);
+  await expect(page.locator('.tool-card')).toHaveCount(8);
   await expect(home).toHaveAttribute('aria-current', 'page');
   const initialHistory = await page.evaluate(() => history.length);
   await home.click();
   expect(await page.evaluate(() => history.length)).toBe(initialHistory);
-  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', 'JavaScript正規表現ビジュアライザー', '日時・UTC変換']) {
+  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', 'JavaScript正規表現ビジュアライザー', '画像変換', '日時・UTC変換']) {
     const card = page.locator('.tool-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
     await card.focus();
     await page.keyboard.press('Enter');
@@ -107,11 +107,11 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'ホーム', exact: true })).toBeFocused();
   // 最後のリンクからTabを押すとダイアログ内に戻る。
-  await dialog.getByRole('link', { name: '日時・UTC変換', exact: true }).focus();
+  await dialog.getByRole('link', { name: '画像変換', exact: true }).focus();
   await page.keyboard.press('Tab');
   await expect(dialog.getByRole('button', { name: '閉じる', exact: true })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('link', { name: '日時・UTC変換', exact: true })).toBeFocused();
+  await expect(dialog.getByRole('link', { name: '画像変換', exact: true })).toBeFocused();
   // 境界以外では通常のTab順序を維持する。
   await dialog.getByRole('button', { name: '閉じる', exact: true }).focus();
   await page.keyboard.press('Tab');
@@ -201,7 +201,7 @@ test('ホームはアプリのチャンクだけを読み込み、外部通信�
   const requests: string[] = [];
   page.on('request', request => requests.push(request.url()));
   await page.goto('./');
-  await expect(page.locator('.tool-card')).toHaveCount(7);
+  await expect(page.locator('.tool-card')).toHaveCount(8);
   // load完了までの全通信を確認し、動的チャンクや外部リクエストがないことを検証する。
   await page.waitForLoadState('networkidle');
   expect(requests.every(url => new URL(url).origin === new URL(page.url()).origin)).toBe(true);

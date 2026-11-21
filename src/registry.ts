@@ -7,6 +7,7 @@ export const categories = [
   { id: 'network', name: 'ネットワーク' },
   { id: 'text-data', name: 'テキスト・データ' },
   { id: 'date-time', name: '日時' },
+  { id: 'image', name: '画像' },
 ] as const;
 
 export interface ToolDefinition {
@@ -52,6 +53,11 @@ export const tools: readonly ToolDefinition[] = [
     id: 'datetime', name: '日時・UTC変換', category: 'date-time',
     description: 'JST・UTCの24時間対応表と日時変換',
     load: () => import('./tools/datetime/index'),
+  },
+  {
+    id: 'image-converter', name: '画像変換', category: 'image',
+    description: 'JPEG・PNGへの画像変換と画質・ファイルサイズ比較',
+    load: () => import('./tools/image-converter/index'),
   },
 ];
 
