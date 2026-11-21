@@ -1,4 +1,11 @@
-export type OutputType = 'image/jpeg' | 'image/png';
+export const encoders = {
+  original: { label: 'Original', type: null, extension: '', hasQuality: false },
+  'image/jpeg': { label: 'Browser JPEG', type: 'image/jpeg', extension: '.jpg', hasQuality: true },
+  'image/png': { label: 'Browser PNG', type: 'image/png', extension: '.png', hasQuality: false },
+} as const;
+
+export type EncoderId = keyof typeof encoders;
+type OutputType = NonNullable<(typeof encoders)[EncoderId]['type']>;
 
 function inputType(bytes: Uint8Array): string | undefined {
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';

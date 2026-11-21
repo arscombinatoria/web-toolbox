@@ -23,7 +23,7 @@
 | [JavaScript正規表現ビジュアライザー](https://arscombinatoria.github.io/web-toolbox/?tool=regex-visualizer) | JavaScript正規表現の構造をRailroad Diagramで表示、SVG出力 |
 | [JWTデバッガー](https://arscombinatoria.github.io/web-toolbox/?tool=jwt-debugger) | JWTのデコード、Claims・UTC/JST日時評価、HS256・RS256・ES256署名検証 |
 | [JST・UTC日時変換](https://arscombinatoria.github.io/web-toolbox/?tool=datetime) | JST・UTCの24時間対応表と日時変換 |
-| [画像変換](https://arscombinatoria.github.io/web-toolbox/?tool=image-converter) | JPEG・PNGへの画像変換と画質・ファイルサイズ比較 |
+| [画像変換](https://arscombinatoria.github.io/web-toolbox/?tool=image-converter) | 元画像・JPEG・PNGを左右で選んで画質・ファイルサイズを比較 |
 
 ## IPアドレス確認
 
@@ -86,11 +86,13 @@ RDAP.org（`https://rdap.org/ip/{IP}`）へブラウザから直接問い合わ�
 
 ## 画像変換
 
-JPEG・PNG・WebPを1枚ドロップするか、「画像を選択」から開きます。比較線をドラッグすると左に元画像、右に変換結果が表示されます。キーボードでは比較線にTabで移動し、左右の矢印キーで調整できます。
+JPEG・PNG・WebPを1枚ドロップするか、「画像を選択」から開きます。最初は左にOriginal、右に品質0.75のBrowser JPEGを表示します。画像の下にある左右の設定で、Original・Browser JPEG・Browser PNGを個別に選べます。比較線はマウスやタッチで動かせます。キーボードではTabで移動し、左右の矢印キーで調整できます。
 
-Browser JPEGは品質0.75から始まり、0.01〜1.00を選べます。透明部分は白になります。Browser PNGは透明度を保持し、圧縮設定はブラウザに従います。変換後に元のサイズ、出力サイズ、増減率を確認し、「ダウンロード」で保存してください。設定によっては元画像より大きくなります。
+Browser JPEGの品質は0.01〜1.00です。左右の値は個別に記憶し、別の形式からJPEGへ戻すと復元します。JPEGの透明部分は白になります。Browser PNGは透明度を保持し、圧縮設定はブラウザに従います。
 
-画像は外部送信せず、ブラウザ内で処理します。出力は静止画で、EXIFなどのメタデータの保持は保証しません。上限は入力32 MiB、各辺8,192px、1,600万画素です。端末のメモリやCanvasの制限により、上限内でも変換できない場合があります。
+各パネルに出力サイズと元ファイル比を表示し、両側の結果がそろうと左のサイズを基準にした右の増減率も表示します。各側のダウンロードボタンで保存できます。Originalは入力ファイルの名前と内容を保持します。変換結果の名前には左右の区別が入り、JPEGでは品質も分かります。
+
+画像は外部送信せず、ブラウザ内で処理します。再エンコードしたJPEG・PNGは静止画で、EXIFなどのメタデータは保持されない場合があります。上限は入力32 MiB、各辺8,192px、1,600万画素です。端末のメモリやCanvasの制限により、上限内でも変換できない場合があります。
 
 ## 技術スタック・動作環境
 
