@@ -1,6 +1,17 @@
 import { findTool } from '../../registry';
-import { decode, encode, sizeChange, type OutputType } from './encoder';
+import { decode, encode, encoders, sizeChange, type EncoderId } from './encoder';
 import './style.css';
+
+const sideDefinitions = [
+  { id: 'left', label: '左', initialEncoder: 'original' },
+  { id: 'right', label: '右', initialEncoder: 'image/jpeg' },
+] as const;
+const initialQuality = 0.75;
+
+type SideResult =
+  | { status: 'idle' | 'failed' }
+  | { status: 'pending'; encoding?: Promise<Blob> }
+  | { status: 'ready'; blob: Blob; filename: string };
 
 export function mount(container: HTMLElement): () => void {
   const view = document.createElement('div');
@@ -12,21 +23,34 @@ export function mount(container: HTMLElement): () => void {
     <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp" hidden>
     <section hidden aria-label="画像の比較と変換設定">
       <p class="image-info"></p>
-      <div class="image-captions"><strong>元画像</strong><strong>変換後</strong></div>
+      <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
       <div class="image-stage">
-        <canvas role="img" aria-label="元画像のプレビュー"></canvas>
-        <img alt="変換後のプレビュー" hidden>
+        <canvas role="img" aria-label="元画像のプレビュー" hidden></canvas>
+        ${sideDefinitions.map(({ id, label }) => `<img data-side="${id}" alt="${label}側のプレビュー" hidden>`).join('')}
         <span class="image-divider" aria-hidden="true"></span>
         <input type="range" class="image-position" min="0" max="100" value="50" aria-label="比較位置">
       </div>
       <div class="image-controls">
-        <label>出力形式 <select><option value="image/jpeg">Browser JPEG</option><option value="image/png">Browser PNG</option></select></label>
-        <label class="image-quality">JPEG品質 <input type="range" aria-label="JPEG品質" min="0.01" max="1" step="0.01" value="0.75"><span>0.75</span></label>
+        ${sideDefinitions.map(({ id, label, initialEncoder }) => `
+          <fieldset class="image-panel" data-side="${id}">
+            <legend>${label}の設定</legend>
+            <label>${label}の形式 <select>
+              ${Object.entries(encoders).map(([key, { label }]) => `<option value="${key}"${key === initialEncoder ? ' selected' : ''}>${label}</option>`).join('')}
+            </select></label>
+            <label class="image-quality" ${encoders[initialEncoder].hasQuality ? '' : 'hidden'}>
+              JPEG品質 <input type="range" aria-label="${label}のJPEG品質" min="0.01" max="1" step="0.01" value="${initialQuality}">
+              <span>${initialQuality.toFixed(2)}</span>
+            </label>
+            <p class="image-result" role="status" aria-atomic="true"></p>
+            <p class="image-error" role="alert"></p>
+            <button type="button" class="image-save" disabled>${label}をダウンロード</button>
+          </fieldset>
+        `).join('')}
       </div>
-      <p class="image-result"></p>
-      <button type="button" class="image-save" disabled>ダウンロード</button>
+      <p class="image-comparison" role="status" aria-atomic="true"></p>
     </section>
-    <p role="status" aria-atomic="true"></p><p role="alert"></p>
+    <p class="image-input-status" role="status" aria-atomic="true"></p>
+    <p class="image-input-error" role="alert"></p>
     <p class="image-note">画像はブラウザ内で処理します。JPEGでは透明部分が白になります。EXIFなどのメタデータは保持されない場合があります。</p>`;
   const get = <T extends Element>(selector: string) => view.querySelector<T>(selector)!;
   const tool = findTool('image-converter')!;
@@ -38,38 +62,75 @@ export function mount(container: HTMLElement): () => void {
   const info = get('.image-info');
   const stage = get<HTMLElement>('.image-stage');
   const original = get<HTMLCanvasElement>('canvas');
-  const preview = get<HTMLImageElement>('img');
   const position = get<HTMLInputElement>('.image-position');
-  const format = get<HTMLSelectElement>('select');
-  const qualityLabel = get<HTMLLabelElement>('.image-quality');
-  const quality = get<HTMLInputElement>('.image-quality input');
-  const result = get('.image-result');
-  const save = get<HTMLButtonElement>('.image-save');
-  const status = get('[role=status]');
-  const alert = get('[role=alert]');
+  const comparison = get('.image-comparison');
+  const inputStatus = get('.image-input-status');
+  const inputError = get('.image-input-error');
   const listeners = new AbortController();
   const options = { signal: listeners.signal };
-  let revision = 0;
+  let inputGeneration = 0;
   let reading: AbortController | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let source: { file: File; bitmap: ImageBitmap } | undefined;
-  let resultUrl: string | undefined;
 
-  function invalidate() {
-    ++revision;
-    clearTimeout(timer);
-    save.disabled = true;
-    preview.hidden = true;
-    preview.removeAttribute('src');
-    if (resultUrl) URL.revokeObjectURL(resultUrl);
-    resultUrl = undefined;
-    result.textContent = alert.textContent = '';
-    return revision;
+  function createSide({ id, label, initialEncoder }: typeof sideDefinitions[number]) {
+    const panel = get<HTMLFieldSetElement>(`.image-panel[data-side="${id}"]`);
+    return {
+      id,
+      label,
+      encoder: initialEncoder as EncoderId,
+      quality: initialQuality,
+      generation: 0,
+      timer: undefined as ReturnType<typeof setTimeout> | undefined,
+      result: { status: 'idle' } as SideResult,
+      url: undefined as string | undefined,
+      caption: get(`.image-captions [data-side="${id}"]`),
+      preview: get<HTMLImageElement>(`img[data-side="${id}"]`),
+      format: panel.querySelector<HTMLSelectElement>('select')!,
+      qualityLabel: panel.querySelector<HTMLLabelElement>('.image-quality')!,
+      qualityInput: panel.querySelector<HTMLInputElement>('.image-quality input')!,
+      qualityValue: panel.querySelector('.image-quality span')!,
+      output: panel.querySelector('.image-result')!,
+      error: panel.querySelector('.image-error')!,
+      save: panel.querySelector<HTMLButtonElement>('.image-save')!,
+    };
+  }
+
+  type Side = ReturnType<typeof createSide>;
+  const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
+  const sides = [left, right];
+
+  function updateComparison() {
+    const leftResult = left.result;
+    const rightResult = right.result;
+    comparison.textContent = leftResult.status === 'ready' && rightResult.status === 'ready'
+      ? '左右比較（右のサイズを左基準で比較） ' + sizeChange(leftResult.blob.size, rightResult.blob.size)
+      : '';
+  }
+
+  function showOriginal(side: Side, visible: boolean) {
+    original.classList.toggle('image-original-' + side.id, visible);
+    original.hidden = original.classList.length === 0;
+  }
+
+  function invalidate(side: Side) {
+    ++side.generation;
+    clearTimeout(side.timer);
+    side.timer = undefined;
+    side.result = { status: 'idle' };
+    side.save.disabled = true;
+    side.preview.hidden = true;
+    side.preview.removeAttribute('src');
+    showOriginal(side, false);
+    if (side.url) URL.revokeObjectURL(side.url);
+    side.url = undefined;
+    side.output.textContent = side.error.textContent = '';
+    updateComparison();
   }
 
   function clearSource() {
     reading?.abort();
     reading = undefined;
+    sides.forEach(invalidate);
     source?.bitmap.close();
     source = undefined;
     original.width = original.height = 0;
@@ -78,54 +139,96 @@ export function mount(container: HTMLElement): () => void {
 
   function updatePosition() {
     stage.style.setProperty('--split', position.value + '%');
-    position.setAttribute('aria-valuetext', '元画像 ' + position.value + '%');
+    position.setAttribute('aria-valuetext', '左側 ' + position.value + '%');
   }
 
-  async function convert(current: number) {
-    if (!source || current !== revision) return;
+  function showSettings(side: Side) {
+    const encoder = encoders[side.encoder];
+    side.caption.textContent = side.label + ' · ' + encoder.label;
+    side.qualityLabel.hidden = !encoder.hasQuality;
+    side.qualityValue.textContent = side.quality.toFixed(2);
+  }
+
+  async function convert(side: Side, currentInput: number, currentSide: number) {
+    const isCurrent = () => currentInput === inputGeneration && currentSide === side.generation;
+    if (!source || !isCurrent()) return;
     const { file, bitmap } = source;
+    const { type, extension, hasQuality } = encoders[side.encoder];
+    const other = side === left ? right : left;
     try {
-      const blob = await encode(bitmap, format.value as OutputType, quality.valueAsNumber);
-      if (current !== revision) return;
-      resultUrl = URL.createObjectURL(blob);
-      preview.src = resultUrl;
-      await preview.decode();
-      if (current !== revision) return;
-      preview.hidden = false;
-      result.textContent = '変換後 ' + blob.size.toLocaleString('ja-JP') + ' B（' + sizeChange(file.size, blob.size) + '）';
-      save.disabled = false;
-      status.textContent = '変換しました。';
+      let blob: Blob = file;
+      let filename = file.name;
+      if (type) {
+        let encoding: Promise<Blob> | undefined;
+        // 設定が一致する間は、もう片側の変換処理か成功済みのBlobを共有する。
+        if (side.encoder === other.encoder && (!hasQuality || side.quality === other.quality)) {
+          if (other.result.status === 'ready') encoding = Promise.resolve(other.result.blob);
+          if (other.result.status === 'pending') encoding = other.result.encoding;
+        }
+        encoding ??= encode(bitmap, type, side.quality);
+        side.result = { status: 'pending', encoding };
+        const stem = file.name.replace(/\.[^.]*$/, '') || 'image';
+        const qualitySuffix = hasQuality ? '-q' + side.quality.toFixed(2) : '';
+        filename = stem + '-' + side.id + qualitySuffix + extension;
+        blob = await encoding;
+        if (!isCurrent()) return;
+      }
+      side.url = URL.createObjectURL(blob);
+      if (type) {
+        side.preview.src = side.url;
+        await side.preview.decode();
+        if (!isCurrent()) return;
+        side.preview.hidden = false;
+      } else {
+        showOriginal(side, true);
+      }
+      side.result = { status: 'ready', blob, filename };
+      side.output.textContent = '出力サイズ ' + blob.size.toLocaleString('ja-JP') + ' B（元ファイル比 ' + sizeChange(file.size, blob.size) + '）';
+      side.save.disabled = false;
+      updateComparison();
     } catch (cause) {
-      if (current !== revision) return;
-      invalidate();
-      status.textContent = '';
-      alert.textContent = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
+      if (!isCurrent()) return;
+      invalidate(side);
+      side.result = { status: 'failed' };
+      const message = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
+      side.error.textContent = side.label + '側：' + message;
     }
   }
 
-  function updateSettings(delay: number) {
-    const current = invalidate();
-    qualityLabel.hidden = format.value !== 'image/jpeg';
-    get('.image-quality span').textContent = quality.valueAsNumber.toFixed(2);
-    status.textContent = '変換しています…';
-    timer = setTimeout(() => void convert(current), delay);
+  function updateSettings(side: Side, delay = 0) {
+    invalidate(side);
+    showSettings(side);
+    if (!source) return;
+    const currentInput = inputGeneration;
+    const currentSide = side.generation;
+    side.result = { status: 'pending' };
+    side.output.textContent = '変換しています…';
+    if (delay === 0) {
+      void convert(side, currentInput, currentSide);
+    } else {
+      side.timer = setTimeout(() => {
+        side.timer = undefined;
+        void convert(side, currentInput, currentSide);
+      }, delay);
+    }
   }
 
   async function selectFiles(files: FileList | null) {
     if (!files?.length) return;
-    const current = invalidate();
+    const currentInput = ++inputGeneration;
     clearSource();
-    status.textContent = '';
+    inputStatus.textContent = inputError.textContent = '';
     if (files.length !== 1) {
-      alert.textContent = '画像は1枚ずつ選択してください。';
+      inputError.textContent = '画像は1枚ずつ選択してください。';
       return;
     }
     const file = files[0]!;
-    status.textContent = '画像を読み込んでいます…';
+    inputStatus.textContent = '画像を読み込んでいます…';
     try {
       reading = new AbortController();
       const bitmap = await decode(file, reading.signal);
-      if (current !== revision) { bitmap.close(); return; }
+      if (currentInput !== inputGeneration) { bitmap.close(); return; }
+      reading = undefined;
       source = { file, bitmap };
       original.width = bitmap.width;
       original.height = bitmap.height;
@@ -135,14 +238,15 @@ export function mount(container: HTMLElement): () => void {
       stage.style.aspectRatio = bitmap.width + ' / ' + bitmap.height;
       position.value = '50';
       updatePosition();
-      info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元画像 ' + file.size.toLocaleString('ja-JP') + ' B';
+      info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + file.size.toLocaleString('ja-JP') + ' B';
+      inputStatus.textContent = '';
       section.hidden = false;
-      updateSettings(0);
+      for (const side of sides) updateSettings(side);
     } catch (cause) {
-      if (current !== revision) return;
+      if (currentInput !== inputGeneration) return;
       clearSource();
-      status.textContent = '';
-      alert.textContent = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '画像を読み込めませんでした。';
+      inputStatus.textContent = '';
+      inputError.textContent = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '画像を読み込めませんでした。';
     }
   }
 
@@ -156,21 +260,33 @@ export function mount(container: HTMLElement): () => void {
     void selectFiles(event.dataTransfer?.files ?? null);
   }, options);
   position.addEventListener('input', updatePosition, options);
-  quality.addEventListener('input', () => updateSettings(180), options);
-  format.addEventListener('change', () => updateSettings(0), options);
-  save.addEventListener('click', () => {
-    if (save.disabled || !source || !resultUrl) return;
-    const anchor = document.createElement('a');
-    anchor.href = resultUrl;
-    anchor.download = (source.file.name.replace(/\.[^.]*$/, '') || 'image') + (format.value === 'image/jpeg' ? '.jpg' : '.png');
-    view.append(anchor);
-    anchor.click();
-    anchor.remove();
-  }, options);
+  for (const side of sides) {
+    showSettings(side);
+    side.format.addEventListener('change', () => {
+      const encoder = side.format.value as EncoderId;
+      if (encoder === side.encoder) return;
+      side.encoder = encoder;
+      updateSettings(side);
+    }, options);
+    side.qualityInput.addEventListener('input', () => {
+      if (!encoders[side.encoder].hasQuality || side.quality === side.qualityInput.valueAsNumber) return;
+      side.quality = side.qualityInput.valueAsNumber;
+      updateSettings(side, 180);
+    }, options);
+    side.save.addEventListener('click', () => {
+      if (side.result.status !== 'ready' || !side.url) return;
+      const anchor = document.createElement('a');
+      anchor.href = side.url;
+      anchor.download = side.result.filename;
+      view.append(anchor);
+      anchor.click();
+      anchor.remove();
+    }, options);
+  }
   container.append(view);
   return () => {
     listeners.abort();
-    invalidate();
+    ++inputGeneration;
     clearSource();
     view.remove();
   };
