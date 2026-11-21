@@ -95,6 +95,16 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(qualityRight).toBeHidden();
   const png = await saveImage(page, saveRight, 'sample.alpha-right.png');
   expect([...png.subarray(0, 3)]).toEqual([137, 80, 78]);
+  const sizeFormat = new Intl.NumberFormat('ja-JP');
+  const percentFormat = new Intl.NumberFormat('ja-JP', { signDisplay: 'exceptZero', maximumFractionDigits: 2 });
+  for (const [panel, bytes] of [[leftPanel, leftJpeg], [rightPanel, png]] as const) {
+    const percent = (bytes.length - image.buffer.length) / image.buffer.length * 100;
+    await expect(panel.getByRole('status')).toHaveText(
+      `出力サイズ ${sizeFormat.format(bytes.length)} B（元ファイル比 ${percentFormat.format(percent)}%）`,
+    );
+  }
+  await expect(page.getByText('左右比較', { exact: false })).toHaveCount(0);
+  await expect(page.locator('.image-comparison')).toHaveCount(0);
   expect((await firstPixel(previewRight))[3]).toBe(0);
   expect(Math.min(...await firstPixel(previewLeft))).toBeGreaterThan(245);
 
@@ -111,7 +121,8 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
 
   await formatLeft.selectOption('original');
   await formatRight.selectOption('original');
-  await expect(page.locator('.image-comparison')).toHaveText(/右のサイズを左基準で比較） 0%/);
+  await expect(leftPanel.getByRole('status')).toHaveText(/元ファイル比 0%/);
+  await expect(rightPanel.getByRole('status')).toHaveText(/元ファイル比 0%/);
   expect(await saveImage(page, saveLeft, image.name)).toEqual(image.buffer);
   expect(await saveImage(page, saveRight, image.name)).toEqual(image.buffer);
 
@@ -163,18 +174,19 @@ test('変換に失敗した側を通知し、反対側は個別に保存・復�
   await expect(right.getByRole('button')).toBeDisabled();
   await expect(right.getByRole('status')).toBeEmpty();
   expect(await saveImage(page, left.getByRole('button'), image.name)).toEqual(image.buffer);
-  await expect(page.locator('.image-comparison')).toBeEmpty();
+  await expect(left.getByRole('status')).toHaveText(/元ファイル比 0%/);
 
   await left.getByLabel('左の形式').selectOption('image/png');
   await expect(left.getByRole('alert')).toContainText('左側：指定形式に変換できませんでした');
   await expect(left.getByRole('button')).toBeDisabled();
   await expect(right.getByRole('alert')).toContainText('指定形式に変換できませんでした');
   await expect(right.getByRole('button')).toBeDisabled();
-  await expect(page.locator('.image-comparison')).toBeEmpty();
+  await expect(left.getByRole('status')).toBeEmpty();
   await right.getByLabel('右の形式').selectOption('original');
   await expect(right.getByRole('alert')).toBeEmpty();
   await expect(left.getByRole('button')).toBeDisabled();
   await expect(right.getByRole('button')).toBeEnabled();
+  await expect(right.getByRole('status')).toHaveText(/元ファイル比 0%/);
 });
 
 test.describe('タッチ操作', () => {

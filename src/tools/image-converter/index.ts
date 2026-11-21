@@ -47,7 +47,6 @@ export function mount(container: HTMLElement): () => void {
           </fieldset>
         `).join('')}
       </div>
-      <p class="image-comparison" role="status" aria-atomic="true"></p>
     </section>
     <p class="image-input-status" role="status" aria-atomic="true"></p>
     <p class="image-input-error" role="alert"></p>
@@ -63,7 +62,6 @@ export function mount(container: HTMLElement): () => void {
   const stage = get<HTMLElement>('.image-stage');
   const original = get<HTMLCanvasElement>('canvas');
   const position = get<HTMLInputElement>('.image-position');
-  const comparison = get('.image-comparison');
   const inputStatus = get('.image-input-status');
   const inputError = get('.image-input-error');
   const listeners = new AbortController();
@@ -99,14 +97,6 @@ export function mount(container: HTMLElement): () => void {
   const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
   const sides = [left, right];
 
-  function updateComparison() {
-    const leftResult = left.result;
-    const rightResult = right.result;
-    comparison.textContent = leftResult.status === 'ready' && rightResult.status === 'ready'
-      ? '左右比較（右のサイズを左基準で比較） ' + sizeChange(leftResult.blob.size, rightResult.blob.size)
-      : '';
-  }
-
   function showOriginal(side: Side, visible: boolean) {
     original.classList.toggle('image-original-' + side.id, visible);
     original.hidden = original.classList.length === 0;
@@ -124,7 +114,6 @@ export function mount(container: HTMLElement): () => void {
     if (side.url) URL.revokeObjectURL(side.url);
     side.url = undefined;
     side.output.textContent = side.error.textContent = '';
-    updateComparison();
   }
 
   function clearSource() {
@@ -185,7 +174,6 @@ export function mount(container: HTMLElement): () => void {
       side.result = { status: 'ready', blob, filename };
       side.output.textContent = '出力サイズ ' + blob.size.toLocaleString('ja-JP') + ' B（元ファイル比 ' + sizeChange(file.size, blob.size) + '）';
       side.save.disabled = false;
-      updateComparison();
     } catch (cause) {
       if (!isCurrent()) return;
       invalidate(side);
