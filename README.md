@@ -23,7 +23,7 @@
 | [JavaScript正規表現ビジュアライザー](https://arscombinatoria.github.io/web-toolbox/?tool=regex-visualizer) | JavaScript正規表現の構造をRailroad Diagramで表示、SVG出力 |
 | [JWTデバッガー](https://arscombinatoria.github.io/web-toolbox/?tool=jwt-debugger) | JWTのデコード、Claims・UTC/JST日時評価、HS256・RS256・ES256署名検証 |
 | [JST・UTC日時変換](https://arscombinatoria.github.io/web-toolbox/?tool=datetime) | JST・UTCの24時間対応表と日時変換 |
-| [画像変換](https://arscombinatoria.github.io/web-toolbox/?tool=image-converter) | 元画像・JPEG・PNGを左右で選んで画質・ファイルサイズを比較 |
+| [画像変換](https://arscombinatoria.github.io/web-toolbox/?tool=image-converter) | 元画像・JPEG・PNGの画質を比較し、各出力サイズの元ファイル比を確認 |
 
 ## IPアドレス確認
 
@@ -90,7 +90,7 @@ JPEG・PNG・WebPを1枚ドロップするか、「画像を選択」から開�
 
 Browser JPEGの品質は0.01〜1.00です。左右の値は個別に記憶し、別の形式からJPEGへ戻すと復元します。JPEGの透明部分は白になります。Browser PNGは透明度を保持し、圧縮設定はブラウザに従います。
 
-各パネルに出力サイズと元ファイル比を表示し、両側の結果がそろうと左のサイズを基準にした右の増減率も表示します。各側のダウンロードボタンで保存できます。Originalは入力ファイルの名前と内容を保持します。変換結果の名前には左右の区別が入り、JPEGでは品質も分かります。
+各パネルに出力サイズと元ファイル比を表示します。Originalの元ファイル比は0%です。各側のダウンロードボタンで保存できます。Originalは入力ファイルの名前と内容を保持します。変換結果の名前には左右の区別が入り、JPEGでは品質も分かります。
 
 画像は外部送信せず、ブラウザ内で処理します。再エンコードしたJPEG・PNGは静止画で、EXIFなどのメタデータは保持されない場合があります。上限は入力32 MiB、各辺8,192px、1,600万画素です。端末のメモリやCanvasの制限により、上限内でも変換できない場合があります。
 

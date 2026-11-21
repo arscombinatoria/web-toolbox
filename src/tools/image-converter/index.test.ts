@@ -79,7 +79,7 @@ function setup() {
   return {
     active, createUrl, revokeUrl, download, choose, drop: get<HTMLElement>('.image-drop'),
     left: side('left'), right: side('right'),
-    comparison: get('.image-comparison'), info: get('.image-info'),
+    info: get('.image-info'),
     canvas: get<HTMLCanvasElement>('canvas'),
     unmount() { unmount(); dispose = undefined; },
   };
@@ -88,7 +88,7 @@ function setup() {
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
 it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エンコードせず保存できる', async () => {
-  const { choose, active, left, right, comparison, canvas, createUrl, download } = setup();
+  const { choose, active, left, right, canvas, createUrl, download } = setup();
   const file = choose('input.alpha.png');
   await flush();
   expect(left.format.value).toBe('original');
@@ -98,7 +98,6 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   expect(encode).toHaveBeenCalledExactlyOnceWith(active, 'image/jpeg', 0.75);
   expect(left.output.textContent).toContain('2 B（元ファイル比 0%）');
   expect(right.output.textContent).toContain('4 B（元ファイル比 +100%）');
-  expect(comparison.textContent).toContain('右のサイズを左基準で比較） +100%');
 
   right.select('original');
   expect(left.qualityLabel.hidden).toBe(true);
@@ -106,7 +105,6 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   expect(canvas.classList.contains('image-original-left')).toBe(true);
   expect(canvas.classList.contains('image-original-right')).toBe(true);
   expect(right.output.textContent).toContain('2 B（元ファイル比 0%）');
-  expect(comparison.textContent).toContain('0%');
   expect(encode).toHaveBeenCalledOnce();
   expect(createUrl).toHaveBeenLastCalledWith(file);
   left.save.click();
@@ -117,7 +115,7 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
 });
 
 it('品質を独立して保持し、変更した側だけを変換する', async () => {
-  const { choose, active, left, right, comparison, download } = setup();
+  const { choose, active, left, right, download } = setup();
   choose();
   await flush();
 
@@ -130,8 +128,8 @@ it('品質を独立して保持し、変更した側だけを変換する', asyn
   expect(left.save.disabled).toBe(true);
   expect(right.save.disabled).toBe(false);
   expect(right.preview.src).toBe(rightUrl);
-  expect(right.output.textContent).toContain('4 B');
-  expect(comparison.textContent).toBe('');
+  expect(left.output.textContent).toBe('変換しています…');
+  expect(right.output.textContent).toBe('出力サイズ 4 B（元ファイル比 +100%）');
   left.save.click();
   right.save.click();
   expect(download).toHaveBeenCalledOnce();
@@ -161,7 +159,7 @@ it('品質を独立して保持し、変更した側だけを変換する', asyn
 });
 
 it('同じ設定の変換を共有し、成功結果のURLは左右で独立して解放する', async () => {
-  const { choose, left, right, comparison, createUrl, revokeUrl } = setup();
+  const { choose, left, right, createUrl, revokeUrl } = setup();
   choose();
   await flush();
   const encoding = deferred<Blob>();
@@ -174,18 +172,18 @@ it('同じ設定の変換を共有し、成功結果のURLは左右で独立し�
   expect(createUrl.mock.calls.slice(-2)).toEqual([[png], [png]]);
   expect(left.output.textContent).toContain('1 B（元ファイル比 -50%）');
   expect(right.output.textContent).toBe(left.output.textContent);
-  expect(comparison.textContent).toContain('0%');
   const leftUrl = left.preview.src;
   const rightUrl = right.preview.src;
   left.select('original');
   expect(revokeUrl).toHaveBeenCalledWith(leftUrl);
   expect(revokeUrl).not.toHaveBeenCalledWith(rightUrl);
   expect(right.preview.src).toBe(rightUrl);
-  expect(comparison.textContent).toContain('-50%');
+  expect(left.output.textContent).toBe('出力サイズ 2 B（元ファイル比 0%）');
+  expect(right.output.textContent).toBe('出力サイズ 1 B（元ファイル比 -50%）');
 });
 
 it('左右の設定変更が重なっても古いエンコードとプレビュー結果を破棄する', async () => {
-  const { choose, left, right, comparison, createUrl, revokeUrl } = setup();
+  const { choose, left, right, createUrl, revokeUrl } = setup();
   choose();
   await flush();
   const staleEncode = deferred<Blob>();
@@ -217,7 +215,8 @@ it('左右の設定変更が重なっても古いエンコードとプレビュ�
   expect(right.error.textContent).toBe('');
   expect(left.save.disabled).toBe(false);
   expect(right.save.disabled).toBe(false);
-  expect(comparison.textContent).toContain('0%');
+  expect(left.output.textContent).toBe('出力サイズ 4 B（元ファイル比 +100%）');
+  expect(right.output.textContent).toBe(left.output.textContent);
 });
 
 it('連続入力・ドロップ・ツール破棄で古いデコードと変換を無効化する', async () => {
