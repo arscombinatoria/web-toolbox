@@ -95,6 +95,29 @@ function setup(active = bitmap()) {
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
+it('SSIMULACRA2の目安表は閉じた状態で表示され、代表値と公式出典を案内する', () => {
+  setup();
+  const guide = document.querySelector<HTMLDetailsElement>('.image-score-guide')!;
+  expect(guide.open).toBe(false);
+  expect(guide.querySelector('summary')?.textContent).toBe('スコアの目安を見る');
+  expect([...guide.querySelectorAll('tbody tr')].map(row => [...row.querySelectorAll('th, td')].map(cell => cell.textContent))).toEqual([
+    ['100', '数学的にロスレス'],
+    ['90', '視覚的にロスレス'],
+    ['85', '極めて高画質'],
+    ['80', '非常に高画質'],
+    ['70', '高画質'],
+    ['50', '中程度'],
+    ['30', '低画質'],
+    ['10', '非常に低画質'],
+    ['0未満', '極端な画質劣化'],
+  ]);
+  expect(guide.querySelector('thead th')?.textContent).toBe('スコア');
+  expect(guide.textContent).toContain('厳密な区間ではなく代表的な目安');
+  expect(guide.textContent).toContain('高いほど元画像に近い');
+  expect(guide.textContent).toContain('100点満点の採点方式ではありません');
+  expect(guide.querySelector('a')?.getAttribute('href')).toBe('https://github.com/cloudinary/ssimulacra2#usage');
+});
+
 it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エンコードせず保存できる', async () => {
   const { choose, active, left, right, canvas, createUrl, download } = setup();
   const file = choose('input.alpha.png');
