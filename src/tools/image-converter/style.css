@@ -1,6 +1,6 @@
 .image-drop {
   display: grid; place-content: center; gap: var(--space-1);
-  width: 100%; min-height: 240px;
+  width: 100%; min-height: clamp(240px, 42dvh, 480px);
   padding: var(--space-4); border: 2px dashed var(--border); border-radius: var(--radius);
 }
 .image-drop strong, .image-drop span { display: block; }
@@ -71,5 +71,5 @@
 .image-score-guide p { margin: var(--space-1) 0 0; }
 
 @media (max-width: 759px) {
-  .image-drop { min-height: 180px; }
+  .image-drop { min-height: clamp(180px, 30dvh, 280px); }
 }

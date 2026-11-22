@@ -165,6 +165,35 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(saveRight).toBeHidden();
 });
 
+test('画像選択エリアは画面高に追従し、文言を中央に収める', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  const drop = page.locator('.image-drop');
+
+  for (const [width, height, expected] of [
+    [1280, 600, 252],
+    [1280, 900, 378],
+    [320, 720, 216],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    const bounds = (await drop.boundingBox())!;
+    expect(bounds.height).toBeCloseTo(expected, 0);
+    const textBounds = await drop.locator('strong, span').evaluateAll(elements =>
+      elements.map(element => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }),
+    );
+    for (const text of textBounds) {
+      expect(text.x).toBeGreaterThanOrEqual(bounds.x);
+      expect(text.x + text.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+      expect(text.y).toBeGreaterThanOrEqual(bounds.y);
+      expect(text.y + text.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+      expect(text.x + text.width / 2).toBeCloseTo(bounds.x + bounds.width / 2, 0);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+});
+
 test('320pxの両テーマでドロップ後も失敗した置換から復帰できる', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   for (const scheme of ['dark', 'light'] as const) {
@@ -173,7 +202,7 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
     await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
     const initial = page.locator('.image-drop');
     const initialBounds = (await initial.boundingBox())!;
-    expect(initialBounds.height).toBe(180);
+    expect(initialBounds.height).toBe(216);
     await initial.evaluate(async button => {
       const canvas = document.createElement('canvas');
       const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), 'image/webp'));
@@ -214,7 +243,7 @@ test('比較画像エリアへのドロップと画像変更ボタンで置き�
   const replacement = await testImage(page, 32, 16);
   const initial = page.getByRole('button', { name: /画像を選択/ });
   await expect(initial).toBeVisible();
-  expect((await initial.boundingBox())!.height).toBe(240);
+  expect((await initial.boundingBox())!.height).toBeCloseTo(302.4, 0);
   // Keep interception enabled across consecutive dialogs, including on Firefox.
   const choosers: FileChooser[] = [];
   page.on('filechooser', chooser => choosers.push(chooser));
