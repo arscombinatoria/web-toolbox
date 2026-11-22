@@ -394,7 +394,7 @@ Web Locks APIが使える環境では、Workerが採点用のロックを取得�
 
 bytecut本体と採点クレートはBSD-2-Clauseです。配布元のLICENSE・NOTICE、Cargo.lockに基づく依存ライセンス、Rust 1.96.0標準ライブラリのライセンス・著作権表示を `public/licenses/ssimulacra2/` から本番にも配信します。 [第三者ライセンス](../public/licenses/ssimulacra2) · [Rust 1.96.0の標準ライブラリ著作権表示](../public/licenses/ssimulacra2/RUST-COPYRIGHT-library.html)
 
-PoCでは1024×1024でWasm線形メモリ約157 MiB、2048×2048で約619 MiBを観測し、2048×2048の初回採点は約3.2〜5.2秒でした。線形メモリの容量にはブラウザ側のCanvas、RGBAバッファ、デコーダーなどの使用量が加わります。Worker終了でWasmインスタンスを破棄します。端末の空きメモリによっては処理の遅延や評価失敗、タブの終了が起きるため、自動評価をオフにして必要なときだけ実行できます。 [PoCの実測結果](https://github.com/arscombinatoria/web-toolbox/blob/5b42d2ab63c5a249c6734953affcd03248393acc/experiments/ssimulacra2/report.md#性能とメモリ)
+PoCでは1024×1024でWasm線形メモリ約157 MiB、2048×2048で約619 MiBを観測し、2048×2048の初回採点は約3.2〜5.2秒でした。ブラウザはWasm線形メモリに加え、Canvas、RGBAバッファ、デコーダーなどにもメモリを使います。Worker終了でWasmインスタンスを破棄し、プロセス全体のメモリを回収する時期はブラウザやOSに依存します。端末の空きメモリによっては処理の遅延や評価失敗、タブの終了が起きるため、自動評価をオフにして必要なときだけ実行できます。 [PoCの実測結果](https://github.com/arscombinatoria/web-toolbox/blob/5b42d2ab63c5a249c6734953affcd03248393acc/experiments/ssimulacra2/report.md#性能とメモリ)
 
 公式libjxlとの比較では単色JPEGで最大1.0553点差があり、透明PNGの合成画素にもブラウザ間で丸め差がありました。スコアは同じ元画像への知覚類似性の参考値として扱います。 [PoCと公式実装の比較](https://github.com/arscombinatoria/web-toolbox/pull/63)
 
