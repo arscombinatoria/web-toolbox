@@ -2,17 +2,23 @@ import { readFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
-async function testImage(page: Page) {
-  const png = await page.evaluate(() => {
+async function testImage(page: Page, width = 64, height = 32) {
+  const png = await page.evaluate(({ width, height }) => {
     const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 32;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = 'red';
-    ctx.fillRect(32, 0, 32, 32);
+    ctx.fillRect(width / 2, 0, width / 2, height);
     return canvas.toDataURL().split(',')[1]!;
-  });
+  }, { width, height });
   return { name: 'sample.alpha.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') };
+}
+
+async function pauseUiClock(page: Page) {
+  const start = new Date('2026-01-01T00:00:00Z');
+  await page.clock.install({ time: start });
+  await page.clock.pauseAt(new Date(start.getTime() + 1000));
 }
 
 async function saveImage(page: Page, button: Locator, filename: string) {
@@ -71,6 +77,7 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await split.press('ArrowRight');
   await expect(split).toHaveValue('51');
   await expect(split).toHaveAttribute('aria-valuetext', '左側 51%');
+  await split.scrollIntoViewIfNeeded();
   const bounds = (await split.boundingBox())!;
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
@@ -199,6 +206,7 @@ test.describe('タッチ操作', () => {
     await expect(preview).toBeVisible();
     const url = await preview.getAttribute('src');
     const split = page.getByRole('slider', { name: '比較位置' });
+    await split.scrollIntoViewIfNeeded();
     const bounds = (await split.boundingBox())!;
     await page.touchscreen.tap(bounds.x + bounds.width * 0.75, bounds.y + bounds.height / 2);
     expect(Number(await split.inputValue())).toBeGreaterThan(65);
@@ -271,6 +279,7 @@ test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変�
   const right = page.locator('.image-panel[data-side=right] .image-score');
   const status = page.locator('.image-evaluation-status');
   const input = await testImage(page);
+  await page.getByRole('checkbox', { name: '画質の自動評価' }).uncheck();
   await page.locator('[type=file]').setInputFiles(input);
   await expect(left).toHaveText('基準画像');
   await page.getByLabel('左の形式').selectOption('image/jpeg');
@@ -306,31 +315,103 @@ test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変�
   expect(external).toEqual([]);
 });
 
-test('評価の画素数を超えてもJPEGの変換と保存が使える', async ({ page }) => {
+test('初回と品質変更後に自動評価し、連続操作では最後の出力だけを採点する', async ({ page }) => {
+  await pauseUiClock(page);
   await page.goto('./?tool=image-converter');
-  const bytes = await page.evaluate(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 1025;
-    return canvas.toDataURL().split(',')[1]!;
-  });
-  await page.locator('[type=file]').setInputFiles({
-    name: 'large.png', mimeType: 'image/png', buffer: Buffer.from(bytes, 'base64'),
-  });
-  await expect(page.locator('.image-evaluation-limit')).toContainText('1,048,576画素');
+  const workers: string[] = [];
+  page.on('worker', worker => workers.push(worker.url()));
+  const auto = page.getByRole('checkbox', { name: '画質の自動評価' });
+  const score = page.locator('.image-panel[data-side=right] .image-score');
+  const quality = page.getByRole('slider', { name: '右のJPEG品質' });
+  const status = page.locator('.image-evaluation-status');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  const jpegScore = /^SSIMULACRA2: -?\d+\.\d$/;
+  await page.locator('[type=file]').setInputFiles(await testImage(page));
+  await expect(auto).toBeChecked();
+  await expect(save).toBeEnabled();
+  await expect(status).toContainText('待機');
+  await page.clock.runFor(800);
+  await expect(status).toContainText('完了');
+  await expect(score).toHaveText(jpegScore);
+  const initialScore = await score.textContent();
+  expect(workers).toHaveLength(1);
+
+  await quality.fill('0.45');
+  await expect(score).not.toHaveText(jpegScore);
+  await page.clock.runFor(150);
+  await quality.fill('0.15');
+  await page.clock.runFor(150);
+  await quality.fill('0.01');
+  await page.clock.runFor(180);
+  await expect(save).toBeEnabled();
+  await expect(score).toHaveText('画質は未評価');
+  await page.clock.runFor(619);
+  expect(workers).toHaveLength(1);
+  await page.clock.runFor(1);
+  await expect(status).toContainText('完了');
+  await expect(score).toHaveText(jpegScore);
+  await expect(score).not.toHaveText(initialScore!);
+  expect(workers).toHaveLength(2);
+
+  await auto.press('Space');
+  await expect(auto).not.toBeChecked();
+  await quality.fill('0.60');
+  await page.clock.runFor(1600);
+  await expect(save).toBeEnabled();
+  await expect(score).toHaveText('画質は未評価');
+  await page.locator('[type=file]').setInputFiles(await testImage(page));
+  await expect(auto).not.toBeChecked();
+  await expect(save).toBeEnabled();
+  await page.clock.runFor(800);
+  expect(workers).toHaveLength(2);
+  await expect.poll(() => page.workers().length).toBe(0);
+
+  await auto.check();
+  await page.clock.runFor(800);
+  await expect(status).toContainText('完了');
+  await expect(score).toHaveText(jpegScore);
+  expect(workers).toHaveLength(3);
+  await expect.poll(() => page.workers().length).toBe(0);
+});
+
+test('2048×2048のJPEGを実Wasmで自動評価する', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('./?tool=image-converter');
+  const wasmLoaded = page.waitForResponse('**/web-toolbox/assets/ssimulacra2-0.1.0-*.wasm');
+  await page.locator('[type=file]').setInputFiles(await testImage(page, 2048, 2048));
+  await expect(page.locator('.image-info')).toContainText('2048 × 2048 px');
+  await expect(page.locator('.image-evaluation-limit')).toBeEmpty();
+  expect((await wasmLoaded).ok()).toBe(true);
+  await expect(page.locator('.image-evaluation-status')).toContainText('完了', { timeout: 30_000 });
+  await expect(page.locator('.image-panel[data-side=right] .image-score')).toHaveText(/^SSIMULACRA2: -?\d+\.\d$/);
+  await expect.poll(() => page.workers().length).toBe(0);
+});
+
+test('評価の画素数を超えてもJPEGの変換と保存が使える', async ({ page }) => {
+  await pauseUiClock(page);
+  await page.goto('./?tool=image-converter');
+  const workers: string[] = [];
+  page.on('worker', worker => workers.push(worker.url()));
+  const image = await testImage(page, 1985, 2113);
+  await page.locator('[type=file]').setInputFiles({ ...image, name: 'large.png' });
+  await expect(page.locator('.image-evaluation-limit')).toContainText('4,194,304画素');
   await expect(page.getByRole('button', { name: '画質を評価' })).toBeDisabled();
   const jpeg = await saveImage(page, page.getByRole('button', { name: '右をダウンロード' }), 'large-right-q0.75.jpg');
   expect([...jpeg.subarray(0, 3)]).toEqual([255, 216, 255]);
+  await page.clock.runFor(800);
+  expect(workers).toHaveLength(0);
   expect(page.workers()).toHaveLength(0);
 });
 
 test('狭い画面と両テーマで、Wasmロード中の中止と失敗から再評価できる', async ({ page }) => {
+  await pauseUiClock(page);
   await page.setViewportSize({ width: 360, height: 720 });
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto('./?tool=image-converter');
   await page.locator('[type=file]').setInputFiles(await testImage(page));
   const start = page.getByRole('button', { name: '画質を評価' });
   const cancel = page.getByRole('button', { name: '評価を中止' });
+  const auto = page.getByRole('checkbox', { name: '画質の自動評価' });
   const status = page.locator('.image-evaluation-status');
   const score = page.locator('.image-panel[data-side=right] .image-score');
   const wasm = '**/ssimulacra2-0.1.0-*.wasm';
@@ -342,7 +423,8 @@ test('狭い画面と両テーマで、Wasmロード中の中止と失敗から�
   }, { times: 1 });
   try {
     const requested = page.waitForRequest(wasm);
-    await start.click();
+    await expect(status).toContainText('待機');
+    await page.clock.runFor(800);
     await requested;
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(status).toContainText('評価しています');
@@ -351,6 +433,9 @@ test('狭い画面と両テーマで、Wasmロード中の中止と失敗から�
     await expect(score).toHaveText('画質は未評価');
     await expect(start).toBeEnabled();
     await expect.poll(() => page.workers().length).toBe(0);
+    await page.clock.runFor(1600);
+    await expect(status).toContainText('中止しました');
+    await expect(score).toHaveText('画質は未評価');
   } finally {
     release();
   }
@@ -367,6 +452,7 @@ test('狭い画面と両テーマで、Wasmロード中の中止と失敗から�
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+    await expect(auto).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
   }
 });
