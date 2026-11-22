@@ -25,10 +25,47 @@ await Promise.all([
 ]);
 
 const args = process.argv.slice(2);
-const isHelpCommand = args.some((argument) => ['--help', '-h'].includes(argument));
-if (!isHelpCommand) {
-  const headed = args.includes('--headed');
-  const installArgs = ['install', headed ? '--no-shell' : '--only-shell', 'chromium', 'firefox'];
+const optionArgs = args.slice(0, args.indexOf('--') < 0 ? args.length : args.indexOf('--'));
+const isHelpCommand = optionArgs.some((argument) => ['--help', '-h'].includes(argument));
+let hasInvalidDebugOption = false;
+let debugOptionRequestsHeaded = false;
+let bareUI = false;
+let hostedUI = false;
+for (let index = 0; index < optionArgs.length; index += 1) {
+  const argument = optionArgs[index];
+  if (argument === '--debug') {
+    const nextArgument = optionArgs[index + 1];
+    if (nextArgument !== undefined && !nextArgument.startsWith('-')) {
+      hasInvalidDebugOption ||= !['inspector', 'cli'].includes(nextArgument);
+      debugOptionRequestsHeaded = nextArgument === 'inspector';
+      index += 1;
+    } else {
+      debugOptionRequestsHeaded = true;
+    }
+  } else if (argument.startsWith('--debug=')) {
+    const mode = argument.slice('--debug='.length);
+    hasInvalidDebugOption ||= !['inspector', 'cli'].includes(mode);
+    debugOptionRequestsHeaded = mode === 'inspector';
+  } else if (argument === '--ui') {
+    bareUI = true;
+  } else if (['--ui-host', '--ui-port'].includes(argument)
+    || argument.startsWith('--ui-host=')
+    || argument.startsWith('--ui-port=')) {
+    hostedUI = true;
+  }
+}
+if (!isHelpCommand && !hasInvalidDebugOption) {
+  const debugMode = env.PWDEBUG ?? env.npm_config_pwdebug ?? env.npm_package_config_pwdebug;
+  const debugRequestsHeaded = debugMode !== undefined
+    && debugMode !== ''
+    && debugMode !== '0'
+    && debugMode !== 'false'
+    && debugMode !== 'console';
+  // Playwright 1.65.1 makes inspector debug headed; bare local UI also needs Chromium while its tests stay headless.
+  const headed = optionArgs.includes('--headed') || debugRequestsHeaded || (!bareUI && debugOptionRequestsHeaded);
+  const localUI = bareUI && !hostedUI;
+  const shellOption = headed ? '--no-shell' : localUI ? undefined : '--only-shell';
+  const installArgs = ['install', ...(shellOption ? [shellOption] : []), 'chromium', 'firefox'];
   const install = spawn(process.execPath, [cliPath, ...installArgs], {
     env,
     stdio: 'inherit',
