@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:container": "node scripts/run-e2e-container.mjs",
     "test:coverage": "vitest run --coverage",
     "test:badge": "node --test scripts/generate-coverage-badge.test.mjs"
   },
