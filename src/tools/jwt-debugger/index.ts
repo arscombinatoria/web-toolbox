@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Copy, Trash2 } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { analyzeClaims, decodeJwt, MAX_BYTES } from './logic';
 import { algorithms, type Algorithm, verifySignature } from './verify';
@@ -48,6 +50,8 @@ export function mount(container: HTMLElement): () => void {
   const result = query('[data-verification]');
   const copyStatus = query('[data-copy-status]');
   const copies = [...view.querySelectorAll<HTMLButtonElement>('[data-copy]')];
+  query('[data-clear]').prepend(createIcon(Trash2));
+  for (const copy of copies) copy.prepend(createIcon(Copy));
   for (const field of [input, secret, publicKey]) field.maxLength = MAX_BYTES;
   const listeners = new AbortController();
   const options = { signal: listeners.signal };
@@ -120,7 +124,7 @@ export function mount(container: HTMLElement): () => void {
         query('[data-meta]').textContent = `alg: ${JSON.stringify(decoded.header.alg) ?? '未指定'} / typ: ${JSON.stringify(decoded.header.typ) ?? '未指定'}`;
         query('[data-bytes]').textContent = `Signature: ${decoded.signatureBytes} バイト`;
       }
-    } catch (error) { query('[data-error]').textContent = error instanceof Error ? error.message : '解析できません。'; }
+    } catch (error) { setIconMessage(query('[data-error]'), CircleAlert, error instanceof Error ? error.message : '解析できません。'); }
     editors.forEach(editor => editor.update());
     copies.forEach(button => { button.disabled = !header.value; });
     updateClaims(); invalidate();
@@ -155,15 +159,15 @@ export function mount(container: HTMLElement): () => void {
     verify.disabled = true; result.textContent = '検証中…';
     const outcome = await verifySignature(input.value, alg.value, alg.value === 'HS256' ? secret.value : publicKey.value, encoding.value);
     if (disposed || current !== revision) return;
-    result.textContent = outcome.message; query('[data-warning]').textContent = outcome.warning ?? ''; verify.disabled = false;
+    setIconMessage(result, outcome.state === 'match' ? Check : CircleAlert, outcome.message); query('[data-warning]').textContent = outcome.warning ?? ''; verify.disabled = false;
   }, options);
   for (const button of copies) button.addEventListener('click', async () => {
     const current = revision;
     try {
       await navigator.clipboard.writeText(button.dataset.copy === 'header' ? header.value : payload.value);
-      if (!disposed && current === revision) copyStatus.textContent = 'コピーしました。';
+      if (!disposed && current === revision) setIconMessage(copyStatus, Check, 'コピーしました。');
     } catch {
-      if (!disposed && current === revision) copyStatus.textContent = 'コピーできませんでした。結果を選択して手動でコピーしてください。';
+      if (!disposed && current === revision) setIconMessage(copyStatus, CircleAlert, 'コピーできませんでした。結果を選択して手動でコピーしてください。');
     }
   }, options);
   const timer = window.setInterval(updateClaims, 1000);

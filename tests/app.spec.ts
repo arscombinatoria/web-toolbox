@@ -3,6 +3,7 @@ import { expect, test } from './fixtures';
 test('ホームのカード・選択状態・URL・履歴・再読み込みが本番サブパスで動く', async ({ page }) => {
   await page.goto('./?keep=yes');
   const heading = page.getByRole('heading', { level: 1 });
+  const cardIcons = page.locator('.tool-card h2 > svg');
   const home = page.getByRole('link', { name: 'ホーム', exact: true });
   const brand = page.getByRole('link', { name: 'Web Toolbox', exact: true });
   await expect(heading).toHaveText('Web Toolbox');
@@ -10,18 +11,22 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
   await expect(page.locator('.home').getByText('日々の作業を、少し手軽に。', { exact: true })).toBeVisible();
   await expect(page.getByText('ブラウザで使える、小さな便利ツール集です。', { exact: true })).toBeVisible();
   await expect(page.locator('.tool-card')).toHaveCount(8);
+  await expect(cardIcons).toHaveCount(8);
+  await expect(home.locator('svg')).toBeVisible();
   await expect(home).toHaveAttribute('aria-current', 'page');
   const initialHistory = await page.evaluate(() => history.length);
   await home.click();
   expect(await page.evaluate(() => history.length)).toBe(initialHistory);
-  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', 'JavaScript正規表現ビジュアライザー', '画像変換', '日時・UTC変換']) {
+  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', 'JavaScript正規表現ビジュアライザー', 'JWTデバッガー', '画像変換', '日時・UTC変換']) {
     const card = page.locator('.tool-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
     await card.focus();
     await page.keyboard.press('Enter');
     await expect(heading).toHaveText(name);
     await expect(heading).toBeFocused();
     await expect(page).toHaveTitle(`${name} | Web Toolbox`);
-    await expect(page.getByRole('navigation').getByRole('link', { name, exact: true })).toHaveAttribute('aria-current', 'page');
+    const selected = page.getByRole('navigation').getByRole('link', { name, exact: true });
+    await expect(selected).toHaveAttribute('aria-current', 'page');
+    await expect(selected.locator('svg')).toBeVisible();
     await expect(home).not.toHaveAttribute('aria-current');
     await expect(page).toHaveURL(/keep=yes&tool=/);
     await brand.click();
@@ -29,17 +34,22 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
     await expect(heading).toBeFocused();
     await expect(page).toHaveURL(/\/web-toolbox\/\?keep=yes$/);
     await expect(home).toHaveAttribute('aria-current', 'page');
+    await expect(cardIcons).toHaveCount(8);
     await expect(page.getByRole('navigation').locator('[aria-current="page"]')).toHaveCount(1);
   }
   await page.goBack();
   await expect(heading).toHaveText('日時・UTC変換');
+  const copyIcon = page.getByRole('button', { name: 'JST日時をコピー', exact: true }).locator('svg');
+  await expect(copyIcon).toBeVisible();
   await page.goForward();
   await expect(heading).toHaveText('Web Toolbox');
   await page.reload();
   await expect(heading).toHaveText('Web Toolbox');
+  await expect(cardIcons).toHaveCount(8);
   await page.goBack();
   await expect(heading).toHaveText('日時・UTC変換');
-  await home.click();
+  await expect(copyIcon).toBeVisible();
+  await home.locator('svg').click();
   await expect(heading).toHaveText('Web Toolbox');
 });
 
@@ -106,6 +116,8 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await expect(menu).toHaveAttribute('aria-expanded', 'true');
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'ホーム', exact: true })).toBeFocused();
+  await expect(dialog.locator('nav a > svg')).toHaveCount(9);
+  await expect(dialog.getByRole('link', { name: 'JavaScript正規表現ビジュアライザー', exact: true }).locator('svg')).toBeVisible();
   // 最後のリンクからTabを押すとダイアログ内に戻る。
   await dialog.getByRole('link', { name: '画像変換', exact: true }).focus();
   await page.keyboard.press('Tab');
@@ -210,7 +222,11 @@ test('ホームはアプリのチャンクだけを読み込み、外部通信�
   expect(new URL(scripts[0]!).pathname).toMatch(/^\/web-toolbox\/assets\/index-[\w-]+\.js$/);
   await page.locator('.tool-card[data-tool-id="width-converter"]').click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('全角・半角変換');
-  expect(requests.filter(url => new URL(url).pathname.endsWith('.js'))).toHaveLength(2);
+  // 共通アイコンのチャンクはツールとともに読み込まれ、別ツールのチャンクは読み込まれない。
+  const toolScripts = requests.map(url => new URL(url).pathname).filter(path =>
+    /\/(ip-address|rdap-lookup|width-converter|markdown-table|regex-visualizer|jwt-debugger|datetime|image-converter)-[\w-]+\.js$/.test(path),
+  );
+  expect(toolScripts).toEqual([expect.stringMatching(/\/width-converter-/)]);
 });
 
 for (const width of [1280, 390, 320]) {
@@ -220,7 +236,18 @@ for (const width of [1280, 390, 320]) {
       await page.goto('./');
       await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
       const cards = page.locator('.tool-card');
-      for (const card of await cards.all()) await expect(card).toBeVisible();
+      for (const card of await cards.all()) {
+        const icon = card.locator('h2 > svg');
+        await expect(icon).toBeVisible();
+        await expect(icon).toHaveCSS('width', '22px');
+        expect(await icon.evaluate(element => {
+          const style = getComputedStyle(element);
+          const range = document.createRange();
+          range.selectNode(element.nextSibling!);
+          const titleStart = range.getClientRects()[0]!.left;
+          return style.stroke === style.color && element.getBoundingClientRect().right < titleStart;
+        })).toBe(true);
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const first = await cards.nth(0).boundingBox();
       const second = await cards.nth(1).boundingBox();

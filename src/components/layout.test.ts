@@ -1,4 +1,6 @@
+import { createElement, House } from 'lucide';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tools } from '../registry';
 import { createLayout } from './layout';
 
 describe('レイアウトの状態とライフサイクル', () => {
@@ -39,6 +41,18 @@ describe('レイアウトの状態とライフサイクル', () => {
     Object.defineProperty(media, 'matches', { value: matches, configurable: true });
     media.dispatchEvent(new Event('change'));
   }
+
+  it('ホームと全ツールのリンクに対応する装飾アイコンを1つずつ表示する', () => {
+    const home = sidebar.querySelector('nav a[data-home]')!;
+    expect(home.querySelectorAll('svg')).toHaveLength(1);
+    expect(home.querySelector('svg')?.innerHTML).toBe(createElement(House).innerHTML);
+    for (const tool of tools) {
+      const link = sidebar.querySelector(`a[data-tool-id="${tool.id}"]`)!;
+      expect(link.querySelectorAll('svg')).toHaveLength(1);
+      expect(link.querySelector('svg')?.innerHTML).toBe(createElement(tool.icon).innerHTML);
+      expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
 
   it('選択のたびに現在のクエリとハッシュをリンクへ反映し、選択状態を置き換える', () => {
     layout.select('datetime');

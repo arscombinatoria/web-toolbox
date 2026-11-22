@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Copy, Download, Trash2 } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { parseMarkdown, parseTsv, toMarkdown, toTsv, type TableData } from './logic';
 import './style.css';
@@ -49,6 +51,9 @@ export function mount(container: HTMLElement): () => void {
   const output = view.querySelector<HTMLTextAreaElement>('#table-output')!;
   const copy = view.querySelector<HTMLButtonElement>('[data-copy]')!;
   const download = view.querySelector<HTMLButtonElement>('[data-download]')!;
+  view.querySelector('[data-clear]')!.prepend(createIcon(Trash2));
+  copy.prepend(createIcon(Copy));
+  download.prepend(createIcon(Download));
   const status = view.querySelector<HTMLElement>('[role="status"]')!;
   const error = view.querySelector<HTMLElement>('[role="alert"]')!;
   const listeners = new AbortController();
@@ -77,7 +82,7 @@ export function mount(container: HTMLElement): () => void {
       table = toExcel() ? parseMarkdown(input.value) : parseTsv(input.value);
       output.value = toExcel() ? toTsv(table) : toMarkdown(table);
     } catch (cause) {
-      error.textContent = cause instanceof Error ? cause.message : '変換できませんでした。';
+      setIconMessage(error, CircleAlert, cause instanceof Error ? cause.message : '変換できませんでした。');
     }
     input.setAttribute('aria-invalid', String(Boolean(error.textContent)));
     buttons();
@@ -103,9 +108,9 @@ export function mount(container: HTMLElement): () => void {
     try {
       // textareaはCRLFをLFへ正規化するため、共通データからコピー用に生成する。
       await navigator.clipboard.writeText(toExcel() ? toTsv(table) : toMarkdown(table));
-      if (!disposed && current === revision) status.textContent = 'コピーしました。';
+      if (!disposed && current === revision) setIconMessage(status, Check, 'コピーしました。');
     } catch {
-      if (!disposed && current === revision) status.textContent = 'コピーできませんでした。変換結果を選択して手動でコピーしてください。';
+      if (!disposed && current === revision) setIconMessage(status, CircleAlert, 'コピーできませんでした。変換結果を選択して手動でコピーしてください。');
     } finally {
       copying = false;
       if (!disposed) buttons();
@@ -130,9 +135,9 @@ export function mount(container: HTMLElement): () => void {
         // ブラウザがダウンロードを開始してから解放。破棄時も必ず解放する。
         urls.set(url, setTimeout(() => { URL.revokeObjectURL(url); urls.delete(url); }, 1000));
       }
-      status.textContent = 'Excelファイルをダウンロードしました。';
+      setIconMessage(status, Check, 'Excelファイルをダウンロードしました。');
     } catch (cause) {
-      if (!disposed && current === revision) status.textContent = `Excelを生成できませんでした。${cause instanceof Error ? cause.message : ''}`;
+      if (!disposed && current === revision) setIconMessage(status, CircleAlert, `Excelを生成できませんでした。${cause instanceof Error ? cause.message : ''}`);
     } finally {
       downloading = false;
       if (!disposed) buttons();

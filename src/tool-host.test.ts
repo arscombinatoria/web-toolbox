@@ -1,3 +1,4 @@
+import { Globe } from 'lucide';
 import { describe, expect, it, vi } from 'vitest';
 import type { ToolDefinition, ToolModule } from './registry';
 import { createToolHost } from './tool-host';
@@ -10,7 +11,7 @@ function deferred() {
 }
 
 function tool(id: string, load: ToolDefinition['load']): ToolDefinition {
-  return { id, name: id, description: id, category: 'network', load };
+  return { id, name: id, description: id, category: 'network', icon: Globe, load };
 }
 
 describe('ツールのライフサイクル', () => {
@@ -198,7 +199,7 @@ it('遷移操作の一時入力をマウントに渡す', async () => {
   const container = document.createElement('div');
   const host = createToolHost(container);
   const mount = vi.fn(() => vi.fn());
-  await host.show({ id: 'rdap-lookup', name: 'RDAP', description: '', category: 'network', load: async () => ({ mount }) }, '8.8.8.8');
+  await host.show(tool('rdap-lookup', async () => ({ mount })), '8.8.8.8');
   expect(mount).toHaveBeenCalledWith(container, '8.8.8.8');
   host.destroy();
 });

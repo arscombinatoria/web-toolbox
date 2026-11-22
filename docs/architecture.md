@@ -61,11 +61,11 @@ web-toolbox/
 
 ### Registryと遅延読み込み
 
-[src/registry.ts](../src/registry.ts)の`ToolDefinition`は`id`、`name`、`description`、`category`、`load`を持ちます。`load`は固定パスを指定した動的importです。URLの文字列をimportパスに直接使用しません。共通の`ToolModule`型もRegistryで定義します。
+[src/registry.ts](../src/registry.ts)の`ToolDefinition`は`id`、`name`、`description`、`category`、`icon`、`load`を持ちます。`load`は固定パスを指定した動的importです。URLの文字列をimportパスに直接使用しません。共通の`ToolModule`型もRegistryで定義します。
 
 `categories`の配列順はサイドバーのカテゴリ順、`tools`の配列順はカテゴリ内のツール順とホームのカード順になります。現在のツール順はIP確認、IP登録情報検索、全角・半角、Markdown表、正規表現、JWT、日時、画像変換です。ホームはツール登録に含めず、`components/home.ts`で表示します。
 
-ホームのカードはRegistryのID・名前・説明から生成します。ホーム表示時にはツールの`load`を呼ばず、ツール本体・正規表現Worker・regexpp・ExcelJS・joseを読み込まず、ipify・RDAPにも通信しません。ExcelJSはMarkdown表のダウンロード操作時、joseはJWTの署名検証操作時にさらに遅延読み込みします。
+ホームのカードはRegistryのID・名前・説明・アイコンから生成し、サイドバーも同じツールアイコンを使います。アイコンは`lucide`の名前付きimportを使い、[components/icon.ts](../src/components/icon.ts)で文字色を継承する装飾SVGにします。ホーム表示時にはツールの`load`を呼ばず、ツール本体・正規表現Worker・regexpp・ExcelJS・joseを読み込まず、ipify・RDAPにも通信しません。ExcelJSはMarkdown表のダウンロード操作時、joseはJWTの署名検証操作時にさらに遅延読み込みします。
 
 ## ルーティング・画面ライフサイクル
 

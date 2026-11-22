@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Copy } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { convert, formatDateTime, hourTable, toInstant, type Zone } from './logic';
 import './style.css';
@@ -51,14 +53,15 @@ export function mount(container: HTMLElement): () => void {
     output.id = label.htmlFor; output.readOnly = true;
     const copy = document.createElement('button');
     copy.type = 'button'; copy.textContent = 'コピー'; copy.setAttribute('aria-label', `${labelText}をコピー`);
+    copy.prepend(createIcon(Copy));
     copy.addEventListener('click', async () => {
       const current = revision;
       status.textContent = ''; copy.disabled = true;
       try {
         await navigator.clipboard.writeText(output.value);
-        if (!disposed && current === revision) status.textContent = `${labelText}をコピーしました。`;
+        if (!disposed && current === revision) setIconMessage(status, Check, `${labelText}をコピーしました。`);
       } catch {
-        if (!disposed && current === revision) status.textContent = 'コピーできませんでした。結果を選択して手動でコピーしてください。';
+        if (!disposed && current === revision) setIconMessage(status, CircleAlert, 'コピーできませんでした。結果を選択して手動でコピーしてください。');
       } finally { if (!disposed) copy.disabled = !output.value; }
     }, options);
     row.append(label, output, copy); get('.datetime-results').append(row);
@@ -78,7 +81,7 @@ export function mount(container: HTMLElement): () => void {
     revision++; status.textContent = ''; error.textContent = ''; selected = null;
     let result: ReturnType<typeof convert> | undefined;
     try { selected = toInstant(date.value, time.value, zone.value as Zone); result = convert(selected); }
-    catch (cause) { error.textContent = (cause as Error).message; }
+    catch (cause) { setIconMessage(error, CircleAlert, (cause as Error).message); }
     date.setAttribute('aria-invalid', String(!result)); time.setAttribute('aria-invalid', String(!result));
     for (const { key, output, copy } of outputs) { output.value = result?.[key] ?? ''; copy.disabled = !result; }
     highlight();
@@ -98,7 +101,7 @@ export function mount(container: HTMLElement): () => void {
         const relation = document.createElement('td'); relation.textContent = item.relation;
         row.append(cell, utc, relation); body.append(row);
       }
-    } catch (cause) { tableError.textContent = (cause as Error).message; }
+    } catch (cause) { setIconMessage(tableError, CircleAlert, (cause as Error).message); }
     tableDate.setAttribute('aria-invalid', String(Boolean(tableError.textContent)));
     highlight();
   };

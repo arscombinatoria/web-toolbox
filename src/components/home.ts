@@ -1,5 +1,6 @@
 import { tools } from '../registry';
 import { toolUrl } from '../router';
+import { createIcon } from './icon';
 
 export function mountHome(container: HTMLElement): () => void {
   const view = document.createElement('div');
@@ -17,7 +18,7 @@ export function mountHome(container: HTMLElement): () => void {
     link.href = toolUrl(tool.id).href;
     link.dataset.toolId = tool.id;
     const title = document.createElement('h2');
-    title.textContent = tool.name;
+    title.append(createIcon(tool.icon), tool.name);
     const description = document.createElement('p');
     description.textContent = tool.description;
     link.append(title, description);

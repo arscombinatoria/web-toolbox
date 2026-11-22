@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Download, X } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { decode, encode, encoders, sizeChange, type EncoderId } from './encoder';
 import { evaluateJpegs } from './quality/client';
@@ -89,6 +91,7 @@ export function mount(container: HTMLElement): () => void {
   const autoEvaluation = get<HTMLInputElement>('.image-evaluation-toggle input');
   const evaluate = get<HTMLButtonElement>('.image-evaluate');
   const cancelEvaluation = get<HTMLButtonElement>('.image-evaluation-cancel');
+  cancelEvaluation.prepend(createIcon(X));
   const limitNotice = get('.image-evaluation-limit');
   const evaluationStatus = get('.image-evaluation-status');
   const listeners = new AbortController();
@@ -128,6 +131,7 @@ export function mount(container: HTMLElement): () => void {
   type Side = ReturnType<typeof createSide>;
   const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
   const sides = [left, right];
+  for (const side of sides) side.save.prepend(createIcon(Download));
 
   function evaluationBlob(side: Side): Blob | undefined {
     if (isEvaluable(side.encoder) && side.result.status === 'ready') return side.result.blob;
@@ -222,11 +226,14 @@ export function mount(container: HTMLElement): () => void {
           updateEvaluation();
         },
       );
-      if (isCurrent()) evaluationStatus.textContent = '画質評価が完了しました。';
+      if (isCurrent()) setIconMessage(evaluationStatus, Check, '画質評価が完了しました。');
     } catch (cause) {
       if (isCurrent()) {
-        evaluationStatus.textContent = cause instanceof DOMException && cause.name === 'AbortError' ?
-          '画質評価を中止しました。' : '画質を評価できませんでした。もう一度お試しください。';
+        if (cause instanceof DOMException && cause.name === 'AbortError') {
+          evaluationStatus.textContent = '画質評価を中止しました。';
+        } else {
+          setIconMessage(evaluationStatus, CircleAlert, '画質を評価できませんでした。もう一度お試しください。');
+        }
       }
     } finally {
       if (isCurrent()) {
@@ -322,7 +329,7 @@ export function mount(container: HTMLElement): () => void {
       invalidate(side);
       side.result = { status: 'failed' };
       const message = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
-      side.error.textContent = side.label + '側：' + message;
+      setIconMessage(side.error, CircleAlert, side.label + '側：' + message);
       updateEvaluation();
     }
   }
@@ -360,7 +367,7 @@ export function mount(container: HTMLElement): () => void {
     clearSource();
     inputStatus.textContent = inputError.textContent = '';
     if (files.length !== 1) {
-      inputError.textContent = '画像は1枚ずつ選択してください。';
+      setIconMessage(inputError, CircleAlert, '画像は1枚ずつ選択してください。');
       return;
     }
     const file = files[0]!;
@@ -388,7 +395,7 @@ export function mount(container: HTMLElement): () => void {
       if (currentInput !== inputGeneration) return;
       clearSource();
       inputStatus.textContent = '';
-      inputError.textContent = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '画像を読み込めませんでした。';
+      setIconMessage(inputError, CircleAlert, cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '画像を読み込めませんでした。');
     }
   }
 

@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Copy, RefreshCw, Search } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { setNavigationInput, toolUrl } from '../../router';
 import { findTool } from '../../registry';
 import { fetchIpv4, fetchIpv6 } from './api';
@@ -38,6 +40,7 @@ export function mount(container: HTMLElement): () => void {
   view.querySelector('h1')!.textContent = tool.name;
   view.querySelector('.tool-description')!.textContent = tool.description;
   const refresh = view.querySelector<HTMLButtonElement>('[data-refresh]')!;
+  refresh.prepend(createIcon(RefreshCw));
   const ipv6Output = view.querySelector<HTMLTextAreaElement>('#IPv6-result')!;
   const resizeIpv6 = () => {
     // Firefoxを含めfield-sizing未対応のブラウザでも、折り返しに合わせて伸縮する。
@@ -56,6 +59,8 @@ export function mount(container: HTMLElement): () => void {
     const status = section.querySelector<HTMLElement>('.ip-status')!;
     const copyStatus = section.querySelector<HTMLElement>('.ip-copy-status')!;
     const rdap = section.querySelector<HTMLAnchorElement>('[data-rdap]')!;
+    copy.prepend(createIcon(Copy));
+    rdap.prepend(createIcon(Search));
     rdap.href = toolUrl('rdap-lookup').href;
     rdap.setAttribute('aria-label', `${version}の登録情報を検索`);
     let copying = false;
@@ -76,11 +81,11 @@ export function mount(container: HTMLElement): () => void {
         rdap.hidden = false;
         if (version === 'IPv6') resizeIpv6();
         copy.disabled = copying;
-        status.textContent = '取得成功';
+        setIconMessage(status, Check, '取得成功');
       } catch (error) {
         if (disposed || request !== current || current.signal.aborted) return;
         const kind = error instanceof Error && 'kind' in error ? error.kind : 'network';
-        status.textContent = errors[kind as keyof typeof errors] ?? errors.network;
+        setIconMessage(status, CircleAlert, errors[kind as keyof typeof errors] ?? errors.network);
       } finally {
         if (!disposed && request === current) output.removeAttribute('aria-busy');
       }
@@ -93,10 +98,10 @@ export function mount(container: HTMLElement): () => void {
       copyStatus.textContent = '';
       try {
         await navigator.clipboard.writeText(output.value);
-        if (!disposed && request === current) copyStatus.textContent = 'コピーしました。';
+        if (!disposed && request === current) setIconMessage(copyStatus, Check, 'コピーしました。');
       } catch {
         if (!disposed && request === current) {
-          copyStatus.textContent = 'コピーできませんでした。IPアドレスを選択して手動でコピーしてください。';
+          setIconMessage(copyStatus, CircleAlert, 'コピーできませんでした。IPアドレスを選択して手動でコピーしてください。');
         }
       } finally {
         copying = false;
