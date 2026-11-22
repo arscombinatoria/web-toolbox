@@ -60,6 +60,8 @@ GitHub Pagesで公開する、バックエンドを持たない静的SPA。ツ�
 - コード変更時は関連テストと`npm run build`を実行する。buildは型チェックを含むため、型チェックだけを行う場合は`npm run typecheck`を使う。
 - `npm test`は単体テスト、`npm run test:coverage`はカバレッジ付き単体テスト、`npm run test:badge`はバッジ生成テスト。カバレッジやバッジ関連の変更では対応する検証を行う。lintコマンドは未定義であり、型チェックをlintの代わりとは扱わない。
 - E2Eは`npm run build`の後に`npm run test:e2e`を実行する（既存の`dist/`をVite previewで配信）。初回は`npx playwright install --with-deps chromium firefox`で準備する。Chromium全般と、Chromium・Firefox共通の主要機能スモーク／IP欄レイアウトを実行する。再試行でのみ成功するケースも失敗扱いとし、原因を調査する。
+- Codexの制約付きコンテナでE2Eを実行するときは、`npm run test:e2e:container`を使う。ブラウザ保存先と`XDG_CACHE_HOME`の既定値はコンテナの一時領域に置き、既存の`PLAYWRIGHT_BROWSERS_PATH`と`XDG_CACHE_HOME`は尊重する。Playwright標準のインストーラーで不足分だけを準備し、通常のheadless実行ではChromium Headless Shellを使う。`--headed`指定時は通常Chromiumを準備する。テスト実行のCLI引数も通常どおり指定できる。
+- この専用モードは、読み取り専用HOME／キャッシュによるブラウザ準備失敗と、Firefoxのコンテンツ・RDDプロセスサンドボックスが制約付きコンテナで起動できない場合に限って使う。Firefoxの子プロセスに限り`MOZ_DISABLE_CONTENT_SANDBOX=1`と`MOZ_DISABLE_RDD_SANDBOX=1`を設定するため、信頼できるこのリポジトリのテストを隔離コンテナ内で実行する場合に限ること。通常の`npm run test:e2e`とGitHub Actionsには適用しない。これはOS依存パッケージ不足など別の起動障害を解消せず、失敗を無視したりテストをskipしたりするものではない。
 - 文書のみの変更では全テストを必須とせず、参照先・実装との整合、リンク、差分・変更範囲を確認する。未実施の検証は理由とともに報告する。
 
 ## ドキュメント更新・完了報告
