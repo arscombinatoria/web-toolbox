@@ -141,7 +141,7 @@ E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-tool
 
 単体テスト・E2Eともipify・RDAP通信をモックし、実APIへはアクセスしません。実APIへの接続確認は別途必要です。各ツールの詳しい検証対象は[詳細設計書](docs/architecture.md)を参照してください。
 
-Codexの制約付きコンテナで実行する場合は、ビルド後に`npm run test:e2e:container`を使えます。この専用モードはブラウザとXDGキャッシュをコンテナの一時領域に置き、不足しているブラウザだけを準備します。コンテナ内で信頼できるテストを実行する場合に限り、Firefoxのコンテンツ／RDDサンドボックスを無効化します。通常の`npm run test:e2e`とGitHub Actionsには適用しません。環境変数で保存先を指定した場合はその値を使います。
+Codexの制約付きコンテナで実行する場合は、ビルド後に`npm run test:e2e:container`を使えます。この専用モードはブラウザとXDGキャッシュをコンテナの一時領域に置き、Playwright標準のインストーラーで不足分だけを準備します。通常のheadless実行にはChromium Headless Shellを使い、`--headed`を渡した場合は通常Chromiumを準備します。コンテナ内で信頼できるテストを実行する場合に限り、Firefoxのコンテンツ／RDDサンドボックスを無効化します。通常の`npm run test:e2e`とGitHub Actionsには適用しません。環境変数で保存先を指定した場合はその値を使います。
 
 ### カバレッジ
 

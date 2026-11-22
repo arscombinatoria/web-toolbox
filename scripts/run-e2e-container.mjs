@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { constants as osConstants, tmpdir } from 'node:os';
 import path from 'node:path';
-import { access, mkdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -18,46 +18,18 @@ if (env.PLAYWRIGHT_BROWSERS_PATH === undefined) {
 if (env.XDG_CACHE_HOME === undefined) {
   env.XDG_CACHE_HOME = path.join(temporaryRoot, 'xdg-cache');
 }
-process.env.PLAYWRIGHT_BROWSERS_PATH = env.PLAYWRIGHT_BROWSERS_PATH;
-process.env.XDG_CACHE_HOME = env.XDG_CACHE_HOME;
-
-const playwright = await import('@playwright/test');
 
 await Promise.all([
   mkdir(env.PLAYWRIGHT_BROWSERS_PATH === '0' ? temporaryRoot : env.PLAYWRIGHT_BROWSERS_PATH, { recursive: true }),
   mkdir(env.XDG_CACHE_HOME, { recursive: true }),
 ]);
 
-const installed = async (executablePath) => {
-  try {
-    await access(executablePath);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const chromiumPath = playwright.chromium.executablePath();
-const chromiumVersionDirectory = path.dirname(path.dirname(chromiumPath));
-const chromiumCacheDirectory = path.dirname(chromiumVersionDirectory);
-const chromiumRevision = path.basename(chromiumVersionDirectory).replace(/^chromium-/, '');
-const headlessShellPath = path.join(
-  chromiumCacheDirectory,
-  `chromium_headless_shell-${chromiumRevision}`,
-  path.relative(chromiumVersionDirectory, path.dirname(chromiumPath)),
-  'chrome-headless-shell',
-);
-
-const browsersToInstall = [];
-if (!(await installed(chromiumPath)) && !(await installed(headlessShellPath))) {
-  browsersToInstall.push('chromium');
-}
-if (!(await installed(playwright.firefox.executablePath()))) {
-  browsersToInstall.push('firefox');
-}
-
-if (browsersToInstall.length > 0) {
-  const install = spawn(process.execPath, [cliPath, 'install', ...browsersToInstall], {
+const args = process.argv.slice(2);
+const isHelpCommand = args.some((argument) => ['--help', '-h'].includes(argument));
+if (!isHelpCommand) {
+  const headed = args.includes('--headed');
+  const installArgs = ['install', headed ? '--no-shell' : '--only-shell', 'chromium', 'firefox'];
+  const install = spawn(process.execPath, [cliPath, ...installArgs], {
     env,
     stdio: 'inherit',
   });
@@ -75,7 +47,7 @@ if (browsersToInstall.length > 0) {
 }
 
 env.WEB_TOOLBOX_E2E_CONTAINER = '1';
-const test = spawn(process.execPath, [cliPath, 'test', ...process.argv.slice(2)], {
+const test = spawn(process.execPath, [cliPath, 'test', ...args], {
   env,
   stdio: 'inherit',
 });
