@@ -100,6 +100,13 @@ function setup(active = bitmap()) {
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
+it('画像を変更ボタンに装飾アイコンを表示し、ボタン名を維持する', () => {
+  const { change } = setup();
+  expect(change.querySelector('svg.icon')).not.toBeNull();
+  expect(change.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  expect(change.textContent).toBe('画像を変更');
+});
+
 it('SSIMULACRA2の目安表は閉じた状態で表示され、代表値と公式出典を案内する', () => {
   setup();
   const guide = document.querySelector<HTMLDetailsElement>('.image-score-guide')!;
