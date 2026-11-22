@@ -107,6 +107,13 @@ it('画像を変更ボタンに装飾アイコンを表示し、ボタン名を�
   expect(change.textContent).toBe('画像を変更');
 });
 
+it('画質を評価ボタンに装飾アイコンを表示し、ボタン名を維持する', () => {
+  const { evaluate } = setup();
+  expect(evaluate.querySelector('svg.icon')).not.toBeNull();
+  expect(evaluate.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  expect(evaluate.textContent).toBe('画質を評価');
+});
+
 it('SSIMULACRA2の目安表は閉じた状態で表示され、代表値と公式出典を案内する', () => {
   setup();
   const guide = document.querySelector<HTMLDetailsElement>('.image-score-guide')!;

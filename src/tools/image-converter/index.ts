@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Download, ImagePlus, X } from 'lucide';
+import { Check, CircleAlert, Download, ImagePlus, ScanEye, X } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
@@ -115,6 +115,7 @@ export function mount(container: HTMLElement): () => void {
   const inputError = get('.image-input-error');
   const autoEvaluation = get<HTMLInputElement>('.image-evaluation-toggle input');
   const evaluate = get<HTMLButtonElement>('.image-evaluate');
+  evaluate.prepend(createIcon(ScanEye));
   const cancelEvaluation = get<HTMLButtonElement>('.image-evaluation-cancel');
   cancelEvaluation.prepend(createIcon(X));
   const limitNotice = get('.image-evaluation-limit');
