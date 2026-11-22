@@ -378,7 +378,19 @@ SVG文字列を`innerHTML`へ挿入せず、`image/svg+xml`のBlob URLを`img.sr
 
 各パネルの元ファイル比は「（出力サイズ − 元ファイルサイズ）÷ 元ファイルサイズ × 100」で求めます。Originalでは元ファイルを使うため0%です。
 
-Vitestで入力形式、透明度と品質の処理、増減率、左右の設定と変換の独立性、同一設定の共有、入力変更・破棄時の競合を検証します。`tests/image-converter.spec.ts` はChromium・Firefoxで画像の選択とドロップ、左右の設定と保存、マウス・タッチ・キーボードでの比較位置操作、狭幅での両テーマ、片側と両側の変換失敗を確認します。
+「画質を評価」はBrowser JPEGの実際の出力Blobを元画像と比較します。Originalは基準として表示し、Browser PNGの評価は対象外です。寸法を採点準備前とWorker側で検査し、各辺8 px以上、最大1,048,576画素の範囲のみ評価します。変換の制限は独立しており、採点用の縮小はしません。
+
+`quality/client.ts`は入力のデコード済みImageBitmapを複製してWorkerへ移譲し、評価対象のJPEG Blobを渡します。エンコーダーは従来のHTML Canvasの `toBlob` を使用します。Workerは各JPEG Blobをデコードし、`paint.ts` の白背景描画をエンコーダーと共有して、元画像と同寸法の8ビットsRGBに正規化します。比較色はブラウザのデコードと色管理に依存します。元画像のEXIF向きは既存のデコード結果に従い、変換JPEGに元のメタデータが保持されることは前提としません。アルファ自体の採点、広色域・HDRの精度保証、異なるブラウザ間の数値一致は対象外です。
+
+評価はボタン操作ごとに単一のWorkerで直列に実行します。入力ごとの `WeakMap<Blob, number>` で、左右の同一Blobを一度だけ評価し、設定を変更していない側の有効なスコアを保持します。新しい入力、設定変更、中止、ツール破棄で実行中の評価を中止します。完了とエラーでもWorkerを終了し、評価結果は現在の操作に属する場合だけ反映します。評価エラーは変換と保存の状態から独立しています。有限のスコアを小数1桁で表示し、100点へのクランプや固定ランクは設けません。
+
+`quality/ssimulacra2-0.1.0.wasm` は npm の bytecut-ssimulacra2 0.1.0 配布物（62,706バイト、SHA-256 `56ae71e4b0e1d72d3afbcf2821ec913e0d775806f3c745960ea3a0504f402648`）です。Vitestでハッシュを照合します。WorkerがVite出力の同一オリジンの静的アセットを評価時に取得し、Node.js用ラッパーは使用しません。採点アダプターは公開C ABIの `alloc`、`dealloc`、`score` と `memory` を使います。両入力の確保と境界検査を済ませてからメモリビューを作り、RGBに詰め替えます。採点でメモリが拡張した後は旧ビューを参照せず、確保した入力を解放します。 [npm配布元](https://registry.npmjs.org/bytecut-ssimulacra2/0.1.0) · [Wasm公開ソース](https://github.com/anupjon/bytecut/tree/7f46cac57416b40c15bedb939bb05da1bf0d7929/packages/ssimulacra2)
+
+bytecut本体と採点クレートはBSD-2-Clauseです。配布元のLICENSE・NOTICE、Cargo.lockに基づく依存ライセンス、Rust 1.96.0標準ライブラリのライセンス・著作権表示を `public/licenses/ssimulacra2/` から本番にも配信します。 [第三者ライセンス](../public/licenses/ssimulacra2) · [Rust 1.96.0の標準ライブラリ著作権表示](../public/licenses/ssimulacra2/RUST-COPYRIGHT-library.html)
+
+PoCでは1024×1024でWasm線形メモリ約157 MiB、約1,600万画素で約2.30 GiBを観測しました。これはブラウザ全体のメモリ使用量ではありません。処理時間や必要メモリは端末とブラウザに依存します。公式libjxlとの比較では単色JPEGで最大1.0553点差があり、透明PNGの合成画素にもブラウザ間で丸め差がありました。スコアは元画像への知覚類似性の参考値として扱います。 [PoCと実測結果](https://github.com/arscombinatoria/web-toolbox/pull/63)
+
+Vitestで入力形式、透明度と品質の処理、増減率、左右の設定と変換の独立性、同一設定の共有、入力変更・破棄時の競合を検証します。`tests/image-converter.spec.ts` はChromium・Firefoxで画像の選択とドロップ、左右の設定と保存、マウス・タッチ・キーボードでの比較位置操作、狭幅での両テーマ、片側と両側の変換失敗を確認します。評価については寸法・形式・有限値・Wasmの境界とエラー・結果の再利用・非同期の破棄をVitestで検証します。Playwrightは本番ビルドの実Wasm、HTML CanvasとOffscreenCanvasの比較画素、スコアの失効、中止・復帰、サブパス、外部送信がないことを確認します。
 
 ## テスト方針
 

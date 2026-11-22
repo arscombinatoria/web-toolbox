@@ -205,3 +205,168 @@ test.describe('タッチ操作', () => {
     await expect(preview).toHaveAttribute('src', url!);
   });
 });
+
+test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変更した側だけ失効する', async ({ page, baseURL }) => {
+  const url = new URL(baseURL!);
+  const external: string[] = [];
+  await page.context().route(/^https?:/, route => {
+    const request = route.request();
+    if (new URL(request.url()).origin === url.origin && request.method() === 'GET' && !request.postData()) {
+      return route.continue();
+    }
+    external.push(request.url());
+    return route.abort();
+  });
+  await page.addInitScript(() => {
+    const encodings = new WeakMap<Blob, Uint8ClampedArray>();
+    const checks: { referenceMatches: boolean; decodesMatch: Promise<boolean> }[] = [];
+    Object.assign(window, { imageQualityChecks: checks });
+    const toBlob = HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback, type, quality) {
+      if (type !== 'image/jpeg') return toBlob.call(this, callback, type, quality);
+      const sourcePixels = this.getContext('2d')!.getImageData(0, 0, this.width, this.height).data;
+      return toBlob.call(this, blob => {
+        if (blob) encodings.set(blob, sourcePixels);
+        callback(blob);
+      }, type, quality);
+    };
+
+    function read(image: ImageBitmap, canvas: HTMLCanvasElement | OffscreenCanvas) {
+      const context = canvas.getContext('2d', { colorSpace: 'srgb', willReadFrequently: true })!;
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, image.width, image.height);
+      context.drawImage(image, 0, 0);
+      return context.getImageData(0, 0, image.width, image.height).data;
+    }
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message: unknown) {
+      const { reference, jpegs } = message as { reference: ImageBitmap; jpegs: Blob[] };
+      const { width, height } = reference;
+      const normalizer = new OffscreenCanvas(width, height);
+      const original = read(reference, normalizer);
+      checks.push({
+        referenceMatches: jpegs.every(blob => encodings.get(blob)?.every((byte, i) => byte === original[i])),
+        decodesMatch: Promise.all(jpegs.map(async blob => {
+          const image = await createImageBitmap(blob);
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const html = read(image, canvas);
+            const offscreen = read(image, new OffscreenCanvas(width, height));
+            return html.every((byte, i) => byte === offscreen[i]) && html.some((byte, i) => byte !== original[i]);
+          } finally {
+            image.close();
+          }
+        })).then(values => values.every(Boolean)),
+      });
+      Reflect.apply(post, this, arguments);
+    };
+  });
+
+  await page.goto('./?tool=image-converter');
+  const jpegScore = /^SSIMULACRA2: -?\d+\.\d$/;
+  const button = page.getByRole('button', { name: '画質を評価', exact: true });
+  const left = page.locator('.image-panel[data-side=left] .image-score');
+  const right = page.locator('.image-panel[data-side=right] .image-score');
+  const status = page.locator('.image-evaluation-status');
+  const input = await testImage(page);
+  await page.locator('[type=file]').setInputFiles(input);
+  await expect(left).toHaveText('基準画像');
+  await page.getByLabel('左の形式').selectOption('image/jpeg');
+  await page.getByLabel('左のJPEG品質').fill('0.25');
+  await expect(button).toBeEnabled();
+  const wasmLoaded = page.waitForResponse(response => /\/web-toolbox\/assets\/ssimulacra2-0\.1\.0-[\w-]+\.wasm$/.test(response.url()));
+  const workerStarted = page.waitForEvent('worker');
+  await button.click();
+  const worker = await workerStarted;
+  expect(new URL(worker.url()).pathname).toMatch(/^\/web-toolbox\/assets\//);
+  const wasm = await wasmLoaded;
+  expect(wasm.ok()).toBe(true);
+  expect(wasm.headers()['content-type']).toContain('application/wasm');
+  await expect(status).toContainText('完了');
+  await expect(left).toHaveText(jpegScore);
+  await expect(right).toHaveText(jpegScore);
+  expect(Number((await right.textContent())?.split(': ')[1])).toBeLessThan(100);
+  const checks = await page.evaluate(async () => {
+    const state = window as Window & { imageQualityChecks?: { referenceMatches: boolean; decodesMatch: Promise<boolean> }[] };
+    return Promise.all((state.imageQualityChecks ?? []).map(async item => [item.referenceMatches, await item.decodesMatch]));
+  });
+  expect(checks).toEqual([[true, true]]);
+  const rightScore = await right.textContent();
+
+  await page.getByLabel('左のJPEG品質').fill('0.90');
+  await expect(left).not.toHaveText(jpegScore);
+  await expect(right).toHaveText(rightScore!);
+  await expect(button).toBeEnabled();
+  await expect(left).toHaveText('画質は未評価');
+  await page.getByLabel('左の形式').selectOption('image/png');
+  await expect(left).toHaveText('画質評価は未対応');
+  await expect(page.getByRole('button', { name: '左をダウンロード' })).toBeEnabled();
+  expect(external).toEqual([]);
+});
+
+test('評価の画素数を超えてもJPEGの変換と保存が使える', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  const bytes = await page.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 1025;
+    return canvas.toDataURL().split(',')[1]!;
+  });
+  await page.locator('[type=file]').setInputFiles({
+    name: 'large.png', mimeType: 'image/png', buffer: Buffer.from(bytes, 'base64'),
+  });
+  await expect(page.locator('.image-evaluation-limit')).toContainText('1,048,576画素');
+  await expect(page.getByRole('button', { name: '画質を評価' })).toBeDisabled();
+  const jpeg = await saveImage(page, page.getByRole('button', { name: '右をダウンロード' }), 'large-right-q0.75.jpg');
+  expect([...jpeg.subarray(0, 3)]).toEqual([255, 216, 255]);
+  expect(page.workers()).toHaveLength(0);
+});
+
+test('狭い画面と両テーマで、Wasmロード中の中止と失敗から再評価できる', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 720 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('./?tool=image-converter');
+  await page.locator('[type=file]').setInputFiles(await testImage(page));
+  const start = page.getByRole('button', { name: '画質を評価' });
+  const cancel = page.getByRole('button', { name: '評価を中止' });
+  const status = page.locator('.image-evaluation-status');
+  const score = page.locator('.image-panel[data-side=right] .image-score');
+  const wasm = '**/ssimulacra2-0.1.0-*.wasm';
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route(wasm, async route => {
+    await blocked;
+    await route.abort().catch(() => {});
+  }, { times: 1 });
+  try {
+    const requested = page.waitForRequest(wasm);
+    await start.click();
+    await requested;
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(status).toContainText('評価しています');
+    await cancel.click();
+    await expect(status).toContainText('中止しました');
+    await expect(score).toHaveText('画質は未評価');
+    await expect(start).toBeEnabled();
+    await expect.poll(() => page.workers().length).toBe(0);
+  } finally {
+    release();
+  }
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await page.route(wasm, route => route.fulfill({ status: 503 }), { times: 1 });
+  await start.click();
+  await expect(status).toContainText('評価できませんでした');
+  await expect(page.getByRole('button', { name: '右をダウンロード' })).toBeEnabled();
+  await start.click();
+  await expect(status).toContainText('完了');
+  await expect(score).toHaveText(/^SSIMULACRA2: /);
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  }
+});
