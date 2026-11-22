@@ -27,22 +27,27 @@ export function mount(container: HTMLElement): () => void {
   view.innerHTML = `
     <h1 tabindex="-1"></h1>
     <p class="tool-description"></p>
-    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
     <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp" hidden>
+    <p class="image-input-status" role="status" aria-atomic="true"></p>
+    <p class="image-input-error" role="alert"></p>
     <div class="image-evaluation-options">
       <label class="image-evaluation-toggle">
         <input type="checkbox" aria-describedby="image-evaluation-cost" checked>画質の自動評価
       </label>
       <p id="image-evaluation-cost" class="image-note">大きい画像の評価には数秒かかり、多くのメモリを使います。</p>
     </div>
+    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
     <section hidden aria-label="画像の比較と変換設定">
-      <p class="image-info"></p>
-      <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
-      <div class="image-stage">
-        <canvas role="img" aria-label="元画像のプレビュー" hidden></canvas>
-        ${sideDefinitions.map(({ id, label }) => `<img data-side="${id}" alt="${label}側のプレビュー" hidden>`).join('')}
-        <span class="image-divider" aria-hidden="true"></span>
-        <input type="range" class="image-position" min="0" max="100" value="50" aria-label="比較位置">
+      <div class="image-comparison-area">
+        <div class="image-replace"><span>画像をドロップして変更</span><button type="button" class="image-change">画像を変更</button></div>
+        <p class="image-info"></p>
+        <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
+        <div class="image-stage">
+          <canvas role="img" aria-label="元画像のプレビュー" hidden></canvas>
+          ${sideDefinitions.map(({ id, label }) => `<img data-side="${id}" alt="${label}側のプレビュー" hidden>`).join('')}
+          <span class="image-divider" aria-hidden="true"></span>
+          <input type="range" class="image-position" min="0" max="100" value="50" aria-label="比較位置">
+        </div>
       </div>
       <div class="image-controls">
         ${sideDefinitions.map(({ id, label, initialEncoder }) => `
@@ -92,8 +97,6 @@ export function mount(container: HTMLElement): () => void {
         <p class="image-evaluation-status" role="status" aria-atomic="true"></p>
       </div>
     </section>
-    <p class="image-input-status" role="status" aria-atomic="true"></p>
-    <p class="image-input-error" role="alert"></p>
     <p class="image-note">画像はブラウザ内で処理します。JPEGでは透明部分が白になります。EXIFなどのメタデータは保持されない場合があります。</p>`;
   const get = <T extends Element>(selector: string) => view.querySelector<T>(selector)!;
   const tool = findTool('image-converter')!;
@@ -101,10 +104,11 @@ export function mount(container: HTMLElement): () => void {
   get('.tool-description').textContent = tool.description;
   const input = get<HTMLInputElement>('[type=file]');
   const drop = get<HTMLButtonElement>('.image-drop');
+  const change = get<HTMLButtonElement>('.image-change');
   const section = get<HTMLElement>('section');
   const info = get('.image-info');
   const stage = get<HTMLElement>('.image-stage');
-  const original = get<HTMLCanvasElement>('canvas');
+  let original = get<HTMLCanvasElement>('canvas');
   const position = get<HTMLInputElement>('.image-position');
   const inputStatus = get('.image-input-status');
   const inputError = get('.image-input-error');
@@ -285,13 +289,10 @@ export function mount(container: HTMLElement): () => void {
   function clearSource() {
     stopEvaluation();
     scores = new WeakMap();
-    reading?.abort();
-    reading = undefined;
     sides.forEach(invalidate);
     source?.bitmap.close();
     source = undefined;
     original.width = original.height = 0;
-    section.hidden = true;
     updateEvaluation();
   }
 
@@ -382,52 +383,112 @@ export function mount(container: HTMLElement): () => void {
 
   async function selectFiles(files: FileList | null) {
     if (!files?.length) return;
-    const changedAt = performance.now();
-    const currentInput = ++inputGeneration;
-    clearSource();
-    inputStatus.textContent = inputError.textContent = '';
+    inputError.textContent = '';
     if (files.length !== 1) {
       setIconMessage(inputError, CircleAlert, '画像は1枚ずつ選択してください。');
       return;
     }
     const file = files[0]!;
+    if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setIconMessage(inputError, CircleAlert, 'JPEG・PNG・WebPの画像を選択してください。');
+      return;
+    }
+    const changedAt = performance.now();
+    const controller = new AbortController();
+    reading?.abort();
+    reading = controller;
     inputStatus.textContent = '画像を読み込んでいます…';
+
+    let bitmap: ImageBitmap | undefined;
+    let preview: HTMLCanvasElement | undefined;
     try {
-      reading = new AbortController();
-      const bitmap = await decode(file, reading.signal);
-      if (currentInput !== inputGeneration) { bitmap.close(); return; }
-      reading = undefined;
-      source = { file, bitmap };
-      original.width = bitmap.width;
-      original.height = bitmap.height;
-      const context = original.getContext('2d');
+      bitmap = await decode(file, controller.signal);
+      if (reading !== controller) {
+        bitmap.close();
+        return;
+      }
+      // 描画できることを確認してから、表示中のCanvasと処理を切り替える。
+      preview = original.cloneNode(false) as HTMLCanvasElement;
+      preview.className = '';
+      preview.hidden = true;
+      preview.width = bitmap.width;
+      preview.height = bitmap.height;
+      const context = preview.getContext('2d');
       if (!context) throw new Error('プレビューを表示できませんでした。');
       context.drawImage(bitmap, 0, 0);
-      stage.style.aspectRatio = bitmap.width + ' / ' + bitmap.height;
-      position.value = '50';
-      updatePosition();
-      info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + file.size.toLocaleString('ja-JP') + ' B';
-      inputStatus.textContent = '';
-      section.hidden = false;
-      for (const side of sides) convertSide(side);
-      if (autoEvaluation.checked) requestEvaluation('auto', changedAt);
     } catch (cause) {
-      if (currentInput !== inputGeneration) return;
-      clearSource();
+      bitmap?.close();
+      if (preview) preview.width = preview.height = 0;
+      if (reading !== controller) return;
+      reading = undefined;
       inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '画像を読み込めませんでした。');
+      return;
     }
+
+    reading = undefined;
+    ++inputGeneration;
+    clearSource();
+    source = { file, bitmap };
+    original.replaceWith(preview);
+    original = preview;
+    stage.style.aspectRatio = bitmap.width + ' / ' + bitmap.height;
+    position.value = '50';
+    updatePosition();
+    info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + file.size.toLocaleString('ja-JP') + ' B';
+    inputStatus.textContent = inputError.textContent = '';
+    const moveFocus = document.activeElement === drop;
+    resetInitialDrag();
+    drop.hidden = true;
+    section.hidden = false;
+    if (moveFocus) change.focus({ preventScroll: true });
+    for (const side of sides) convertSide(side);
+    if (autoEvaluation.checked) requestEvaluation('auto', changedAt);
   }
 
+  function hasFiles(event: DragEvent) {
+    return event.dataTransfer?.types.includes('Files') ?? false;
+  }
+
+  function addDropHandlers(target: HTMLElement) {
+    let depth = 0;
+    const reset = () => {
+      depth = 0;
+      target.classList.remove('is-over');
+    };
+    target.addEventListener('dragenter', event => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      depth++;
+      target.classList.add('is-over');
+    }, options);
+    target.addEventListener('dragover', event => {
+      if (!event.dataTransfer || !hasFiles(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      // After the initial zone switches to the comparison, dragover can arrive first.
+      if (!depth) {
+        depth = 1;
+        target.classList.add('is-over');
+      }
+    }, options);
+    target.addEventListener('dragleave', () => {
+      if (depth && --depth === 0) reset();
+    }, options);
+    target.addEventListener('drop', event => {
+      if (!hasFiles(event) && !event.dataTransfer?.files.length) return;
+      event.preventDefault();
+      reset();
+      void selectFiles(event.dataTransfer?.files ?? null);
+    }, options);
+    return reset;
+  }
+
+  const resetInitialDrag = addDropHandlers(drop);
+  addDropHandlers(get<HTMLElement>('.image-comparison-area'));
   drop.addEventListener('click', () => input.click(), options);
+  change.addEventListener('click', () => input.click(), options);
   input.addEventListener('change', () => { void selectFiles(input.files); input.value = ''; }, options);
-  drop.addEventListener('dragover', event => { event.preventDefault(); drop.classList.add('is-over'); }, options);
-  drop.addEventListener('dragleave', () => drop.classList.remove('is-over'), options);
-  drop.addEventListener('drop', event => {
-    event.preventDefault();
-    drop.classList.remove('is-over');
-    void selectFiles(event.dataTransfer?.files ?? null);
-  }, options);
   position.addEventListener('input', updatePosition, options);
   autoEvaluation.addEventListener('change', () => {
     if (autoEvaluation.checked) {
@@ -468,6 +529,8 @@ export function mount(container: HTMLElement): () => void {
   container.append(view);
   return () => {
     listeners.abort();
+    reading?.abort();
+    reading = undefined;
     ++inputGeneration;
     clearSource();
     view.remove();

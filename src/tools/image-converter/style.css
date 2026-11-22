@@ -1,8 +1,19 @@
-.image-drop { width: 100%; padding: var(--space-4); border: 2px dashed var(--border); }
+.image-drop {
+  display: grid; place-content: center; gap: var(--space-1);
+  width: 100%; min-height: 240px;
+  padding: var(--space-4); border: 2px dashed var(--border); border-radius: var(--radius);
+}
 .image-drop strong, .image-drop span { display: block; }
 .image-drop strong { color: var(--accent); }
 .image-drop span, .image-note, .image-info { color: var(--muted); font-size: .875rem; }
 .image-drop.is-over, .image-drop:focus-visible { background: var(--accent-soft); border-color: var(--accent); }
+.image-replace { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.image-replace span { color: var(--muted); font-size: .875rem; }
+.image-change { flex: none; font-size: .875rem; }
+.image-comparison-area.is-over { background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: 3px; }
+.image-comparison-area.is-over .image-stage { border-color: var(--accent); }
+.image-input-status, .image-input-error { margin: var(--space-1) 0; }
+.image-input-status:empty, .image-input-error:empty { margin: 0; }
 .image-info { overflow-wrap: anywhere; }
 .image-captions { display: flex; justify-content: space-between; gap: var(--space-1); }
 .image-captions strong:last-child { text-align: right; }
@@ -42,7 +53,8 @@
 .image-save:disabled { opacity: .55; cursor: default; }
 .image-evaluation { margin-top: var(--space-2); }
 .image-evaluation-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.image-evaluation-options, .image-evaluation-options p { margin: var(--space-1) 0 0; }
+.image-evaluation-options { margin: var(--space-1) 0 var(--space-2); }
+.image-evaluation-options p { margin: var(--space-1) 0 0; }
 .image-evaluation-toggle { display: inline-flex; align-items: center; gap: var(--space-1); }
 .image-evaluation-toggle input { accent-color: var(--accent); }
 .image-evaluation p { margin: var(--space-1) 0 0; }
@@ -57,3 +69,7 @@
 .image-score-guide th, .image-score-guide td { padding: var(--space-1); border: 1px solid var(--border); text-align: left; }
 .image-score-guide th[scope="row"] { white-space: nowrap; }
 .image-score-guide p { margin: var(--space-1) 0 0; }
+
+@media (max-width: 759px) {
+  .image-drop { min-height: 180px; }
+}

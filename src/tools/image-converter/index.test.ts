@@ -46,7 +46,7 @@ function setup(active = bitmap()) {
     const files = [new File(['12'], name, { type: 'image/png' })];
     if (target) {
       const event = new Event('drop', { cancelable: true });
-      Object.defineProperty(event, 'dataTransfer', { value: { files } });
+      Object.defineProperty(event, 'dataTransfer', { value: { files, types: ['Files'] } });
       target.dispatchEvent(event);
     } else {
       Object.defineProperty(input, 'files', { configurable: true, value: files });
@@ -81,6 +81,11 @@ function setup(active = bitmap()) {
   }
   return {
     active, createUrl, revokeUrl, download, choose, drop: get<HTMLElement>('.image-drop'),
+    comparisonArea: get<HTMLElement>('.image-comparison-area'),
+    input,
+    change: get<HTMLButtonElement>('.image-change'),
+    section: get<HTMLElement>('.image-tool section'),
+    inputError: get('.image-input-error'),
     left: side('left'), right: side('right'),
     info: get('.image-info'),
     auto: get<HTMLInputElement>('.image-evaluation-toggle input'),
@@ -88,7 +93,7 @@ function setup(active = bitmap()) {
     cancel: get<HTMLButtonElement>('.image-evaluation-cancel'),
     evaluationStatus: get('.image-evaluation-status'),
     limit: get('.image-evaluation-limit'),
-    canvas: get<HTMLCanvasElement>('canvas'),
+    getCanvas: () => get<HTMLCanvasElement>('canvas'),
     unmount() { unmount(); dispose = undefined; },
   };
 }
@@ -119,7 +124,7 @@ it('SSIMULACRA2の目安表は閉じた状態で表示され、代表値と公�
 });
 
 it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エンコードせず保存できる', async () => {
-  const { choose, active, left, right, canvas, createUrl, download } = setup();
+  const { choose, active, left, right, getCanvas, createUrl, download } = setup();
   const file = choose('input.alpha.png');
   await flush();
   expect(left.format.value).toBe('original');
@@ -133,8 +138,8 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   right.select('original');
   expect(left.qualityLabel.hidden).toBe(true);
   expect(right.qualityLabel.hidden).toBe(true);
-  expect(canvas.classList.contains('image-original-left')).toBe(true);
-  expect(canvas.classList.contains('image-original-right')).toBe(true);
+  expect(getCanvas().classList.contains('image-original-left')).toBe(true);
+  expect(getCanvas().classList.contains('image-original-right')).toBe(true);
   expect(right.output.textContent).toContain('2 B（元ファイル比 0%）');
   expect(encode).toHaveBeenCalledOnce();
   expect(createUrl).toHaveBeenLastCalledWith(file);
@@ -143,6 +148,52 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   const anchors = download.mock.contexts as HTMLAnchorElement[];
   expect(anchors.map(anchor => anchor.download)).toEqual([file.name, file.name]);
   expect(anchors.map(anchor => anchor.href)).toEqual(['blob:result-1', 'blob:result-3']);
+});
+
+it('不正な置換を保ち、同じ有効画像を再選択して比較を置き換える', async () => {
+  const first = bitmap();
+  const second = bitmap(30, 20);
+  const { choose, input, active, left, right, info, section, inputError, createUrl, revokeUrl, change } = setup(first);
+  choose('first.png');
+  await flush();
+  const previousLeft = left.preview.src;
+  const previousRight = right.preview.src;
+
+  Object.defineProperty(input, 'files', { configurable: true, value: [new File(['bad'], 'bad.gif', { type: 'image/gif' })] });
+  input.dispatchEvent(new Event('change'));
+  expect(input.value).toBe('');
+  expect(inputError.textContent).toContain('JPEG・PNG・WebP');
+  expect(info.textContent).toContain('first.png');
+  expect(left.preview.src).toBe(previousLeft);
+  expect(right.preview.src).toBe(previousRight);
+
+  Object.defineProperty(input, 'files', { configurable: true, value: [
+    new File(['one'], 'one.png', { type: 'image/png' }), new File(['two'], 'two.png', { type: 'image/png' }),
+  ] });
+  input.dispatchEvent(new Event('change'));
+  expect(inputError.textContent).toContain('1枚ずつ');
+  expect(info.textContent).toContain('first.png');
+  expect(left.preview.src).toBe(previousLeft);
+
+  vi.mocked(decode).mockRejectedValueOnce(new Error('壊れた画像'));
+  choose('broken.png');
+  await flush();
+  expect(inputError.textContent).toContain('壊れた画像');
+  expect(info.textContent).toContain('first.png');
+  expect(left.preview.src).toBe(previousLeft);
+  expect(createUrl).toHaveBeenCalledTimes(2);
+
+  vi.mocked(decode).mockResolvedValueOnce(second);
+  change.click();
+  choose('second.png');
+  await flush();
+  expect(section.hidden).toBe(false);
+  expect(document.querySelector('.image-drop')?.hasAttribute('hidden')).toBe(true);
+  expect(info.textContent).toContain('second.png');
+  expect(active.close).toHaveBeenCalledOnce();
+  expect(revokeUrl).toHaveBeenCalledWith('blob:result-1');
+  expect(revokeUrl).toHaveBeenCalledWith('blob:result-2');
+  expect(inputError.textContent).toBe('');
 });
 
 it('品質を独立して保持し、変更した側だけを変換する', async () => {
@@ -251,7 +302,7 @@ it('左右の設定変更が重なっても古いエンコードとプレビュ�
 });
 
 it('連続入力・ドロップ・ツール破棄で古いデコードと変換を無効化する', async () => {
-  const { choose, drop, active, left, right, canvas, info, createUrl, revokeUrl, unmount } = setup();
+  const { choose, comparisonArea, active, left, right, getCanvas, info, createUrl, revokeUrl, unmount } = setup();
   const staleDecode = deferred<ImageBitmap>();
   const staleEncode = deferred<Blob>();
   const pendingOnUnmount = deferred<Blob>();
@@ -270,7 +321,8 @@ it('連続入力・ドロップ・ツール破棄で古いデコードと変換�
   await flush();
   expect(old.close).toHaveBeenCalledOnce();
 
-  choose('new.png', drop);
+  choose('new.png', comparisonArea);
+  await flush();
   expect(active.close).toHaveBeenCalledOnce();
   expect(revokeUrl).toHaveBeenCalledWith('blob:result-1');
   await flush();
@@ -282,15 +334,16 @@ it('連続入力・ドロップ・ツール破棄で古いデコードと変換�
 
   left.select('image/jpeg');
   left.quality('0.24');
+  const canvasBeforeUnmount = getCanvas();
   unmount();
   left.select('image/png');
   right.quality('0.56');
-  choose('ignored.png', drop);
+  choose('ignored.png', comparisonArea);
   pendingOnUnmount.resolve(jpeg);
   await vi.runAllTimersAsync();
   expect(revokeUrl.mock.calls).toEqual([['blob:result-1'], ['blob:result-2']]);
   expect(replacement.close).toHaveBeenCalledOnce();
-  expect(canvas.width).toBe(0);
+  expect(canvasBeforeUnmount.width).toBe(0);
   expect(decode).toHaveBeenCalledTimes(3);
   expect(encode).toHaveBeenCalledTimes(2);
   expect(document.body.childElementCount).toBe(0);
@@ -310,6 +363,58 @@ function mockScoring() {
   vi.stubGlobal('createImageBitmap', copy);
   return { workers, copy };
 }
+
+it('置換のデコード中は現在の結果と採点を維持し、置換確定で古いWorkerとスコアを失効させる', async () => {
+  const { choose, evaluate, left, right, info, auto } = setup();
+  const { workers } = mockScoring();
+  auto.checked = false;
+  auto.dispatchEvent(new Event('change'));
+  choose('first.png');
+  await flush();
+  evaluate.click();
+  await flush();
+  workers[0]!.reply({ index: 0, score: 88.25 });
+  await flush();
+  expect(right.score.textContent).toBe('SSIMULACRA2: 88.3');
+
+  left.select('image/jpeg');
+  await flush();
+  vi.mocked(encode).mockResolvedValueOnce(new Blob(['new jpeg'], { type: 'image/jpeg' }));
+  left.quality('0.50');
+  await vi.advanceTimersByTimeAsync(180);
+  evaluate.click();
+  await flush();
+  const activeWorker = workers[1]!;
+  expect(activeWorker.terminate).not.toHaveBeenCalled();
+  const candidate = deferred<ImageBitmap>();
+  vi.mocked(decode).mockReturnValueOnce(candidate.promise);
+  choose('replacement.png');
+  expect(info.textContent).toContain('first.png');
+  expect(right.score.textContent).toBe('SSIMULACRA2: 88.3');
+  expect(activeWorker.terminate).not.toHaveBeenCalled();
+
+  const replacement = bitmap(30, 20);
+  candidate.resolve(replacement);
+  await flush();
+  expect(info.textContent).toContain('replacement.png');
+  expect(activeWorker.terminate).toHaveBeenCalledOnce();
+  expect(right.score.textContent).toBe('画質は未評価');
+});
+
+it('ツール破棄で候補デコードを中止し、遅れて届いたビットマップを閉じる', async () => {
+  const { choose, unmount } = setup();
+  const pending = deferred<ImageBitmap>();
+  const late = bitmap();
+  vi.mocked(decode).mockReturnValueOnce(pending.promise);
+  choose('pending.png');
+  const signal = vi.mocked(decode).mock.calls[0]![1];
+  unmount();
+  expect(signal.aborted).toBe(true);
+  pending.resolve(late);
+  await flush();
+  expect(late.close).toHaveBeenCalledOnce();
+  expect(document.body.childElementCount).toBe(0);
+});
 
 it('OriginalとPNGを説明し、JPEG出力が準備できるまで評価できない', async () => {
   const { choose, evaluate, left, right } = setup();
@@ -432,8 +537,8 @@ it('中止後に再実行でき、画像切り替えとツール破棄は実行�
   await flush();
   const oldImage = workers[1]!.onmessage!;
   choose('second.png');
-  expect(workers[1]!.terminate).toHaveBeenCalledOnce();
   await flush();
+  expect(workers[1]!.terminate).toHaveBeenCalledOnce();
   evaluate.click();
   await flush();
   for (const reply of [stale, oldImage]) reply(new MessageEvent('message', { data: { index: 0, score: 99 } }));

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { Locator, Page } from '@playwright/test';
+import type { FileChooser, Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 async function testImage(page: Page, width = 64, height = 32) {
@@ -62,8 +62,9 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await page.goto('./?tool=image-converter');
   const image = await testImage(page);
   const picker = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: /画像を選択/ }).press('Enter');
+  await page.getByRole('button', { name: /画像を選択/ }).press('Space');
   await (await picker).setFiles(image);
+  await expect(page.getByRole('button', { name: '画像を変更' })).toBeFocused();
   const saveLeft = page.getByRole('button', { name: '左をダウンロード' });
   const saveRight = page.getByRole('button', { name: '右をダウンロード' });
   const previewLeft = page.getByAltText('左側のプレビュー');
@@ -159,13 +160,16 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(saveRight).toBeHidden();
 });
 
-test('狭い画面の両テーマでドロップ・失敗表示・再入力ができる', async ({ page }) => {
-  await page.setViewportSize({ width: 360, height: 720 });
-  await page.goto('./?tool=image-converter');
+test('320pxの両テーマでドロップ後も失敗した置換から復帰できる', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
   for (const scheme of ['dark', 'light'] as const) {
+    await page.goto('./?tool=image-converter');
     await page.emulateMedia({ colorScheme: scheme });
     await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
-    await page.locator('.image-drop').evaluate(async button => {
+    const initial = page.locator('.image-drop');
+    const initialBounds = (await initial.boundingBox())!;
+    expect(initialBounds.height).toBe(180);
+    await initial.evaluate(async button => {
       const canvas = document.createElement('canvas');
       const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), 'image/webp'));
       const dataTransfer = new DataTransfer();
@@ -176,15 +180,97 @@ test('狭い画面の両テーマでドロップ・失敗表示・再入力が�
     const saveRight = page.getByRole('button', { name: '右をダウンロード' });
     await expect(saveLeft).toBeEnabled();
     await expect(saveRight).toBeEnabled();
+    await expect(initial).toBeHidden();
+    const comparisonBounds = (await page.locator('.image-comparison-area').boundingBox())!;
+    expect(comparisonBounds.y).toBeCloseTo(initialBounds.y, 0);
+    expect(comparisonBounds.width).toBeCloseTo(initialBounds.width, 0);
+    await page.locator('[type=file]').setInputFiles({ name: 'broken.png', mimeType: 'image/png',
+      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) });
+    const inputError = page.locator('.image-input-error');
+    await expect(inputError).toHaveAttribute('role', 'alert');
+    await expect(inputError).toContainText('読み込めません');
+    await expect(page.locator('.image-tool section')).toBeVisible();
+    await expect(saveLeft).toBeEnabled();
+    await expect(page.locator('.image-info')).toContainText('drop.webp');
     const left = (await page.getByRole('group', { name: '左の設定' }).boundingBox())!;
     const right = (await page.getByRole('group', { name: '右の設定' }).boundingBox())!;
     expect(left.y + left.height).toBeLessThan(right.y);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
-    await page.locator('[type=file]').setInputFiles({ name: 'broken.png', mimeType: 'image/png',
-      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) });
-    await expect(page.getByRole('alert')).toContainText('読み込めません');
-    await expect(page.locator('.image-tool section')).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+    const recovery = await testImage(page);
+    await page.locator('[type=file]').setInputFiles(recovery);
+    await expect(page.locator('.image-info')).toContainText(recovery.name);
+    await expect(inputError).toBeEmpty();
   }
+});
+
+test('比較画像エリアへのドロップと画像変更ボタンで置き換え、同じファイルを再選択できる', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  const image = await testImage(page);
+  const replacement = await testImage(page, 32, 16);
+  const initial = page.getByRole('button', { name: /画像を選択/ });
+  await expect(initial).toBeVisible();
+  expect((await initial.boundingBox())!.height).toBe(240);
+  // Keep interception enabled across consecutive dialogs, including on Firefox.
+  const choosers: FileChooser[] = [];
+  page.on('filechooser', chooser => choosers.push(chooser));
+  await initial.press('Enter');
+  await expect.poll(() => choosers.length).toBe(1);
+  await choosers[0]!.setFiles(image);
+  const comparison = page.locator('.image-comparison-area');
+  const info = page.locator('.image-info');
+  const rightPreview = page.getByAltText('右側のプレビュー');
+  await expect(info).toContainText(image.name);
+
+  const drag = await comparison.evaluate((area, bytes) => {
+    const slider = area.querySelector('.image-position')!;
+    const file = new File([Uint8Array.from(bytes)], 'replacement.png', { type: 'image/png' });
+    const files = new DataTransfer();
+    files.items.add(file);
+    const text = new DataTransfer();
+    text.setData('text/plain', 'テキスト');
+    const dispatch = (target: Element, type: string, dataTransfer: DataTransfer) =>
+      !target.dispatchEvent(new DragEvent(type, { dataTransfer, bubbles: true, cancelable: true }));
+    const highlighted = () => area.classList.contains('is-over');
+    const textPrevented = ['dragenter', 'dragover', 'drop'].map(type => dispatch(slider, type, text));
+    dispatch(area, 'dragenter', files);
+    const highlightedOnEnter = highlighted();
+    dispatch(slider, 'dragenter', files);
+    dispatch(area, 'dragleave', files);
+    const highlightedOnChild = highlighted();
+    dispatch(slider, 'dragleave', files);
+    const highlightedOnLeave = highlighted();
+    dispatch(slider, 'dragenter', files);
+    const fileOverPrevented = dispatch(slider, 'dragover', files);
+    const fileDropPrevented = dispatch(slider, 'drop', files);
+    return { textPrevented, highlightedOnEnter, highlightedOnChild, highlightedOnLeave, fileOverPrevented,
+      fileDropPrevented, highlightedAfterDrop: highlighted() };
+  }, [...replacement.buffer]);
+  expect(drag).toEqual({
+    textPrevented: [false, false, false],
+    highlightedOnEnter: true,
+    highlightedOnChild: true,
+    highlightedOnLeave: false,
+    fileOverPrevented: true,
+    fileDropPrevented: true,
+    highlightedAfterDrop: false,
+  });
+  await expect(info).toContainText('replacement.png');
+  await expect(info).toContainText('32 × 16 px');
+  await expect(rightPreview).toBeVisible();
+  const change = page.getByRole('button', { name: '画像を変更' });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const previousUrl = await rightPreview.getAttribute('src');
+    await change.click();
+    await expect.poll(() => choosers.length).toBe(attempt + 2);
+    await choosers[attempt + 1]!.setFiles(image);
+    await expect(page.locator('[type=file]')).toHaveValue('');
+    await expect(info).toContainText(image.name);
+    await expect(info).toContainText('64 × 32 px');
+    await expect(rightPreview).not.toHaveAttribute('src', previousUrl!);
+    await expect(rightPreview).toBeVisible();
+  }
+  await expect(initial).toBeHidden();
+  await expect(comparison).toBeVisible();
 });
 
 test('変換に失敗した側を通知し、反対側は個別に保存・復旧できる', async ({ page }) => {
