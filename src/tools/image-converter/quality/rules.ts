@@ -1,6 +1,6 @@
 import type { EncoderId } from '../encoder';
 
-export const MAX_EVALUATION_PIXELS = 1_048_576;
+export const MAX_EVALUATION_PIXELS = 4_194_304;
 export const MIN_EVALUATION_SIDE = 8;
 
 export function evaluationLimit(width: number, height: number): string | undefined {
@@ -9,7 +9,7 @@ export function evaluationLimit(width: number, height: number): string | undefin
     return '画質評価には各辺8 px以上が必要です。';
   }
   if (width * height > MAX_EVALUATION_PIXELS) {
-    return '画質評価は1,048,576画素以下の画像に対応しています。';
+    return '画質評価は' + MAX_EVALUATION_PIXELS.toLocaleString('ja-JP') + '画素以下の画像に対応しています。変換と保存は利用できます。';
   }
 }
 

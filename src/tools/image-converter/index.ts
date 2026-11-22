@@ -9,6 +9,10 @@ const sideDefinitions = [
   { id: 'right', label: '右', initialEncoder: 'image/jpeg' },
 ] as const;
 const initialQuality = 0.75;
+const autoEvaluationDelay = 800;
+const evaluationWaiting = '画質評価を待機しています…';
+
+type EvaluationMode = 'auto' | 'manual';
 
 type SideResult =
   | { status: 'idle' | 'failed' }
@@ -23,6 +27,12 @@ export function mount(container: HTMLElement): () => void {
     <p class="tool-description"></p>
     <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
     <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp" hidden>
+    <div class="image-evaluation-options">
+      <label class="image-evaluation-toggle">
+        <input type="checkbox" aria-describedby="image-evaluation-cost" checked>画質の自動評価
+      </label>
+      <p id="image-evaluation-cost" class="image-note">大きい画像の評価には数秒かかり、多くのメモリを使います。</p>
+    </div>
     <section hidden aria-label="画像の比較と変換設定">
       <p class="image-info"></p>
       <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
@@ -44,7 +54,7 @@ export function mount(container: HTMLElement): () => void {
               <span>${initialQuality.toFixed(2)}</span>
             </label>
             <p class="image-result" role="status" aria-atomic="true"></p>
-            <p class="image-score"></p>
+            <p class="image-score" aria-live="polite" aria-atomic="true"></p>
             <p class="image-error" role="alert"></p>
             <button type="button" class="image-save" disabled>${label}をダウンロード</button>
           </fieldset>
@@ -76,6 +86,7 @@ export function mount(container: HTMLElement): () => void {
   const position = get<HTMLInputElement>('.image-position');
   const inputStatus = get('.image-input-status');
   const inputError = get('.image-input-error');
+  const autoEvaluation = get<HTMLInputElement>('.image-evaluation-toggle input');
   const evaluate = get<HTMLButtonElement>('.image-evaluate');
   const cancelEvaluation = get<HTMLButtonElement>('.image-evaluation-cancel');
   const limitNotice = get('.image-evaluation-limit');
@@ -85,7 +96,9 @@ export function mount(container: HTMLElement): () => void {
   let inputGeneration = 0;
   let reading: AbortController | undefined;
   let source: { file: File; bitmap: ImageBitmap } | undefined;
-  let evaluation: AbortController | undefined;
+  let evaluation: { controller: AbortController; mode: EvaluationMode } | undefined;
+  let requestedEvaluation: { mode: EvaluationMode; readyAt: number } | undefined;
+  let evaluationTimer: ReturnType<typeof setTimeout> | undefined;
   let scores = new WeakMap<Blob, number>();
 
   function createSide({ id, label, initialEncoder }: typeof sideDefinitions[number]) {
@@ -129,49 +142,96 @@ export function mount(container: HTMLElement): () => void {
     return [...blobs];
   }
 
-  function renderEvaluation() {
-    const limit = source && evaluationLimit(source.bitmap.width, source.bitmap.height);
+  function updateEvaluation() {
+    const currentSource = source;
+    const limit = currentSource && evaluationLimit(currentSource.bitmap.width, currentSource.bitmap.height);
     limitNotice.textContent = limit ?? '';
     const converting = sides.some(side => isEvaluable(side.encoder) && side.result.status === 'pending');
-    evaluate.disabled = !source || !!limit || !!evaluation || converting || !unevaluatedJpegs().length;
-    cancelEvaluation.disabled = !evaluation;
+    const jpegs = unevaluatedJpegs();
+    const canEvaluate = currentSource && !limit && (converting || jpegs.length > 0);
+    if (!canEvaluate && requestedEvaluation) {
+      clearEvaluationRequest();
+      if (evaluationStatus.textContent === evaluationWaiting) evaluationStatus.textContent = '';
+    }
+    evaluate.disabled = !canEvaluate || !!evaluation || requestedEvaluation?.mode === 'manual';
+    cancelEvaluation.disabled = !evaluation && !requestedEvaluation;
     for (const side of sides) {
       const blob = evaluationBlob(side);
       const score = blob ? scores.get(blob) : undefined;
-      side.score.textContent = side.encoder === 'original' ? '基準画像' :
+      const message = side.encoder === 'original' ? '基準画像' :
         !isEvaluable(side.encoder) ? '画質評価は未対応' :
         score !== undefined ? 'SSIMULACRA2: ' + score.toFixed(1) :
         blob && !limit ? '画質は未評価' : '';
+      if (side.score.textContent !== message) side.score.textContent = message;
+    }
+
+    if (evaluation || !requestedEvaluation || !currentSource) return;
+    const remaining = requestedEvaluation.readyAt - performance.now();
+    if (!converting && remaining <= 0) {
+      const { mode } = requestedEvaluation;
+      clearEvaluationRequest();
+      void startEvaluation(mode, currentSource.bitmap, jpegs, inputGeneration);
+      return;
+    }
+    if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
+    // JPEG変換が済んでから、自動評価に必要な残りの待機時間だけを計る。
+    if (!converting && evaluationTimer === undefined) {
+      evaluationTimer = setTimeout(() => {
+        evaluationTimer = undefined;
+        updateEvaluation();
+      }, Math.ceil(remaining));
     }
   }
 
+  function clearEvaluationRequest() {
+    clearTimeout(evaluationTimer);
+    evaluationTimer = undefined;
+    requestedEvaluation = undefined;
+  }
+
+  function requestEvaluation(mode: EvaluationMode, changedAt = performance.now()) {
+    clearEvaluationRequest();
+    requestedEvaluation = { mode, readyAt: changedAt + (mode === 'auto' ? autoEvaluationDelay : 0) };
+    updateEvaluation();
+  }
+
   function stopEvaluation(message = '') {
-    const pending = evaluation;
+    clearEvaluationRequest();
+    const running = evaluation;
     evaluation = undefined;
-    pending?.abort();
+    running?.controller.abort();
     evaluationStatus.textContent = message;
   }
 
-  async function startEvaluation() {
-    if (evaluate.disabled || !source) return;
-    const jpegs = unevaluatedJpegs();
+  async function startEvaluation(mode: EvaluationMode, bitmap: ImageBitmap, jpegs: Blob[], generation: number) {
     const controller = new AbortController();
-    evaluation = controller;
-    evaluationStatus.textContent = '画質を評価しています…';
-    renderEvaluation();
+    const job = { controller, mode };
+    const isCurrent = () => evaluation === job && generation === inputGeneration;
+    evaluation = job;
+    if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
+    updateEvaluation();
     try {
-      await evaluateJpegs(source.bitmap, jpegs, controller.signal, (jpeg, score) => {
-        if (evaluation !== controller) return;
-        scores.set(jpeg, score);
-        renderEvaluation();
-      });
-      if (evaluation === controller) evaluationStatus.textContent = '画質評価が完了しました。';
-    } catch {
-      if (evaluation === controller) evaluationStatus.textContent = '画質を評価できませんでした。もう一度お試しください。';
+      await evaluateJpegs(
+        bitmap, jpegs, controller.signal,
+        () => {
+          if (isCurrent()) evaluationStatus.textContent = '画質を評価しています…';
+        },
+        (jpeg, score) => {
+          if (!isCurrent() || !sides.some(side => evaluationBlob(side) === jpeg)) return;
+          scores.set(jpeg, score);
+          updateEvaluation();
+        },
+      );
+      if (isCurrent()) evaluationStatus.textContent = '画質評価が完了しました。';
+    } catch (cause) {
+      if (isCurrent()) {
+        evaluationStatus.textContent = cause instanceof DOMException && cause.name === 'AbortError' ?
+          '画質評価を中止しました。' : '画質を評価できませんでした。もう一度お試しください。';
+      }
     } finally {
-      if (evaluation === controller) {
+      if (isCurrent()) {
         evaluation = undefined;
-        renderEvaluation();
+        updateEvaluation();
       }
     }
   }
@@ -205,7 +265,7 @@ export function mount(container: HTMLElement): () => void {
     source = undefined;
     original.width = original.height = 0;
     section.hidden = true;
-    renderEvaluation();
+    updateEvaluation();
   }
 
   function updatePosition() {
@@ -256,19 +316,18 @@ export function mount(container: HTMLElement): () => void {
       side.result = { status: 'ready', blob, filename };
       side.output.textContent = '出力サイズ ' + blob.size.toLocaleString('ja-JP') + ' B（元ファイル比 ' + sizeChange(file.size, blob.size) + '）';
       side.save.disabled = false;
-      renderEvaluation();
+      updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
       invalidate(side);
       side.result = { status: 'failed' };
       const message = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
       side.error.textContent = side.label + '側：' + message;
-      renderEvaluation();
+      updateEvaluation();
     }
   }
 
-  function updateSettings(side: Side, delay = 0) {
-    stopEvaluation(evaluation ? '設定が変わったため画質評価を中止しました。' : '');
+  function convertSide(side: Side, delay = 0) {
     invalidate(side);
     showSettings(side);
     if (!source) return;
@@ -276,7 +335,7 @@ export function mount(container: HTMLElement): () => void {
     const currentSide = side.generation;
     side.result = { status: 'pending' };
     side.output.textContent = '変換しています…';
-    renderEvaluation();
+    updateEvaluation();
     if (delay === 0) {
       void convert(side, currentInput, currentSide);
     } else {
@@ -287,8 +346,16 @@ export function mount(container: HTMLElement): () => void {
     }
   }
 
+  function updateSettings(side: Side, delay = 0) {
+    const changedAt = performance.now();
+    stopEvaluation(evaluation ? '設定が変わったため画質評価を中止しました。' : '');
+    convertSide(side, delay);
+    if (source && autoEvaluation.checked) requestEvaluation('auto', changedAt);
+  }
+
   async function selectFiles(files: FileList | null) {
     if (!files?.length) return;
+    const changedAt = performance.now();
     const currentInput = ++inputGeneration;
     clearSource();
     inputStatus.textContent = inputError.textContent = '';
@@ -315,7 +382,8 @@ export function mount(container: HTMLElement): () => void {
       info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + file.size.toLocaleString('ja-JP') + ' B';
       inputStatus.textContent = '';
       section.hidden = false;
-      for (const side of sides) updateSettings(side);
+      for (const side of sides) convertSide(side);
+      if (autoEvaluation.checked) requestEvaluation('auto', changedAt);
     } catch (cause) {
       if (currentInput !== inputGeneration) return;
       clearSource();
@@ -334,10 +402,18 @@ export function mount(container: HTMLElement): () => void {
     void selectFiles(event.dataTransfer?.files ?? null);
   }, options);
   position.addEventListener('input', updatePosition, options);
-  evaluate.addEventListener('click', () => { void startEvaluation(); }, options);
+  autoEvaluation.addEventListener('change', () => {
+    if (autoEvaluation.checked) {
+      if (!evaluation && !requestedEvaluation) requestEvaluation('auto');
+    } else if (evaluation?.mode === 'auto' || requestedEvaluation?.mode === 'auto') {
+      stopEvaluation('画質評価を中止しました。');
+      updateEvaluation();
+    }
+  }, options);
+  evaluate.addEventListener('click', () => { requestEvaluation('manual'); }, options);
   cancelEvaluation.addEventListener('click', () => {
     stopEvaluation('画質評価を中止しました。');
-    renderEvaluation();
+    updateEvaluation();
   }, options);
   for (const side of sides) {
     showSettings(side);

@@ -83,6 +83,7 @@ function setup(active = bitmap()) {
     active, createUrl, revokeUrl, download, choose, drop: get<HTMLElement>('.image-drop'),
     left: side('left'), right: side('right'),
     info: get('.image-info'),
+    auto: get<HTMLInputElement>('.image-evaluation-toggle input'),
     evaluate: get<HTMLButtonElement>('.image-evaluate'),
     cancel: get<HTMLButtonElement>('.image-evaluation-cancel'),
     evaluationStatus: get('.image-evaluation-status'),
@@ -295,12 +296,13 @@ it('OriginalとPNGを説明し、JPEG出力が準備できるまで評価でき�
   choose();
   await flush();
   expect(left.score.textContent).toBe('基準画像');
-  expect(evaluate.disabled).toBe(true);
+  await vi.advanceTimersByTimeAsync(799);
+  expect(workers).toHaveLength(0);
   preparing.resolve(jpeg);
   await flush();
   expect(evaluate.disabled).toBe(false);
   right.select('image/png');
-  await flush();
+  await vi.advanceTimersByTimeAsync(800);
   expect(right.score.textContent).toBe('画質評価は未対応');
   expect(evaluate.disabled).toBe(true);
   expect(right.save.disabled).toBe(false);
@@ -318,18 +320,18 @@ it('片側のJPEG変換が失敗しても、出力済みの反対側を採点で
   vi.mocked(encode).mockReturnValueOnce(encoding.promise);
   left.quality('0.35');
   await vi.advanceTimersByTimeAsync(180);
-  expect(evaluate.disabled).toBe(true);
+  evaluate.click();
+  await flush();
+  expect(workers).toHaveLength(0);
   encoding.reject(new Error('変換に失敗しました。'));
   await flush();
   expect(left.error.textContent).toContain('変換に失敗');
   expect(right.save.disabled).toBe(false);
-  expect(evaluate.disabled).toBe(false);
-  evaluate.click();
-  await flush();
+  expect(evaluate.disabled).toBe(true);
   expect(workers[0]!.postMessage.mock.calls[0]![0].jpegs).toEqual([jpeg]);
 });
 
-it.each([[7, 8, '各辺8 px'], [1024, 1025, '1,048,576画素']])(
+it.each([[7, 8, '各辺8 px'], [2048, 2049, '4,194,304画素']])(
   '採点の寸法制限 %i×%i でも通常変換と保存が使える', async (width, height, reason) => {
     const { choose, evaluate, limit, right, download } = setup(bitmap(width, height));
     const { copy, workers } = mockScoring();
@@ -338,6 +340,7 @@ it.each([[7, 8, '各辺8 px'], [1024, 1025, '1,048,576画素']])(
     expect(limit.textContent).toContain(reason);
     expect(evaluate.disabled).toBe(true);
     evaluate.click();
+    await vi.advanceTimersByTimeAsync(800);
     expect(copy).not.toHaveBeenCalled();
     expect(workers).toHaveLength(0);
     right.save.click();
@@ -376,20 +379,31 @@ it('左右で同じJPEG Blobを採点するのは一度で、別のBlobに変わ
   evaluate.click();
   await flush();
   expect(workers[1]!.postMessage.mock.calls[0]![0].jpegs).toEqual([changed]);
+  workers[1]!.reply({ index: 0, score: 75 });
+  await flush();
+  left.quality('0.75');
+  await vi.advanceTimersByTimeAsync(800);
+  expect(left.score.textContent).toBe(right.score.textContent);
+  expect(evaluate.disabled).toBe(true);
+  expect(workers).toHaveLength(2);
+
+  choose('new-reference.png');
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers[2]!.postMessage.mock.calls[0]![0].jpegs).toEqual([jpeg]);
 });
 
 it('中止後に再実行でき、画像切り替えとツール破棄は実行中のWorkerを終了する', async () => {
   const { choose, evaluate, cancel, evaluationStatus, right, unmount } = setup();
   const { workers } = mockScoring();
   choose('first.png');
-  await flush();
-  evaluate.click();
-  await flush();
+  await vi.advanceTimersByTimeAsync(800);
   const stale = workers[0]!.onmessage!;
   cancel.click();
   expect(workers[0]!.terminate).toHaveBeenCalledOnce();
   expect(evaluationStatus.textContent).toContain('中止');
   expect(evaluate.disabled).toBe(false);
+  await vi.advanceTimersByTimeAsync(1600);
+  expect(workers).toHaveLength(1);
 
   evaluate.click();
   await flush();
@@ -426,24 +440,202 @@ it('Wasmロード失敗と非有限の結果から復帰し、変換・保存は
   const { choose, evaluate, evaluationStatus, right, download } = setup();
   const { workers } = mockScoring();
   choose();
-  await flush();
+  await vi.advanceTimersByTimeAsync(800);
   for (const data of [{ error: true }, { index: 0, score: Infinity }]) {
-    evaluate.click();
-    await flush();
     const worker = workers.at(-1)!;
     worker.reply(data);
-    await flush();
+    const count = workers.length;
+    await vi.advanceTimersByTimeAsync(1600);
+    expect(workers).toHaveLength(count);
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(evaluationStatus.textContent).toContain('評価できませんでした');
     expect(right.error.textContent).toBe('');
     expect(right.save.disabled).toBe(false);
+    evaluate.click();
+    await flush();
   }
   right.save.click();
   expect(download).toHaveBeenCalledOnce();
-  evaluate.click();
-  await flush();
   workers[2]!.reply({ index: 0, score: -14.3 });
   await flush();
   expect(right.score.textContent).toBe('SSIMULACRA2: -14.3');
   expect(evaluationStatus.textContent).toContain('完了');
+});
+
+it('初回の画像選択から800msで自動評価を開始する', async () => {
+  const { auto, choose, right, evaluationStatus } = setup(bitmap(2048, 2048));
+  const { workers } = mockScoring();
+  const reading = deferred<ImageBitmap>();
+  vi.mocked(decode).mockReturnValueOnce(reading.promise);
+  expect(auto.checked).toBe(true);
+  choose();
+  await vi.advanceTimersByTimeAsync(300);
+  reading.resolve(bitmap(2048, 2048));
+  await flush();
+  expect(right.save.disabled).toBe(false);
+  expect(evaluationStatus.textContent).toContain('待機');
+  await vi.advanceTimersByTimeAsync(499);
+  expect(workers).toHaveLength(0);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(workers).toHaveLength(1);
+  expect(evaluationStatus.textContent).toContain('評価しています');
+  workers[0]!.reply({ index: 0, score: 82 });
+  await flush();
+  expect(right.score.textContent).toBe('SSIMULACRA2: 82.0');
+});
+
+it('採点中の変更で古いWorkerを止め、連続操作の最後の品質だけを自動評価する', async () => {
+  const { choose, left, right, evaluationStatus } = setup();
+  const { workers } = mockScoring();
+  choose();
+  await vi.advanceTimersByTimeAsync(800);
+  workers[0]!.reply({ index: 0, score: 85 });
+  await flush();
+
+  const first = new Blob(['first']);
+  const last = new Blob(['last']);
+  vi.mocked(encode).mockResolvedValueOnce(first).mockResolvedValueOnce(last);
+  left.select('image/jpeg');
+  await flush();
+  expect(left.score.textContent).toBe('SSIMULACRA2: 85.0');
+  left.quality('0.35');
+  expect(left.score.textContent).toBe('');
+  await vi.advanceTimersByTimeAsync(800);
+  const oldWorker = workers[1]!;
+  expect(oldWorker.postMessage.mock.calls[0]![0].jpegs).toEqual([first]);
+  const lateReply = oldWorker.onmessage!;
+
+  left.quality('0.45');
+  expect(oldWorker.terminate).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(150);
+  left.quality('0.55');
+  await vi.advanceTimersByTimeAsync(150);
+  left.quality('0.65');
+  await vi.advanceTimersByTimeAsync(799);
+  expect(encode).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(encode).mock.lastCall?.[2]).toBe(0.65);
+  expect(workers).toHaveLength(2);
+  expect(evaluationStatus.textContent).toContain('待機');
+  expect(left.score.textContent).toBe('画質は未評価');
+  expect(right.score.textContent).toBe('SSIMULACRA2: 85.0');
+
+  await vi.advanceTimersByTimeAsync(1);
+  expect(workers[2]!.postMessage.mock.calls[0]![0].jpegs).toEqual([last]);
+  lateReply(new MessageEvent('message', { data: { index: 0, score: 42 } }));
+  expect(left.score.textContent).toBe('画質は未評価');
+  workers[2]!.reply({ index: 0, score: 83 });
+  await flush();
+  expect(left.score.textContent).toBe('SSIMULACRA2: 83.0');
+  expect(right.score.textContent).toBe('SSIMULACRA2: 85.0');
+});
+
+it.each(['auto', 'manual'])('JPEGとプレビューの完了を待ってから%s評価する', async mode => {
+  const { choose, evaluate, right, evaluationStatus } = setup();
+  const { workers } = mockScoring();
+  const encoding = deferred<Blob>();
+  const preview = deferred<void>();
+  vi.mocked(encode).mockReturnValueOnce(encoding.promise);
+  right.decodePreview.mockReturnValueOnce(preview.promise);
+  choose();
+  await flush();
+  if (mode === 'manual') evaluate.click();
+  await vi.advanceTimersByTimeAsync(mode === 'auto' ? 1000 : 100);
+  expect(workers).toHaveLength(0);
+  encoding.resolve(jpeg);
+  await flush();
+  expect(workers).toHaveLength(0);
+  expect(evaluationStatus.textContent).toContain('待機');
+  preview.resolve(undefined);
+  await flush();
+  expect(workers).toHaveLength(1);
+  expect(workers[0]!.postMessage.mock.calls[0]![0].jpegs).toEqual([jpeg]);
+});
+
+it('自動評価をオフにすると待機と実行を止め、手動評価は継続できる', async () => {
+  const { auto, choose, evaluate, right, evaluationStatus } = setup();
+  const { workers } = mockScoring();
+  choose();
+  await flush();
+  auto.click();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(0);
+  right.quality('0.25');
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(0);
+
+  auto.click();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(1);
+  auto.click();
+  expect(workers[0]!.terminate).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(1);
+  expect(evaluationStatus.textContent).toContain('中止');
+
+  evaluate.click();
+  await flush();
+  auto.click();
+  auto.click();
+  expect(workers).toHaveLength(2);
+  expect(workers[1]!.terminate).not.toHaveBeenCalled();
+  workers[1]!.reply({ index: 0, score: 65 });
+  await flush();
+  expect(right.score.textContent).toBe('SSIMULACRA2: 65.0');
+});
+
+it('待機中の中止は同じ設定で再開せず、入力変更とツール破棄は古い待機を消す', async () => {
+  const { choose, cancel, right, evaluationStatus, unmount } = setup();
+  const { workers } = mockScoring();
+  choose();
+  await flush();
+  cancel.click();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(evaluationStatus.textContent).toContain('中止');
+  expect(workers).toHaveLength(0);
+
+  right.quality('0.25');
+  await vi.advanceTimersByTimeAsync(400);
+  choose('replacement.png');
+  await vi.advanceTimersByTimeAsync(799);
+  expect(workers).toHaveLength(0);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(workers).toHaveLength(1);
+  right.quality('0.55');
+  expect(workers[0]!.terminate).toHaveBeenCalledOnce();
+  unmount();
+  await vi.runAllTimersAsync();
+  expect(workers).toHaveLength(1);
+});
+
+it('前のWorkerの終了を待って起動し、待機中の中止で古い要求を破棄する', async () => {
+  const { choose, right, cancel, evaluationStatus } = setup();
+  const { workers, copy } = mockScoring();
+  const retiring = deferred<void>();
+  const request = vi.fn<(
+    name: string, options: { signal: AbortSignal }, callback: () => void,
+  ) => Promise<void>>().mockResolvedValue(undefined).mockReturnValueOnce(Promise.resolve()).mockReturnValueOnce(retiring.promise);
+  vi.stubGlobal('navigator', { locks: { request } });
+  choose();
+  await vi.advanceTimersByTimeAsync(800);
+  const [name] = request.mock.calls[0]!;
+  expect(workers[0]!.postMessage.mock.calls[0]![0].lockName).toBe(name);
+
+  right.quality('0.35');
+  expect(workers[0]!.terminate).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(800);
+  const [nextName, waiting] = request.mock.calls[1]!;
+  expect(nextName).toBe(name);
+  expect(evaluationStatus.textContent).toContain('待機');
+  expect(workers).toHaveLength(1);
+  expect(copy).toHaveBeenCalledOnce();
+  cancel.click();
+  expect(waiting.signal.aborted).toBe(true);
+  retiring.resolve(undefined);
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(1);
+  expect(evaluationStatus.textContent).toContain('中止');
+
+  right.quality('0.25');
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(2);
 });

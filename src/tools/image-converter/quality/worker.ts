@@ -6,12 +6,14 @@ import { loadScorer, scoreImages } from './wasm';
 export interface EvaluationRequest {
   reference: ImageBitmap;
   jpegs: readonly Blob[];
+  lockName?: string;
 }
 
 export type EvaluationReply = { index: number; score: number } | { error: true };
 
 const worker = self as DedicatedWorkerGlobalScope;
-worker.addEventListener('message', async ({ data: { reference, jpegs } }: MessageEvent<EvaluationRequest>) => {
+
+async function evaluate({ reference, jpegs }: EvaluationRequest) {
   try {
     const { width, height } = reference;
     const limit = evaluationLimit(width, height);
@@ -46,5 +48,23 @@ worker.addEventListener('message', async ({ data: { reference, jpegs } }: Messag
     worker.postMessage({ error: true } satisfies EvaluationReply);
   } finally {
     reference.close();
+  }
+}
+
+worker.addEventListener('message', async ({ data }: MessageEvent<EvaluationRequest>) => {
+  if (!data.lockName) {
+    await evaluate(data);
+    return;
+  }
+
+  try {
+    await worker.navigator.locks.request(data.lockName, async () => {
+      await evaluate(data);
+      // The browser releases the lock when the Worker is destroyed, including on cancellation.
+      await new Promise<void>(() => {});
+    });
+  } catch {
+    data.reference.close();
+    worker.postMessage({ error: true } satisfies EvaluationReply);
   }
 }, { once: true });

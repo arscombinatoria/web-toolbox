@@ -42,6 +42,9 @@
 .image-save:disabled { opacity: .55; cursor: default; }
 .image-evaluation { margin-top: var(--space-2); }
 .image-evaluation-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.image-evaluation-options, .image-evaluation-options p { margin: var(--space-1) 0 0; }
+.image-evaluation-toggle { display: inline-flex; align-items: center; gap: var(--space-1); }
+.image-evaluation-toggle input { accent-color: var(--accent); }
 .image-evaluation p { margin: var(--space-1) 0 0; }
 .image-evaluation p:empty { margin: 0; }
 .image-evaluation button:disabled { opacity: .55; cursor: default; }
