@@ -606,3 +606,36 @@ it('待機中の中止は同じ設定で再開せず、入力変更とツール�
   await vi.runAllTimersAsync();
   expect(workers).toHaveLength(1);
 });
+
+it('前のWorkerの終了を待って起動し、待機中の中止で古い要求を破棄する', async () => {
+  const { choose, right, cancel, evaluationStatus } = setup();
+  const { workers, copy } = mockScoring();
+  const retiring = deferred<void>();
+  const request = vi.fn<(
+    name: string, options: { signal: AbortSignal }, callback: () => void,
+  ) => Promise<void>>().mockResolvedValue(undefined).mockReturnValueOnce(Promise.resolve()).mockReturnValueOnce(retiring.promise);
+  vi.stubGlobal('navigator', { locks: { request } });
+  choose();
+  await vi.advanceTimersByTimeAsync(800);
+  const [name] = request.mock.calls[0]!;
+  expect(workers[0]!.postMessage.mock.calls[0]![0].lockName).toBe(name);
+
+  right.quality('0.35');
+  expect(workers[0]!.terminate).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(800);
+  const [nextName, waiting] = request.mock.calls[1]!;
+  expect(nextName).toBe(name);
+  expect(evaluationStatus.textContent).toContain('待機');
+  expect(workers).toHaveLength(1);
+  expect(copy).toHaveBeenCalledOnce();
+  cancel.click();
+  expect(waiting.signal.aborted).toBe(true);
+  retiring.resolve(undefined);
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(1);
+  expect(evaluationStatus.textContent).toContain('中止');
+
+  right.quality('0.25');
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(2);
+});

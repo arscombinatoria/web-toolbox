@@ -415,6 +415,10 @@ test('狭い画面と両テーマで、Wasmロード中の中止と失敗から�
   const status = page.locator('.image-evaluation-status');
   const score = page.locator('.image-panel[data-side=right] .image-score');
   const wasm = '**/ssimulacra2-0.1.0-*.wasm';
+  const scoringLockHeld = () => page.evaluate(async () => {
+    const { held } = await navigator.locks.query();
+    return held?.some(lock => lock.name?.startsWith('web-toolbox:image-quality:')) ?? false;
+  });
   let release!: () => void;
   const blocked = new Promise<void>(resolve => { release = resolve; });
   await page.route(wasm, async route => {
@@ -428,11 +432,13 @@ test('狭い画面と両テーマで、Wasmロード中の中止と失敗から�
     await requested;
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     await expect(status).toContainText('評価しています');
+    await expect.poll(scoringLockHeld).toBe(true);
     await cancel.click();
     await expect(status).toContainText('中止しました');
     await expect(score).toHaveText('画質は未評価');
     await expect(start).toBeEnabled();
     await expect.poll(() => page.workers().length).toBe(0);
+    await expect.poll(scoringLockHeld).toBe(false);
     await page.clock.runFor(1600);
     await expect(status).toContainText('中止しました');
     await expect(score).toHaveText('画質は未評価');

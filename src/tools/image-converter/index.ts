@@ -208,14 +208,20 @@ export function mount(container: HTMLElement): () => void {
     const job = { controller, mode };
     const isCurrent = () => evaluation === job && generation === inputGeneration;
     evaluation = job;
-    evaluationStatus.textContent = '画質を評価しています…';
+    if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
     updateEvaluation();
     try {
-      await evaluateJpegs(bitmap, jpegs, controller.signal, (jpeg, score) => {
-        if (!isCurrent() || !sides.some(side => evaluationBlob(side) === jpeg)) return;
-        scores.set(jpeg, score);
-        updateEvaluation();
-      });
+      await evaluateJpegs(
+        bitmap, jpegs, controller.signal,
+        () => {
+          if (isCurrent()) evaluationStatus.textContent = '画質を評価しています…';
+        },
+        (jpeg, score) => {
+          if (!isCurrent() || !sides.some(side => evaluationBlob(side) === jpeg)) return;
+          scores.set(jpeg, score);
+          updateEvaluation();
+        },
+      );
       if (isCurrent()) evaluationStatus.textContent = '画質評価が完了しました。';
     } catch (cause) {
       if (isCurrent()) {

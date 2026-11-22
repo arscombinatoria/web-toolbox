@@ -1,16 +1,30 @@
 import { evaluationLimit, isFiniteScore } from './rules';
 import type { EvaluationRequest } from './worker';
 
+let workerLockName: string | undefined;
+
 export async function evaluateJpegs(
   reference: ImageBitmap,
   jpegs: readonly Blob[],
   signal: AbortSignal,
+  onStart: () => void,
   onScore: (jpeg: Blob, score: number) => void,
 ): Promise<void> {
   signal.throwIfAborted();
   const limit = evaluationLimit(reference.width, reference.height);
   if (limit) throw new RangeError(limit);
   if (!jpegs.length) return;
+
+  const locks = navigator.locks;
+  let lockName: string | undefined;
+  if (locks) {
+    // Keep the name across mounts so a quick return to the tool also waits for cleanup.
+    workerLockName ??= 'web-toolbox:image-quality:' + crypto.getRandomValues(new Uint32Array(4)).join('-');
+    lockName = workerLockName;
+    // terminate() can return before the browser has reclaimed a Worker running Wasm.
+    await locks.request(lockName, { signal }, () => {});
+    signal.throwIfAborted();
+  }
 
   // Transfer a copy so the original bitmap remains available for preview and encoding.
   const copy = await createImageBitmap(reference);
@@ -50,7 +64,10 @@ export async function evaluateJpegs(
       };
       worker.onerror = worker.onmessageerror = fail;
       try {
-        worker.postMessage({ reference: copy, jpegs } satisfies EvaluationRequest, [copy]);
+        const request: EvaluationRequest = { reference: copy, jpegs };
+        if (lockName) request.lockName = lockName;
+        onStart();
+        worker.postMessage(request, [copy]);
       } catch (error) {
         finish(error);
       }

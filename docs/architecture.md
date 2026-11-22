@@ -388,6 +388,8 @@ SVG文字列を`innerHTML`へ挿入せず、`image/svg+xml`のBlob URLを`img.sr
 
 対象Blobがある場合だけWorkerを起動し、完了・中止・失敗で終了します。中止は採点エラー表示の対象外です。採点エラーが発生しても、変換と保存はそれぞれ利用できます。有限のスコアは負値や100を超える値も含めて小数1桁で表示します。
 
+Web Locks APIが使える環境では、Workerが採点用のロックを取得し、ブラウザがWorkerを破棄するまで保持します。`terminate()` から実際の破棄まで時間がかかる場合に、次の採点は同じロックの解放を待ってWorkerを起動します。ロック名はページ内で共有し、ツールを開き直した場合にも前のWorkerを待ちます。ロック待ちも中止できます。Web Locks APIのない環境では、`terminate()` を呼び出した時点で次の採点を許可します。
+
 `quality/ssimulacra2-0.1.0.wasm` は npm の bytecut-ssimulacra2 0.1.0 配布物（62,706バイト、SHA-256 `56ae71e4b0e1d72d3afbcf2821ec913e0d775806f3c745960ea3a0504f402648`）です。Vitestでハッシュを照合します。WorkerがVite出力の同一オリジンの静的アセットを評価時に取得し、Node.js用ラッパーは使用しません。採点アダプターは公開C ABIの `alloc`、`dealloc`、`score` と `memory` を使います。両入力の確保と境界検査を済ませてからメモリビューを作り、RGBに詰め替えます。採点でメモリが拡張した後は旧ビューを参照せず、確保した入力を解放します。 [npm配布元](https://registry.npmjs.org/bytecut-ssimulacra2/0.1.0) · [Wasm公開ソース](https://github.com/anupjon/bytecut/tree/7f46cac57416b40c15bedb939bb05da1bf0d7929/packages/ssimulacra2)
 
 bytecut本体と採点クレートはBSD-2-Clauseです。配布元のLICENSE・NOTICE、Cargo.lockに基づく依存ライセンス、Rust 1.96.0標準ライブラリのライセンス・著作権表示を `public/licenses/ssimulacra2/` から本番にも配信します。 [第三者ライセンス](../public/licenses/ssimulacra2) · [Rust 1.96.0の標準ライブラリ著作権表示](../public/licenses/ssimulacra2/RUST-COPYRIGHT-library.html)
