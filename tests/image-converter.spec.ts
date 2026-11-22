@@ -122,12 +122,17 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(qualityRight).toBeHidden();
   const png = await saveImage(page, saveRight, 'sample.alpha-right.png');
   expect([...png.subarray(0, 3)]).toEqual([137, 80, 78]);
-  const sizeFormat = new Intl.NumberFormat('ja-JP');
   const percentFormat = new Intl.NumberFormat('ja-JP', { signDisplay: 'exceptZero', maximumFractionDigits: 2 });
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1_000) return `${new Intl.NumberFormat('ja-JP').format(bytes)} B`;
+    const unit = bytes < 1_000_000 ? 'KB' : 'MB';
+    const divisor = unit === 'KB' ? 1_000 : 1_000_000;
+    return `${new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 2 }).format(bytes / divisor)} ${unit}`;
+  };
   for (const [panel, bytes] of [[leftPanel, leftJpeg], [rightPanel, png]] as const) {
     const percent = (bytes.length - image.buffer.length) / image.buffer.length * 100;
     await expect(panel.getByRole('status')).toHaveText(
-      `出力サイズ ${sizeFormat.format(bytes.length)} B（元ファイル比 ${percentFormat.format(percent)}%）`,
+      `出力サイズ ${formatFileSize(bytes.length)}（元ファイル比 ${percentFormat.format(percent)}%）`,
     );
   }
   await expect(page.getByText('左右比較', { exact: false })).toHaveCount(0);

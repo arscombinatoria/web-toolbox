@@ -42,8 +42,8 @@ function setup(active = bitmap()) {
   const unmount = mount(document.body);
   dispose = unmount;
   const input = document.querySelector<HTMLInputElement>('[type=file]')!;
-  const choose = (name = 'input.png', target?: HTMLElement) => {
-    const files = [new File(['12'], name, { type: 'image/png' })];
+  const choose = (name = 'input.png', target?: HTMLElement, contents: BlobPart = '12') => {
+    const files = [new File([contents], name, { type: 'image/png' })];
     if (target) {
       const event = new Event('drop', { cancelable: true });
       Object.defineProperty(event, 'dataTransfer', { value: { files, types: ['Files'] } });
@@ -141,6 +141,7 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   expect(encode).toHaveBeenCalledExactlyOnceWith(active, 'image/jpeg', 0.75);
   expect(left.output.textContent).toContain('2 B（元ファイル比 0%）');
   expect(right.output.textContent).toContain('4 B（元ファイル比 +100%）');
+  expect(document.querySelector('.image-info')?.textContent).toContain('元ファイル 2 B');
 
   right.select('original');
   expect(left.qualityLabel.hidden).toBe(true);
@@ -155,6 +156,17 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   const anchors = download.mock.contexts as HTMLAnchorElement[];
   expect(anchors.map(anchor => anchor.download)).toEqual([file.name, file.name]);
   expect(anchors.map(anchor => anchor.href)).toEqual(['blob:result-1', 'blob:result-3']);
+});
+
+it('KB表示はサイズだけを丸め、元ファイル比をバイト数から計算する', async () => {
+  const { choose, left, right, info } = setup();
+  vi.mocked(encode).mockResolvedValue(new Blob([new Uint8Array(1_250)], { type: 'image/jpeg' }));
+  choose('large.png', undefined, new Uint8Array(1_000));
+  await flush();
+
+  expect(info.textContent).toContain('元ファイル 1 KB');
+  expect(left.output.textContent).toBe('出力サイズ 1 KB（元ファイル比 0%）');
+  expect(right.output.textContent).toBe('出力サイズ 1.25 KB（元ファイル比 +25%）');
 });
 
 it('不正な置換を保ち、同じ有効画像を再選択して比較を置き換える', async () => {

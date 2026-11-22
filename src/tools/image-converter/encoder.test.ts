@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { decode, encode, sizeChange } from './encoder';
+import { decode, encode, formatFileSize, sizeChange } from './encoder';
 
 const image = { width: 2, height: 3, close: vi.fn() } as unknown as ImageBitmap;
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -47,4 +47,18 @@ it('形式の偽装、デコード失敗、画素数超過を処理する', asyn
 it('増加・減少・同サイズ・空入力の増減率', () => {
   expect([150, 50, 100].map(n => sizeChange(100, n))).toEqual(['+50%', '-50%', '0%']);
   expect(sizeChange(0, 5)).toBe('—');
+});
+
+it.each([
+  [0, '0 B'],
+  [999, '999 B'],
+  [1_000, '1 KB'],
+  [999_999, '1,000 KB'],
+  [1_000_000, '1 MB'],
+  [1_234, '1.23 KB'],
+  [1_239, '1.24 KB'],
+  [1_234_567, '1.23 MB'],
+  [12_345_678, '12.35 MB'],
+] as const)('ファイルサイズ %i B を %s と表示する', (bytes, formatted) => {
+  expect(formatFileSize(bytes)).toBe(formatted);
 });
