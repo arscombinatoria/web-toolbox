@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>SSIMULACRA2 ブラウザ検証</title>
+  <style>
+    body { font: 1rem/1.6 system-ui, sans-serif; margin: 2rem auto; max-width: 48rem; padding: 0 1rem; }
+    form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+    label { display: grid; }
+    input, select, button { font: inherit; }
+    input { width: 7ch; }
+    pre { overflow: auto; padding: 1rem; background: color-mix(in srgb, CanvasText 7%, Canvas); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>SSIMULACRA2 ブラウザ検証</h1>
+    <form>
+      <label>元画像
+        <select name="fixture">
+          <option value="photo">写真</option>
+          <option value="gradient">グラデーション</option>
+          <option value="solid">単色</option>
+          <option value="alpha">透明部分あり</option>
+        </select>
+      </label>
+      <label>幅 <input name="width" type="number" value="512" min="8" max="8192" required></label>
+      <label>高さ <input name="height" type="number" value="512" min="8" max="8192" required></label>
+      <label>変換
+        <select name="conversion">
+          <option value="jpeg75">JPEG 0.75</option>
+          <option value="jpeg95">JPEG 0.95</option>
+          <option value="jpeg30">JPEG 0.30</option>
+          <option value="png">PNG</option>
+          <option value="identity">同一画像</option>
+        </select>
+      </label>
+      <button type="submit">計測</button>
+      <button type="button" id="cancel" disabled>中止</button>
+    </form>
+    <p id="status" role="status"></p>
+    <pre id="result" hidden></pre>
+    <p>写真は NASA の Eileen Collins の肖像です。画像はブラウザ内で処理します。</p>
+  </main>
+  <script type="module" src="/main.ts"></script>
+</body>
+</html>
