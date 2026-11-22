@@ -1,3 +1,5 @@
+import { drawOnWhite } from './paint';
+
 export const encoders = {
   original: { label: 'Original', type: null, extension: '', hasQuality: false },
   'image/jpeg': { label: 'Browser JPEG', type: 'image/jpeg', extension: '.jpg', hasQuality: true },
@@ -57,13 +59,10 @@ export async function encode(image: ImageBitmap, type: OutputType, quality: numb
   try {
     canvas.width = image.width;
     canvas.height = image.height;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d', { colorSpace: 'srgb' });
     if (!context) throw new Error();
-    if (type === 'image/jpeg') {
-      context.fillStyle = '#fff';
-      context.fillRect(0, 0, image.width, image.height);
-    }
-    context.drawImage(image, 0, 0);
+    if (type === 'image/jpeg') drawOnWhite(context, image);
+    else context.drawImage(image, 0, 0);
     const blob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, type, type === 'image/jpeg' ? quality : undefined);
     });

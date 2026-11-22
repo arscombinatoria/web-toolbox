@@ -40,3 +40,9 @@
 .image-panel p:empty { position: absolute; }
 .image-save { justify-self: start; }
 .image-save:disabled { opacity: .55; cursor: default; }
+.image-evaluation { margin-top: var(--space-2); }
+.image-evaluation-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.image-evaluation p { margin: var(--space-1) 0 0; }
+.image-evaluation p:empty { margin: 0; }
+.image-evaluation button:disabled { opacity: .55; cursor: default; }
+.image-score { font-variant-numeric: tabular-nums; }
