@@ -39,6 +39,25 @@ async function firstPixel(preview: Locator) {
   });
 }
 
+test('SSIMULACRA2の目安表はクリック・Enterで開き、狭い画面にも収まる', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto('./?tool=image-converter');
+  await page.locator('[type=file]').setInputFiles(await testImage(page));
+  const guide = page.locator('.image-score-guide');
+  const summary = guide.getByText('スコアの目安を見る', { exact: true });
+
+  await expect(guide).not.toHaveAttribute('open', '');
+  await summary.click();
+  await expect(guide).toHaveAttribute('open', '');
+  await expect(guide.getByRole('row')).toHaveCount(10);
+  await expect(guide.getByRole('link', { name: 'SSIMULACRA2公式の使用方法' })).toHaveAttribute('href', 'https://github.com/cloudinary/ssimulacra2#usage');
+  await summary.press('Enter');
+  await expect(guide).not.toHaveAttribute('open', '');
+  await summary.press('Enter');
+  await expect(guide).toHaveAttribute('open', '');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('画像を選択し、比較線と左右のエンコーダーを操作して個別に保存する', async ({ page }) => {
   await page.goto('./?tool=image-converter');
   const image = await testImage(page);

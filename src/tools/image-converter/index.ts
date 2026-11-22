@@ -68,6 +68,26 @@ export function mount(container: HTMLElement): () => void {
           <button type="button" class="image-evaluation-cancel" disabled>評価を中止</button>
         </div>
         <p class="image-note">SSIMULACRA2は、元画像との見た目の近さを示す参考スコアです。透明部分は白背景で比較します。</p>
+        <details class="image-score-guide">
+          <summary>スコアの目安を見る</summary>
+          <table>
+            <caption>代表値の目安（厳密な区間ではありません）</caption>
+            <thead><tr><th scope="col">スコア</th><th scope="col">評価</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">100</th><td>数学的にロスレス</td></tr>
+              <tr><th scope="row">90</th><td>視覚的にロスレス</td></tr>
+              <tr><th scope="row">85</th><td>極めて高画質</td></tr>
+              <tr><th scope="row">80</th><td>非常に高画質</td></tr>
+              <tr><th scope="row">70</th><td>高画質</td></tr>
+              <tr><th scope="row">50</th><td>中程度</td></tr>
+              <tr><th scope="row">30</th><td>低画質</td></tr>
+              <tr><th scope="row">10</th><td>非常に低画質</td></tr>
+              <tr><th scope="row">0未満</th><td>極端な画質劣化</td></tr>
+            </tbody>
+          </table>
+          <p>これらは厳密な区間ではなく代表的な目安です。高いほど元画像に近いことを示します。100点満点の採点方式ではありません。</p>
+          <p>詳しくは<a href="https://github.com/cloudinary/ssimulacra2#usage">SSIMULACRA2公式の使用方法</a>を参照してください。</p>
+        </details>
         <p class="image-evaluation-limit"></p>
         <p class="image-evaluation-status" role="status" aria-atomic="true"></p>
       </div>

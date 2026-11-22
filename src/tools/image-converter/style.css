@@ -49,3 +49,11 @@
 .image-evaluation p:empty { margin: 0; }
 .image-evaluation button:disabled { opacity: .55; cursor: default; }
 .image-score { font-variant-numeric: tabular-nums; }
+.image-score-guide { margin-top: var(--space-1); }
+.image-score-guide summary { width: fit-content; color: var(--accent); cursor: pointer; }
+.image-score-guide summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.image-score-guide table { width: 100%; margin-top: var(--space-1); border-collapse: collapse; }
+.image-score-guide caption { text-align: left; color: var(--muted); }
+.image-score-guide th, .image-score-guide td { padding: var(--space-1); border: 1px solid var(--border); text-align: left; }
+.image-score-guide th[scope="row"] { white-space: nowrap; }
+.image-score-guide p { margin: var(--space-1) 0 0; }
