@@ -9,6 +9,14 @@ export const encoders = {
 export type EncoderId = keyof typeof encoders;
 type OutputType = NonNullable<(typeof encoders)[EncoderId]['type']>;
 
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1_000) return bytes.toLocaleString('ja-JP', { maximumFractionDigits: 0 }) + ' B';
+  if (bytes < 1_000_000) {
+    return (bytes / 1_000).toLocaleString('ja-JP', { maximumFractionDigits: 2 }) + ' KB';
+  }
+  return (bytes / 1_000_000).toLocaleString('ja-JP', { maximumFractionDigits: 2 }) + ' MB';
+}
+
 function inputType(bytes: Uint8Array): string | undefined {
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
   if ([137, 80, 78, 71, 13, 10, 26, 10].every((byte, i) => byte === bytes[i])) return 'image/png';

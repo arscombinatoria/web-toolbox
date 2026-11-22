@@ -1,7 +1,7 @@
 import { Check, CircleAlert, Download, X } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
-import { decode, encode, encoders, sizeChange, type EncoderId } from './encoder';
+import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
 import { evaluateJpegs } from './quality/client';
 import { evaluationLimit, isEvaluable } from './quality/rules';
 import './style.css';
@@ -342,7 +342,7 @@ export function mount(container: HTMLElement): () => void {
         showOriginal(side, true);
       }
       side.result = { status: 'ready', blob, filename };
-      side.output.textContent = '出力サイズ ' + blob.size.toLocaleString('ja-JP') + ' B（元ファイル比 ' + sizeChange(file.size, blob.size) + '）';
+      side.output.textContent = '出力サイズ ' + formatFileSize(blob.size) + '（元ファイル比 ' + sizeChange(file.size, blob.size) + '）';
       side.save.disabled = false;
       updateEvaluation();
     } catch (cause) {
@@ -435,7 +435,7 @@ export function mount(container: HTMLElement): () => void {
     stage.style.aspectRatio = bitmap.width + ' / ' + bitmap.height;
     position.value = '50';
     updatePosition();
-    info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + file.size.toLocaleString('ja-JP') + ' B';
+    info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + formatFileSize(file.size);
     inputStatus.textContent = inputError.textContent = '';
     const moveFocus = document.activeElement === drop;
     resetInitialDrag();
