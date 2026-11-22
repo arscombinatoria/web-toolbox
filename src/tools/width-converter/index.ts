@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Copy, Trash2 } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { convertWidth, type Categories } from './logic';
 import './style.css';
@@ -54,6 +56,8 @@ export function mount(container: HTMLElement): () => void {
   const output = view.querySelector<HTMLTextAreaElement>('#width-output')!;
   const copy = view.querySelector<HTMLButtonElement>('[data-copy]')!;
   const clear = view.querySelector<HTMLButtonElement>('[data-clear]')!;
+  clear.prepend(createIcon(Trash2));
+  copy.prepend(createIcon(Copy));
   const status = view.querySelector<HTMLElement>('[role="status"]')!;
   const listeners = new AbortController();
   const eventOptions = { signal: listeners.signal };
@@ -95,10 +99,10 @@ export function mount(container: HTMLElement): () => void {
     status.textContent = '';
     try {
       await navigator.clipboard.writeText(output.value);
-      if (!disposed && current === revision) status.textContent = 'コピーしました。';
+      if (!disposed && current === revision) setIconMessage(status, Check, 'コピーしました。');
     } catch {
       if (!disposed && current === revision) {
-        status.textContent = 'コピーできませんでした。変換結果を選択して手動でコピーしてください。';
+        setIconMessage(status, CircleAlert, 'コピーできませんでした。変換結果を選択して手動でコピーしてください。');
       }
     } finally {
       copying = false;

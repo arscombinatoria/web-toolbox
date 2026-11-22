@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Copy, Search } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { fetchRdap, type RdapErrorKind } from './api';
 import { httpsUrl, isIp, rdapUrl, type RdapInfo } from './logic';
@@ -44,6 +46,8 @@ export function mount(container: HTMLElement, initialIp?: string): () => void {
   const pre = view.querySelector('pre')!;
   const copy = view.querySelector<HTMLButtonElement>('[data-copy]')!;
   const copyStatus = view.querySelector<HTMLElement>('[data-copy-status]')!;
+  form.querySelector('button')!.prepend(createIcon(Search));
+  copy.prepend(createIcon(Copy));
   const listeners = new AbortController();
   let request: AbortController | undefined;
   let disposed = false;
@@ -126,7 +130,7 @@ export function mount(container: HTMLElement, initialIp?: string): () => void {
     input.value = ip;
     if (!isIp(ip)) {
       input.setAttribute('aria-invalid', 'true');
-      error.textContent = errors.invalid;
+      setIconMessage(error, CircleAlert, errors.invalid);
       input.focus();
       return;
     }
@@ -143,11 +147,11 @@ export function mount(container: HTMLElement, initialIp?: string): () => void {
       pre.textContent = json;
       details.hidden = false;
       result.hidden = false;
-      status.textContent = '検索が完了しました。';
+      setIconMessage(status, Check, '検索が完了しました。');
     } catch (cause) {
       if (disposed || active !== generation) return;
       const kind = cause instanceof Error && 'kind' in cause ? cause.kind : 'network';
-      error.textContent = errors[kind as RdapErrorKind] ?? errors.network;
+      setIconMessage(error, CircleAlert, errors[kind as RdapErrorKind] ?? errors.network);
       status.textContent = '';
       link(fallback, rdapUrl(ip), 'RDAP.orgで外部確認する');
       fallback.hidden = false;
@@ -163,9 +167,9 @@ export function mount(container: HTMLElement, initialIp?: string): () => void {
     copy.disabled = true;
     try {
       await navigator.clipboard.writeText(json);
-      if (!disposed && active === generation) copyStatus.textContent = 'コピーしました。';
+      if (!disposed && active === generation) setIconMessage(copyStatus, Check, 'コピーしました。');
     } catch {
-      if (!disposed && active === generation) copyStatus.textContent = 'コピーできませんでした。JSONを選択して手動でコピーしてください。';
+      if (!disposed && active === generation) setIconMessage(copyStatus, CircleAlert, 'コピーできませんでした。JSONを選択して手動でコピーしてください。');
     } finally {
       if (!disposed && active === generation) copy.disabled = false;
     }

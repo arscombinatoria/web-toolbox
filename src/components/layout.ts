@@ -1,5 +1,7 @@
+import { House } from 'lucide';
 import { categories, tools } from '../registry';
 import { homeUrl, toolUrl } from '../router';
+import { createIcon } from './icon';
 
 export function createLayout(root: HTMLElement) {
   root.innerHTML = `
@@ -33,7 +35,7 @@ export function createLayout(root: HTMLElement) {
   const brand = root.querySelector<HTMLAnchorElement>('.brand-link')!;
   const home = document.createElement('a');
   home.dataset.home = '';
-  home.textContent = 'ホーム';
+  home.append(createIcon(House), 'ホーム');
   nav.append(home);
   for (const category of categories) {
     const group = document.createElement('section');
@@ -45,7 +47,7 @@ export function createLayout(root: HTMLElement) {
       const link = document.createElement('a');
       link.href = toolUrl(tool.id).href;
       link.dataset.toolId = tool.id;
-      link.textContent = tool.name;
+      link.append(createIcon(tool.icon), tool.name);
       item.append(link);
       list.append(item);
     }

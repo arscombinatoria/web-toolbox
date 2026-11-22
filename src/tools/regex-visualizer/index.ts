@@ -1,3 +1,5 @@
+import { Check, CircleAlert, Download, Trash2, X } from 'lucide';
+import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { createRunner } from './runner';
 import { DEBOUNCE_MS, FLAGS, type DiagramResult } from './protocol';
@@ -46,6 +48,9 @@ export function mount(container: HTMLElement): () => void {
   const image = view.querySelector<HTMLImageElement>('img')!;
   const cancelButton = view.querySelector<HTMLButtonElement>('[data-cancel]')!;
   const download = view.querySelector<HTMLButtonElement>('[data-download]')!;
+  view.querySelector('[data-clear]')!.prepend(createIcon(Trash2));
+  cancelButton.prepend(createIcon(X));
+  download.prepend(createIcon(Download));
   const flagInputs = new Map<string, HTMLInputElement>();
   const meanings = ['一致位置の情報', '全体検索', '大文字小文字を区別しない', '複数行', 'ドットに改行を含む', 'Unicode', 'Unicode集合', '指定位置から検索'];
   FLAGS.forEach((flag, i) => {
@@ -77,7 +82,7 @@ export function mount(container: HTMLElement): () => void {
     if (url) URL.revokeObjectURL(url);
     url = undefined; svgBlob = undefined;
   };
-  const showError = (text: string) => { error.textContent = text; status.textContent = ''; };
+  const showError = (text: string) => { setIconMessage(error, CircleAlert, text); status.textContent = ''; };
   const renderImage = () => {
     if (disposed || !baseSvg) return;
     const current = revision;
@@ -97,7 +102,7 @@ export function mount(container: HTMLElement): () => void {
         if (disposed || current !== revision || url !== nextUrl) return;
         image.style.setProperty('--diagram-min-width', `${image.naturalWidth * 0.8}px`);
         image.style.visibility = '';
-        status.textContent = '図を更新しました。'; download.disabled = false;
+        setIconMessage(status, Check, '図を更新しました。'); download.disabled = false;
       };
       image.onerror = () => {
         if (disposed || current !== revision || url !== nextUrl) return;
