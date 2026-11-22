@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Download, X } from 'lucide';
+import { Check, CircleAlert, Download, ImagePlus, X } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
@@ -105,6 +105,7 @@ export function mount(container: HTMLElement): () => void {
   const input = get<HTMLInputElement>('[type=file]');
   const drop = get<HTMLButtonElement>('.image-drop');
   const change = get<HTMLButtonElement>('.image-change');
+  change.prepend(createIcon(ImagePlus));
   const section = get<HTMLElement>('section');
   const info = get('.image-info');
   const stage = get<HTMLElement>('.image-stage');
