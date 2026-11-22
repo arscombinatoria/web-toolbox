@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { Locator, Page } from '@playwright/test';
+import type { FileChooser, Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 async function testImage(page: Page, width = 64, height = 32) {
@@ -210,9 +210,12 @@ test('比較画像エリアへのドロップと画像変更ボタンで置き�
   const initial = page.getByRole('button', { name: /画像を選択/ });
   await expect(initial).toBeVisible();
   expect((await initial.boundingBox())!.height).toBe(240);
-  const initialPicker = page.waitForEvent('filechooser');
+  // Keep interception enabled across consecutive dialogs, including on Firefox.
+  const choosers: FileChooser[] = [];
+  page.on('filechooser', chooser => choosers.push(chooser));
   await initial.press('Enter');
-  await (await initialPicker).setFiles(image);
+  await expect.poll(() => choosers.length).toBe(1);
+  await choosers[0]!.setFiles(image);
   const comparison = page.locator('.image-comparison-area');
   const info = page.locator('.image-info');
   const rightPreview = page.getByAltText('右側のプレビュー');
@@ -257,9 +260,10 @@ test('比較画像エリアへのドロップと画像変更ボタンで置き�
   const change = page.getByRole('button', { name: '画像を変更' });
   for (let attempt = 0; attempt < 2; attempt++) {
     const previousUrl = await rightPreview.getAttribute('src');
-    const picker = page.waitForEvent('filechooser');
     await change.click();
-    await (await picker).setFiles(image);
+    await expect.poll(() => choosers.length).toBe(attempt + 2);
+    await choosers[attempt + 1]!.setFiles(image);
+    await expect(page.locator('[type=file]')).toHaveValue('');
     await expect(info).toContainText(image.name);
     await expect(info).toContainText('64 × 32 px');
     await expect(rightPreview).not.toHaveAttribute('src', previousUrl!);
