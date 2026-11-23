@@ -369,6 +369,64 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
   await expect(plus).toBeDisabled();
 });
 
+test('倍率操作はプレビュー直下に右寄せし、狭い画面と両テーマで収まる', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  await page.locator('[type=file]').setInputFiles(await testImage(page));
+
+  const tools = page.getByRole('group', { name: '表示倍率' });
+  const reset = page.getByRole('button', { name: /表示倍率を100%に戻す/ });
+  const plus = page.getByRole('button', { name: '拡大' });
+
+  for (const [width, scheme] of [
+    [1280, 'light'],
+    [1280, 'dark'],
+    [320, 'light'],
+    [320, 'dark'],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+
+    const layout = await page.evaluate(() => {
+      const stage = document.querySelector('.image-stage')!;
+      const tools = document.querySelector('.image-view-tools')!;
+      const settings = document.querySelector('.image-controls')!;
+      const rect = (element: Element) => {
+        const { x, y, width, height, right, bottom } = element.getBoundingClientRect();
+        return { x, y, width, height, right, bottom };
+      };
+      const buttons = [...tools.querySelectorAll('button')].map(rect);
+      return {
+        adjacent: stage.nextElementSibling === tools,
+        stage: rect(stage),
+        tools: rect(tools),
+        settings: rect(settings),
+        buttons,
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    });
+    expect(layout.adjacent).toBe(true);
+    expect(layout.tools.y).toBeGreaterThanOrEqual(layout.stage.bottom);
+    expect(layout.tools.right).toBeCloseTo(layout.stage.right, 0);
+    expect(layout.settings.y).toBeGreaterThanOrEqual(layout.tools.bottom);
+    expect(layout.scrollWidth).toBeLessThanOrEqual(width);
+    for (let index = 1; index < layout.buttons.length; index++) {
+      expect(layout.buttons[index - 1]!.right).toBeLessThanOrEqual(layout.buttons[index]!.x);
+    }
+
+    await expect(tools).toBeVisible();
+    await reset.focus();
+    await page.keyboard.press('Tab');
+    await expect(plus).toBeFocused();
+    expect(await plus.evaluate(button => getComputedStyle(button).outlineStyle)).not.toBe('none');
+    await plus.press('Enter');
+    await expect(reset).toHaveText('125%');
+    await reset.press('Enter');
+    await expect(reset).toHaveText('100%');
+  }
+});
+
 test('画像選択エリアは画面高に追従し、文言を中央に収める', async ({ page }) => {
   await page.goto('./?tool=image-converter');
   const drop = page.locator('.image-drop');
