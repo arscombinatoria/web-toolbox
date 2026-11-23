@@ -7,9 +7,9 @@
 .image-drop strong { color: var(--accent); }
 .image-drop span, .image-note, .image-info { color: var(--muted); font-size: .875rem; }
 .image-drop.is-over, .image-drop:focus-visible { background: var(--accent-soft); border-color: var(--accent); }
-.image-samples { margin-top: var(--space-2); }
+.image-samples { margin: 0 0 var(--space-2); }
 .image-samples h2 { margin: 0 0 var(--space-1); font-size: 1rem; }
-.image-sample-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: var(--space-1); }
+.image-sample-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--space-1); }
 .image-sample {
   display: grid; grid-template-columns: 4rem minmax(0, 1fr); grid-template-rows: auto auto; align-items: center;
   gap: 0 var(--space-1); min-width: 0; padding: var(--space-1); text-align: left;
@@ -35,7 +35,7 @@
 .image-captions strong:last-child { text-align: right; }
 .image-stage {
   --split: 50%; --zoom: 1; --pan-x: 0px; --pan-y: 0px;
-  position: relative; width: 100%; max-height: 65vh; min-height: 3rem; overflow: hidden;
+  position: relative; width: 100%; max-height: 65vh; min-height: 3rem; overflow: hidden; scroll-margin-block: 1px;
   border: 1px solid var(--border); border-radius: var(--radius);
   background: repeating-conic-gradient(var(--border) 0 25%, var(--surface) 0 50%) 0 0 / 16px 16px;
   touch-action: none; cursor: default;
@@ -107,4 +107,9 @@
 
 @media (max-width: 759px) {
   .image-drop { min-height: clamp(180px, 30dvh, 280px); }
+  .image-sample-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .image-sample { grid-template-columns: 2rem minmax(0, 1fr); grid-template-rows: minmax(2rem, auto); gap: 0 var(--space-1); padding: .25rem; }
+  .image-sample img { width: 2rem; height: 2rem; }
+  .image-sample strong { font-size: .8125rem; line-height: 1.4; }
+  .image-sample span { display: none; }
 }

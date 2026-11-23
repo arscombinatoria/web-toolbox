@@ -274,6 +274,53 @@ it('4つのサンプルは種類・寸法・サイズを読み上げ、選択時
   expect(decode).toHaveBeenCalledOnce();
 });
 
+it('サンプル一覧はDOM順と位置を保ち、成功時だけ画面外の比較プレビューへスクロールする', async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(['sample'], { type: 'image/png' })));
+  vi.stubGlobal('fetch', fetchMock);
+  const { stage } = setup();
+  const samples = document.querySelector<HTMLElement>('.image-samples')!;
+  const buttons = [...samples.querySelectorAll<HTMLButtonElement>('.image-sample')];
+  const parent = samples.parentElement;
+  const nextSibling = samples.nextElementSibling;
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(stage, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+  vi.stubGlobal('innerHeight', 100);
+  Object.defineProperty(stage, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ top: 110, bottom: 160, left: 0, right: 100, width: 100, height: 50, x: 0, y: 110, toJSON() {} }),
+  });
+
+  buttons[1]!.focus();
+  buttons[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await flush();
+  expect(scrollIntoView).toHaveBeenCalledOnce();
+  expect(scrollIntoView).toHaveBeenCalledWith({ block: 'end', inline: 'nearest' });
+  expect(document.activeElement).toBe(buttons[1]);
+  expect(samples.parentElement).toBe(parent);
+  expect(samples.nextElementSibling).toBe(nextSibling);
+  expect([...samples.querySelectorAll('.image-sample')]).toEqual(buttons);
+  expect(samples.compareDocumentPosition(document.querySelector('.image-drop')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(document.querySelector('.image-drop')!.compareDocumentPosition(document.querySelector('.image-comparison-area')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const stagePosition = stage.compareDocumentPosition(document.querySelector('.image-view-tools')!);
+  expect(stagePosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(document.querySelector('.image-view-tools')!.compareDocumentPosition(document.querySelector('.image-controls')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+  Object.defineProperty(stage, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ top: 10, bottom: 60, left: 0, right: 100, width: 100, height: 50, x: 0, y: 10, toJSON() {} }),
+  });
+  buttons[2]!.click();
+  await flush();
+  expect(scrollIntoView).toHaveBeenCalledOnce();
+
+  const info = document.querySelector('.image-info')!.textContent;
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+  buttons[3]!.click();
+  await flush();
+  expect(scrollIntoView).toHaveBeenCalledOnce();
+  expect(document.querySelector('.image-info')!.textContent).toBe(info);
+});
+
 it('後から始めたサンプル取得が先行する遅い取得より優先される', async () => {
   const first = deferred<Response>();
   const second = deferred<Response>();
