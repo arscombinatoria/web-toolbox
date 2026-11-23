@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Download, ImagePlus, ScanEye, X } from 'lucide';
+import { Check, CircleAlert, Download, ImagePlus, Minus, Plus, ScanEye, X } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
@@ -41,11 +41,18 @@ export function mount(container: HTMLElement): () => void {
       <div class="image-comparison-area">
         <div class="image-replace"><span>画像をドロップして変更</span><button type="button" class="image-change">画像を変更</button></div>
         <p class="image-info"></p>
+        <div class="image-view-tools" role="group" aria-label="表示倍率">
+          <button type="button" class="image-zoom-out" aria-label="縮小"></button>
+          <button type="button" class="image-zoom-reset" aria-label="表示倍率を100%に戻す（現在 100%）">100%</button>
+          <button type="button" class="image-zoom-in" aria-label="拡大"></button>
+        </div>
         <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
-        <div class="image-stage">
-          <canvas role="img" aria-label="元画像のプレビュー" hidden></canvas>
-          ${sideDefinitions.map(({ id, label }) => `<img data-side="${id}" alt="${label}側のプレビュー" hidden>`).join('')}
+        <div class="image-stage" tabindex="0" role="group" aria-label="画像プレビュー。ドラッグまたは矢印キーで移動できます">
+          <div class="image-layer image-original-layer"><canvas role="img" aria-label="元画像のプレビュー" hidden></canvas></div>
+          ${sideDefinitions.map(({ id, label }) => `<div class="image-layer" data-side="${id}"><img data-side="${id}" alt="${label}側のプレビュー" hidden></div>`).join('')}
           <span class="image-divider" aria-hidden="true"></span>
+        </div>
+        <div class="image-position-control">
           <input type="range" class="image-position" min="0" max="100" value="50" aria-label="比較位置">
         </div>
       </div>
@@ -111,6 +118,17 @@ export function mount(container: HTMLElement): () => void {
   const stage = get<HTMLElement>('.image-stage');
   let original = get<HTMLCanvasElement>('canvas');
   const position = get<HTMLInputElement>('.image-position');
+  const zoomOut = get<HTMLButtonElement>('.image-zoom-out');
+  const zoomReset = get<HTMLButtonElement>('.image-zoom-reset');
+  const zoomIn = get<HTMLButtonElement>('.image-zoom-in');
+  zoomOut.append(createIcon(Minus));
+  zoomIn.append(createIcon(Plus));
+  let zoom = 1;
+  let panX = 0;
+  let panY = 0;
+  let imageWidth = 0;
+  let imageHeight = 0;
+  let pointer: { id: number; x: number; y: number } | undefined;
   const inputStatus = get('.image-input-status');
   const inputError = get('.image-input-error');
   const autoEvaluation = get<HTMLInputElement>('.image-evaluation-toggle input');
@@ -270,8 +288,11 @@ export function mount(container: HTMLElement): () => void {
   }
 
   function showOriginal(side: Side, visible: boolean) {
-    original.classList.toggle('image-original-' + side.id, visible);
-    original.hidden = original.classList.length === 0;
+    const layer = get<HTMLElement>('.image-original-layer');
+    layer.classList.toggle('image-original-' + side.id, visible);
+    const shown = layer.classList.contains('image-original-left') || layer.classList.contains('image-original-right');
+    layer.hidden = !shown;
+    original.hidden = !shown;
   }
 
   function invalidate(side: Side) {
@@ -301,6 +322,46 @@ export function mount(container: HTMLElement): () => void {
   function updatePosition() {
     stage.style.setProperty('--split', position.value + '%');
     position.setAttribute('aria-valuetext', '左側 ' + position.value + '%');
+  }
+
+  function clampPan() {
+    const width = stage.clientWidth;
+    const height = stage.clientHeight;
+    const maxX = Math.max(0, (imageWidth * zoom - width) / 2);
+    const maxY = Math.max(0, (imageHeight * zoom - height) / 2);
+    panX = Math.max(-maxX, Math.min(maxX, panX));
+    panY = Math.max(-maxY, Math.min(maxY, panY));
+    stage.style.setProperty('--zoom', String(zoom));
+    stage.style.setProperty('--pan-x', panX + 'px');
+    stage.style.setProperty('--pan-y', panY + 'px');
+    stage.style.touchAction = maxX > 0 && maxY > 0 ? 'none' : maxX > 0 ? 'pan-y' : maxY > 0 ? 'pan-x' : 'auto';
+    stage.classList.toggle('can-pan', maxX > 0 || maxY > 0);
+  }
+
+  function updateZoomControls() {
+    zoomOut.disabled = zoom <= 0.25;
+    zoomIn.disabled = zoom >= 4;
+    zoomReset.textContent = Math.round(zoom * 100) + '%';
+    zoomReset.setAttribute('aria-label', '表示倍率を100%に戻す（現在 ' + Math.round(zoom * 100) + '%）');
+  }
+
+  function setZoom(next: number) {
+    const bounded = Math.max(0.25, Math.min(4, next));
+    const ratio = bounded / zoom;
+    panX *= ratio;
+    panY *= ratio;
+    zoom = bounded;
+    clampPan();
+    updateZoomControls();
+  }
+
+  function resetView() {
+    zoom = 1;
+    panX = panY = 0;
+    position.value = '50';
+    updatePosition();
+    clampPan();
+    updateZoomControls();
   }
 
   function showSettings(side: Side) {
@@ -411,7 +472,6 @@ export function mount(container: HTMLElement): () => void {
       }
       // 描画できることを確認してから、表示中のCanvasと処理を切り替える。
       preview = original.cloneNode(false) as HTMLCanvasElement;
-      preview.className = '';
       preview.hidden = true;
       preview.width = bitmap.width;
       preview.height = bitmap.height;
@@ -435,8 +495,13 @@ export function mount(container: HTMLElement): () => void {
     original.replaceWith(preview);
     original = preview;
     stage.style.aspectRatio = bitmap.width + ' / ' + bitmap.height;
-    position.value = '50';
-    updatePosition();
+    imageWidth = bitmap.width;
+    imageHeight = bitmap.height;
+    stage.style.setProperty('--image-width', bitmap.width + 'px');
+    stage.style.setProperty('--image-height', bitmap.height + 'px');
+    if (pointer && stage.hasPointerCapture(pointer.id)) stage.releasePointerCapture(pointer.id);
+    pointer = undefined;
+    resetView();
     info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + formatFileSize(file.size);
     inputStatus.textContent = inputError.textContent = '';
     const moveFocus = document.activeElement === drop;
@@ -492,6 +557,41 @@ export function mount(container: HTMLElement): () => void {
   change.addEventListener('click', () => input.click(), options);
   input.addEventListener('change', () => { void selectFiles(input.files); input.value = ''; }, options);
   position.addEventListener('input', updatePosition, options);
+  zoomOut.addEventListener('click', () => setZoom(zoom - 0.25), options);
+  zoomIn.addEventListener('click', () => setZoom(zoom + 0.25), options);
+  zoomReset.addEventListener('click', () => setZoom(1), options);
+  stage.addEventListener('pointerdown', event => {
+    if (!source || pointer || !event.isPrimary || event.button !== 0) return;
+    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    stage.setPointerCapture(event.pointerId);
+    stage.focus({ preventScroll: true });
+  }, options);
+  stage.addEventListener('pointermove', event => {
+    if (!pointer || pointer.id !== event.pointerId) return;
+    panX += event.clientX - pointer.x;
+    panY += event.clientY - pointer.y;
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+    clampPan();
+  }, options);
+  const stopPan = (event: PointerEvent) => {
+    if (pointer?.id === event.pointerId) pointer = undefined;
+  };
+  stage.addEventListener('pointerup', stopPan, options);
+  stage.addEventListener('pointercancel', stopPan, options);
+  stage.addEventListener('lostpointercapture', stopPan, options);
+  stage.addEventListener('keydown', event => {
+    const step = event.shiftKey ? 50 : 10;
+    if (event.key === 'ArrowLeft') panX -= step;
+    else if (event.key === 'ArrowRight') panX += step;
+    else if (event.key === 'ArrowUp') panY -= step;
+    else if (event.key === 'ArrowDown') panY += step;
+    else return;
+    event.preventDefault();
+    clampPan();
+  }, options);
+  const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(clampPan);
+  resizeObserver?.observe(stage);
   autoEvaluation.addEventListener('change', () => {
     if (autoEvaluation.checked) {
       if (!evaluation && !requestedEvaluation) requestEvaluation('auto');
@@ -531,6 +631,9 @@ export function mount(container: HTMLElement): () => void {
   container.append(view);
   return () => {
     listeners.abort();
+    resizeObserver?.disconnect();
+    if (pointer && stage.hasPointerCapture(pointer.id)) stage.releasePointerCapture(pointer.id);
+    pointer = undefined;
     reading?.abort();
     reading = undefined;
     ++inputGeneration;
