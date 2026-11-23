@@ -15,6 +15,25 @@ async function testImage(page: Page, width = 64, height = 32) {
   return { name: 'sample.alpha.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') };
 }
 
+async function dragDividerOutsideStage(page: Page, split: Locator) {
+  const stage = page.locator('.image-stage');
+  await split.scrollIntoViewIfNeeded();
+  const splitBounds = (await split.boundingBox())!;
+  const stageBounds = (await stage.boundingBox())!;
+  const start = { x: splitBounds.x + splitBounds.width / 2, y: splitBounds.y + splitBounds.height / 2 };
+  const endX = Math.max(1, stageBounds.x - 10);
+  const viewport = page.viewportSize()!;
+  expect(start.x).toBeGreaterThanOrEqual(0);
+  expect(start.x).toBeLessThan(viewport.width);
+  expect(start.y).toBeGreaterThanOrEqual(0);
+  expect(start.y).toBeLessThan(viewport.height);
+  expect(endX).toBeLessThan(stageBounds.x);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(endX, start.y);
+  await page.mouse.up();
+}
+
 async function pauseUiClock(page: Page) {
   const start = new Date('2026-01-01T00:00:00Z');
   await page.clock.install({ time: start });
@@ -98,13 +117,7 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(split).toHaveAttribute('aria-valuenow', '51');
   await expect(split).toHaveAttribute('aria-valuetext', '左側 51%');
   await expect(page.locator('.image-position-control')).toHaveCount(0);
-  await page.locator('.image-stage').scrollIntoViewIfNeeded();
-  const bounds = (await split.boundingBox())!;
-  const stageBounds = (await page.locator('.image-stage').boundingBox())!;
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(stageBounds.x - 10, bounds.y + bounds.height / 2);
-  await page.mouse.up();
+  await dragDividerOutsideStage(page, split);
   expect(Number(await split.getAttribute('aria-valuenow'))).toBeLessThan(30);
   await expect(previewRight).toHaveAttribute('src', initialUrl!);
 
@@ -710,6 +723,16 @@ test.describe('タッチ操作', () => {
     expect(Number(await split.getAttribute('aria-valuenow'))).toBeLessThan(60);
     await expect(preview).toHaveAttribute('src', url!);
   });
+});
+
+test('320×720でも比較バーを画面内からステージ外へドラッグできる', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto('./?tool=image-converter');
+  await page.locator('[type=file]').setInputFiles(await testImage(page));
+  const split = page.getByRole('slider', { name: '比較位置' });
+  await expect(split).toHaveAttribute('aria-valuenow', '50');
+  await dragDividerOutsideStage(page, split);
+  await expect(split).toHaveAttribute('aria-valuenow', '0');
 });
 
 test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変更した側だけ失効する', async ({ page, baseURL }) => {
