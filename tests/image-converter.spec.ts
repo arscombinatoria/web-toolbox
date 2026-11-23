@@ -397,10 +397,11 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
   await page.locator('[type=file]').setInputFiles(await testImage(page, 64, 32));
   await expect(reset).toHaveText('100%');
   await expect(split).toHaveAttribute('aria-valuenow', '50');
+  await expect(preview).toBeVisible();
+  await expect(preview).not.toHaveAttribute('src', initialUrl!);
   geometry = await preview.boundingBox();
   expect(geometry!.width).toBe(64);
   expect(geometry!.height).toBe(32);
-  expect(await preview.getAttribute('src')).not.toBe(initialUrl);
   await stage.focus();
   await stage.press('ArrowRight');
   await expect(stage).toHaveCSS('--pan-x', '0px');
