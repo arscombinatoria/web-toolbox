@@ -1,0 +1,147 @@
+name: Temporary CI benchmark
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-cache-prime:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'perf/ci-benchmark')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          cache: npm
+      - run: npm ci
+
+  benchmark:
+    name: ${{ matrix.case }} / run ${{ matrix.repetition }}
+    needs: npm-cache-prime
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'perf/ci-benchmark')
+    strategy:
+      fail-fast: false
+      matrix:
+        case:
+          - ubuntu-latest-w2
+          - ubuntu-latest-w3
+          - ubuntu-latest-w4
+          - ubuntu-24.04-w3
+          - vitest-current
+          - vitest-vmthreads
+          - npm-cache-enabled-w3
+          - npm-cache-disabled-w3
+        include:
+          - case: ubuntu-latest-w2
+            runner: ubuntu-latest
+            workers: 2
+            pool: forks
+            cache: true
+            scope: ci
+          - case: ubuntu-latest-w3
+            runner: ubuntu-latest
+            workers: 3
+            pool: forks
+            cache: true
+            scope: ci
+          - case: ubuntu-latest-w4
+            runner: ubuntu-latest
+            workers: 4
+            pool: forks
+            cache: true
+            scope: ci
+          - case: ubuntu-24.04-w3
+            runner: ubuntu-24.04
+            workers: 3
+            pool: forks
+            cache: true
+            scope: ci
+          - case: vitest-current
+            runner: ubuntu-latest
+            workers: 3
+            pool: forks
+            cache: true
+            scope: vitest
+          - case: vitest-vmthreads
+            runner: ubuntu-latest
+            workers: 3
+            pool: vmThreads
+            cache: true
+            scope: vitest
+          - case: npm-cache-enabled-w3
+            runner: ubuntu-latest
+            workers: 3
+            pool: forks
+            cache: true
+            scope: ci
+          - case: npm-cache-disabled-w3
+            runner: ubuntu-latest
+            workers: 3
+            pool: forks
+            cache: false
+            scope: ci
+        repetition: [1, 2, 3]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        id: node
+        with:
+          node-version: 26.13.1
+          cache: ${{ matrix.cache && 'npm' || '' }}
+      - name: Verify npm cache is warm
+        if: matrix.cache
+        env:
+          CACHE_HIT: ${{ steps.node.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+      - name: Run benchmark
+        env:
+          CI: 'true'
+          BENCHMARK_CASE: ${{ matrix.case }}
+          BENCHMARK_REPETITION: ${{ matrix.repetition }}
+          BENCHMARK_SCOPE: ${{ matrix.scope }}
+          BENCHMARK_WORKERS: ${{ matrix.workers }}
+          BENCHMARK_VITEST_POOL: ${{ matrix.pool }}
+          BENCHMARK_NPM_CACHE: ${{ matrix.cache }}
+          BENCHMARK_NPM_CACHE_HIT: ${{ steps.node.outputs.cache-hit }}
+        run: node scripts/ci-benchmark.mjs
+
+  benchmark-playwright-container:
+    name: playwright-container-w3 / run ${{ matrix.repetition }}
+    needs: npm-cache-prime
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'perf/ci-benchmark')
+    strategy:
+      fail-fast: false
+      matrix:
+        repetition: [1, 2, 3]
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:766137e2d9caad4744187e53cdc89320ba6f2eb57cff097374020944b44dd0a9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        id: node
+        with:
+          node-version: 26.13.1
+          cache: npm
+      - name: Run benchmark
+        env:
+          CI: 'true'
+          BENCHMARK_CASE: playwright-container-w3
+          BENCHMARK_REPETITION: ${{ matrix.repetition }}
+          BENCHMARK_SCOPE: ci
+          BENCHMARK_WORKERS: 3
+          BENCHMARK_VITEST_POOL: forks
+          BENCHMARK_NPM_CACHE: 'true'
+          BENCHMARK_NPM_CACHE_HIT: ${{ steps.node.outputs.cache-hit }}
+          BENCHMARK_BROWSER_MODE: preinstalled
+        run: node scripts/ci-benchmark.mjs
