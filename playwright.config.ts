@@ -13,7 +13,7 @@ export default defineConfig({
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     {
       name: 'firefox',
-      testMatch: ['smoke.spec.ts', 'ip-address-layout.spec.ts', 'image-converter.spec.ts'],
+      testMatch: ['smoke.spec.ts', 'ip-address-layout.spec.ts', 'image-converter.spec.ts', 'layout-responsive.spec.ts'],
       use: {
         ...devices['Desktop Firefox'],
         ...(process.env.WEB_TOOLBOX_E2E_CONTAINER === '1'

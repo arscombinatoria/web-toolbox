@@ -51,6 +51,8 @@ describe('レイアウトの状態とライフサイクル', () => {
       expect(link.querySelectorAll('svg')).toHaveLength(1);
       expect(link.querySelector('svg')?.innerHTML).toBe(createElement(tool.icon).innerHTML);
       expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+      expect(link.querySelector('.sidebar-label')?.textContent).toBe(tool.sidebarName ?? tool.name);
+      if (tool.sidebarName) expect(link.getAttribute('aria-label')).toBe(`${tool.sidebarName}（${tool.name}）`);
     }
   });
 
@@ -61,7 +63,7 @@ describe('レイアウトの状態とライフサイクル', () => {
     layout.select(null);
     expect(root.querySelectorAll('[aria-current]')).toHaveLength(1);
     expect(root.querySelector('[aria-current]')?.hasAttribute('data-home')).toBe(true);
-    expect(root.querySelector<HTMLElement>('.content-heading')!.hidden).toBe(true);
+    expect(root.querySelector('.content-heading')).toBeNull();
     for (const link of root.querySelectorAll<HTMLAnchorElement>('a[data-home], a[data-tool-id]')) {
       const url = new URL(link.href);
       expect(url.pathname).toBe('/web-toolbox/');
@@ -71,7 +73,7 @@ describe('レイアウトの状態とライフサイクル', () => {
     }
     layout.select('unknown');
     expect(root.querySelectorAll('[aria-current]')).toHaveLength(0);
-    expect(root.querySelector<HTMLElement>('.content-heading')!.hidden).toBe(false);
+    expect(root.querySelector('.content-heading')).toBeNull();
   });
 
   it('不正IDで選択リンクがない場合も閉じるボタンへフォーカスする', () => {
