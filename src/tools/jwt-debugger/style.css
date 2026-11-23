@@ -1,7 +1,11 @@
+.jwt-tool { container-type: inline-size; container-name: jwt-tool; min-width: 0; }
+.jwt-tool h2, .jwt-tool h3 { margin-block: var(--space-3) var(--space-2); }
 .jwt-tool label { display: block; font-weight: 600; margin-top: var(--space-2); }
 .jwt-tool textarea, .jwt-tool input, .jwt-tool select { display: block; width: 100%; min-width: 0; max-width: 100%; margin: var(--space-1) 0 var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--text); font: inherit; }
 .jwt-tool textarea { resize: vertical; }
-.jwt-editors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.jwt-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); min-width: 0; }
+.jwt-pane, .jwt-verification, .jwt-editors { min-width: 0; }
+.jwt-editors { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
 .jwt-editors > div { min-width: 0; }
 .jwt-tool p, .jwt-tool dd { overflow-wrap: anywhere; }
 .jwt-tool dd { white-space: pre-wrap; margin: var(--space-1) 0 var(--space-2); }
@@ -9,7 +13,14 @@
 .jwt-tool p { color: var(--muted); }
 .jwt-tool [role="alert"] { color: var(--text); }
 .jwt-tool button:disabled { opacity: 0.55; cursor: default; }
-@media (max-width: 1050px) { .jwt-editors { grid-template-columns: minmax(0, 1fr); } }
+.jwt-verification { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.jwt-verification-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.jwt-verification-result p { margin: 0; }
+@container jwt-tool (min-width: 52rem) {
+  .jwt-workspace { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: start; }
+  .jwt-source #jwt-input { height: 15rem; }
+  .jwt-editors #jwt-header { height: 10rem; }
+}
 
 .jwt-tool {
   --jwt-blue: #245bc2;

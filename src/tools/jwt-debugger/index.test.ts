@@ -8,6 +8,19 @@ let dispose: (() => void) | undefined;
 afterEach(() => { dispose?.(); document.body.replaceChildren(); vi.unstubAllGlobals(); });
 const field = (id: string) => document.querySelector<HTMLInputElement>(`#jwt-${id}`)!;
 const fill = (id: string, value: string) => { field(id).value = value; field(id).dispatchEvent(new Event('input')); };
+it('2-pane構造でデコードと検証領域を分け、既存の入力関連付けを保つ', () => {
+  dispose = mount(document.body);
+  const tool = document.querySelector('.jwt-tool')!;
+  expect(tool.querySelector('h1')?.getAttribute('tabindex')).toBe('-1');
+  const workspace = tool.querySelector('.jwt-workspace')!;
+  expect([...workspace.children].map(node => node.className)).toEqual(['jwt-pane jwt-source', 'jwt-pane jwt-decoded']);
+  expect(tool.querySelector('.jwt-verification')).toBeTruthy();
+  expect(workspace.nextElementSibling).toBe(tool.querySelector('.jwt-verification'));
+  expect(tool.querySelector('#jwt-input')?.getAttribute('aria-describedby')).toBe('jwt-privacy jwt-sample');
+  for (const id of ['input', 'header', 'payload', 'signature', 'secret', 'public', 'alg', 'encoding']) {
+    expect(tool.querySelector(`#jwt-${id}`)).toBeTruthy();
+  }
+});
 it.each(['input', 'secret', 'clear', 'dispose'])('%s後に古い検証結果を反映しない', async action => {
   let finish!: (result: Verification) => void;
   vi.mocked(verifySignature).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
