@@ -11,22 +11,31 @@ export function mount(container: HTMLElement): () => void {
   // 固定HTMLのみ。パターン・エラー・SVG文字列はHTMLへ挿入しない。
   view.innerHTML = `
     <h1 tabindex="-1"></h1><p class="tool-description"></p>
-    <label for="regex-pattern">正規表現のパターン</label>
-    <p id="regex-help">/ の区切り文字は不要です。前後の空白も文字として保持します。入力後に自動更新します。</p>
-    <textarea id="regex-pattern" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="regex-help regex-error"></textarea>
-    <fieldset><legend>フラグ</legend><div class="regex-flags"></div>
-      <p>u と v は同時指定できません。一方を選ぶと他方を解除します。</p>
-    </fieldset>
-    <div class="regex-actions"><button type="button" data-clear>入力をクリア</button>
-      <button type="button" data-cancel disabled>解析を中止</button>
-      <button type="button" data-download disabled>SVGをダウンロード</button></div>
-    <p id="regex-error" role="alert" aria-atomic="true"></p>
-    <p role="status" aria-atomic="true"></p>
-    <aside class="regex-warnings" aria-label="意味上の注意" hidden><h2>意味上の注意</h2><ul></ul></aside>
-    <h2>Railroad Diagram</h2>
-    <p id="regex-legend">左から右に構造を読みます。破線の条件は0文字、点線は捕捉文字列への後方参照です。
-      上の右向き経路は省略、下の左向き経路は繰り返しです。合計回数と貪欲マッチ・非貪欲マッチの優先順位は要素の上下のラベルで指定します。貪欲マッチは繰り返し回数の多い方から、非貪欲マッチは少ない方から試します。集合の内部は原文表記です。広い図はこの枠内でスクロールできます。</p>
-    <div class="regex-canvas" tabindex="0" role="region" aria-label="正規表現の構造図（横にスクロールできます）" aria-describedby="regex-legend"><img alt="正規表現のRailroad Diagram" hidden></div>
+    <section class="regex-input-section">
+      <label for="regex-pattern">正規表現のパターン</label>
+      <p id="regex-help">/ の区切り文字は不要です。前後の空白も文字として保持します。入力後に自動更新します。</p>
+      <textarea id="regex-pattern" rows="3" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="regex-help regex-error"></textarea>
+      <button type="button" data-clear>入力をクリア</button>
+      <p id="regex-error" role="alert" aria-atomic="true"></p>
+    </section>
+    <section class="regex-options">
+      <fieldset><legend>フラグ</legend><div class="regex-flags"></div>
+        <p>u と v は同時指定できません。一方を選ぶと他方を解除します。</p>
+      </fieldset>
+    </section>
+    <section class="regex-diagram-section">
+      <div class="regex-diagram-heading"><h2>Railroad Diagram</h2><div class="regex-diagram-actions">
+        <button type="button" data-cancel disabled>解析を中止</button>
+        <button type="button" data-download disabled>SVGをダウンロード</button>
+      </div></div>
+      <p role="status" aria-atomic="true"></p>
+      <aside class="regex-warnings" aria-label="意味上の注意" hidden><h2>意味上の注意</h2><ul></ul></aside>
+      <p id="regex-legend">左から右に構造を読みます。破線は0文字の条件、点線は後方参照です。広い図は枠内でスクロールできます。</p>
+      <div class="regex-canvas" tabindex="0" role="region" aria-label="正規表現の構造図（横にスクロールできます）" aria-describedby="regex-legend"><img alt="正規表現のRailroad Diagram" hidden></div>
+      <details class="regex-reading-guide"><summary>図の読み方</summary>
+        <p>上の右向き経路は省略、下の左向き経路は繰り返しです。合計回数と貪欲マッチ・非貪欲マッチの優先順位は要素の上下のラベルで指定します。貪欲マッチは繰り返し回数の多い方から、非貪欲マッチは少ない方から試します。集合の内部は原文表記です。</p>
+      </details>
+    </section>
     <p>入力・結果はブラウザ内だけで処理し、送信・保存しません。マッチングは実行しません。</p>
     <details><summary>対応範囲と制約</summary>
       <p>ECMAScript 2025の文字列・文字クラス・範囲・選択・量指定子・グループ・後方参照・アサーション・Unicodeプロパティ・Unicode集合演算に対応します。

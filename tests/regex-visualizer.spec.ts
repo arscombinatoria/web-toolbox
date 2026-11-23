@@ -18,6 +18,35 @@ async function settleScroll(canvas: Locator) {
   });
 }
 
+test('DOM順・グループ・Tab順と読み方詳細のキーボード操作', async ({ page }) => {
+  await page.goto('./?tool=regex-visualizer');
+  await expect(page.getByRole('button', { name: 'SVGをダウンロード' })).toBeEnabled();
+  expect(await page.getByRole('alert').evaluate(node => node.getBoundingClientRect().height)).toBe(0);
+  const tool = page.locator('.regex-tool');
+  expect(await tool.evaluate(node => [...node.children].slice(0, 5).map(child => child.className || child.tagName.toLowerCase())))
+    .toEqual(['h1', 'tool-description', 'regex-input-section', 'regex-options', 'regex-diagram-section']);
+  const inputSection = tool.locator('.regex-input-section');
+  expect(await inputSection.evaluate(node => [...node.children].map(child => child.id || child.tagName.toLowerCase())))
+    .toEqual(['label', 'regex-help', 'regex-pattern', 'button', 'regex-error']);
+  const input = page.getByRole('textbox', { name: '正規表現のパターン' });
+  await input.focus(); await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: '入力をクリア' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('checkbox', { name: /^d：/ })).toBeFocused();
+  const diagram = tool.locator('.regex-diagram-section');
+  await expect(diagram.getByRole('heading', { name: 'Railroad Diagram' })).toBeVisible();
+  await expect(diagram.getByRole('status')).toBeAttached();
+  await expect(diagram.getByRole('complementary', { name: '意味上の注意' })).toBeVisible();
+  const guide = page.getByText('図の読み方', { exact: true });
+  await expect(guide.locator('..')).not.toHaveAttribute('open', '');
+  await guide.focus(); await page.keyboard.press('Enter');
+  await expect(guide.locator('..')).toHaveAttribute('open', '');
+  await expect(diagram).toContainText('貪欲マッチは繰り返し回数の多い方から');
+  await page.keyboard.press('Space');
+  await expect(guide.locator('..')).not.toHaveAttribute('open', '');
+  await expect(tool.locator(':scope > details summary')).toHaveText('対応範囲と制約');
+});
+
 test('入力・再描画・構文エラー・意味上の注意・フラグ排他・空入力', async ({ page }) => {
   await page.goto('./?tool=regex-visualizer');
   const input = page.getByRole('textbox', { name: '正規表現のパターン' });
@@ -150,6 +179,39 @@ for (const [width, theme] of [[320, 'light'], [320, 'dark'], [390, 'light'], [39
     await input.fill('a'.repeat(4097)); await expect(page.getByRole('alert')).toContainText('安全上限'); await expect(button).toBeDisabled();
     await input.fill('a{0}'); await expect(button).toBeEnabled(); await expect(page.getByRole('alert')).toBeEmpty();
   });
+}
+
+for (const width of [320, 768, 1280, 1920]) {
+  for (const theme of ['light', 'dark'] as const) {
+    test(`${width}px・${theme}で全幅を保ち、図見出しと操作が重ならない`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto('./?tool=regex-visualizer');
+      await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+      const download = page.getByRole('button', { name: 'SVGをダウンロード' });
+      await expect(download).toBeEnabled();
+      const heading = page.locator('.regex-diagram-heading h2');
+      const actions = page.locator('.regex-diagram-actions');
+      const headingBox = (await heading.boundingBox())!;
+      const actionsBox = (await actions.boundingBox())!;
+      const separatedHorizontally = headingBox.x + headingBox.width <= actionsBox.x + 1;
+      const separatedVertically = actionsBox.y >= headingBox.y + headingBox.height - 1;
+      expect(separatedHorizontally || separatedVertically).toBe(true);
+      if (width === 1280) {
+        const canvas = await page.locator('.regex-canvas').boundingBox();
+        const picture = await page.locator('.regex-canvas img').boundingBox();
+        expect(canvas).not.toBeNull(); expect(picture).not.toBeNull();
+        expect(canvas!.y).toBeLessThan(900); expect(picture!.y).toBeLessThan(900);
+      }
+      const input = page.getByRole('textbox', { name: '正規表現のパターン' });
+      await input.fill('(abcdef)+'.repeat(12));
+      await expect(download).toBeEnabled();
+      const canvas = page.locator('.regex-canvas');
+      expect(await canvas.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
+      await canvas.focus(); await page.keyboard.press('ArrowRight');
+      await expect.poll(() => canvas.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
+  }
 }
 
 for (const width of [1280, 1440]) {
