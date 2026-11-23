@@ -53,10 +53,20 @@
   transform: translate(calc(-50% + var(--pan-x)), calc(-50% + var(--pan-y))) scale(var(--zoom));
   transform-origin: center;
 }
-.image-divider { position: absolute; inset-block: 0; left: var(--split); width: 2px; transform: translateX(-50%); background: white; box-shadow: 0 0 3px #000; }
-.image-position-control { padding: 0 var(--space-1); }
-.image-position { display: block; width: 100%; margin: var(--space-1) 0 0; accent-color: var(--accent); cursor: ew-resize; touch-action: pan-y; }
-.image-position:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.image-divider {
+  position: absolute; inset-block: 0; left: var(--split); z-index: 1;
+  display: grid; place-items: center; width: 2.5rem; transform: translateX(-50%);
+  cursor: ew-resize; touch-action: none; user-select: none;
+}
+.image-divider::before { position: absolute; inset-block: 0; left: 50%; width: 2px; transform: translateX(-50%); background: white; box-shadow: 0 0 3px #000; content: ''; pointer-events: none; }
+.image-divider-handle {
+  position: relative; display: grid; place-items: center; width: 1.75rem; height: 1.75rem;
+  border: 1px solid white; border-radius: 50%; background: var(--surface); color: var(--accent);
+  box-shadow: 0 0 3px #000; font-size: .875rem; line-height: 1; pointer-events: none;
+}
+.image-divider-handle::after { content: '↔'; }
+.image-divider:focus-visible .image-divider-handle { outline: 3px solid var(--accent); outline-offset: 2px; }
+.image-divider.is-dragging { cursor: grabbing; }
 .image-controls {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: var(--space-2); margin-top: var(--space-2);

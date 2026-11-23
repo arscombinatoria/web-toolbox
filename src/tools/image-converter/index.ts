@@ -61,10 +61,7 @@ export function mount(container: HTMLElement): () => void {
         <div class="image-stage" tabindex="0" role="group" aria-label="画像プレビュー。ドラッグまたは矢印キーで移動できます">
           <div class="image-layer image-original-layer"><canvas role="img" aria-label="元画像のプレビュー" hidden></canvas></div>
           ${sideDefinitions.map(({ id, label }) => `<div class="image-layer" data-side="${id}"><img data-side="${id}" alt="${label}側のプレビュー" hidden></div>`).join('')}
-          <span class="image-divider" aria-hidden="true"></span>
-        </div>
-        <div class="image-position-control">
-          <input type="range" class="image-position" min="0" max="100" value="50" aria-label="比較位置">
+          <span class="image-divider" role="slider" tabindex="0" aria-label="比較位置" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="左側 50%"><span class="image-divider-handle" aria-hidden="true"></span></span>
         </div>
       </div>
       <div class="image-controls">
@@ -128,7 +125,7 @@ export function mount(container: HTMLElement): () => void {
   const info = get('.image-info');
   const stage = get<HTMLElement>('.image-stage');
   let original = get<HTMLCanvasElement>('canvas');
-  const position = get<HTMLInputElement>('.image-position');
+  const divider = get<HTMLElement>('.image-divider');
   const zoomOut = get<HTMLButtonElement>('.image-zoom-out');
   const zoomReset = get<HTMLButtonElement>('.image-zoom-reset');
   const zoomIn = get<HTMLButtonElement>('.image-zoom-in');
@@ -140,6 +137,8 @@ export function mount(container: HTMLElement): () => void {
   let imageWidth = 0;
   let imageHeight = 0;
   let pointer: { id: number; x: number; y: number } | undefined;
+  let dividerPointerId: number | undefined;
+  let position = 50;
   const inputStatus = get('.image-input-status');
   const inputError = get('.image-input-error');
   const sampleList = get('.image-sample-list');
@@ -350,9 +349,24 @@ export function mount(container: HTMLElement): () => void {
     updateEvaluation();
   }
 
-  function updatePosition() {
-    stage.style.setProperty('--split', position.value + '%');
-    position.setAttribute('aria-valuetext', '左側 ' + position.value + '%');
+  function updatePosition(next: number) {
+    position = Math.round(Math.max(0, Math.min(100, next)) * 100) / 100;
+    stage.style.setProperty('--split', position + '%');
+    divider.setAttribute('aria-valuenow', String(position));
+    divider.setAttribute('aria-valuetext', '左側 ' + Number(position.toFixed(1)) + '%');
+  }
+
+  function stopDividerDrag(pointerId?: number, releaseCapture = true) {
+    if (dividerPointerId === undefined || (pointerId !== undefined && dividerPointerId !== pointerId)) return;
+    const activePointerId = dividerPointerId;
+    dividerPointerId = undefined;
+    divider.classList.remove('is-dragging');
+    if (releaseCapture && divider.hasPointerCapture(activePointerId)) divider.releasePointerCapture(activePointerId);
+  }
+
+  function moveDivider(clientX: number) {
+    const bounds = stage.getBoundingClientRect();
+    if (bounds.width > 0) updatePosition((clientX - bounds.left) / bounds.width * 100);
   }
 
   function clampPan() {
@@ -389,8 +403,7 @@ export function mount(container: HTMLElement): () => void {
   function resetView() {
     zoom = 1;
     panX = panY = 0;
-    position.value = '50';
-    updatePosition();
+    updatePosition(50);
     clampPan();
     updateZoomControls();
   }
@@ -476,6 +489,7 @@ export function mount(container: HTMLElement): () => void {
   }
 
   function beginSelection(): Selection {
+    stopDividerDrag();
     reading?.controller.abort();
     const selection = { generation: ++selectionGeneration, controller: new AbortController(), changedAt: performance.now() };
     reading = selection;
@@ -554,6 +568,7 @@ export function mount(container: HTMLElement): () => void {
     imageHeight = bitmap.height;
     stage.style.setProperty('--image-width', bitmap.width + 'px');
     stage.style.setProperty('--image-height', bitmap.height + 'px');
+    stopDividerDrag();
     if (pointer && stage.hasPointerCapture(pointer.id)) stage.releasePointerCapture(pointer.id);
     pointer = undefined;
     resetView();
@@ -635,12 +650,11 @@ export function mount(container: HTMLElement): () => void {
     const button = (event.target as Element).closest<HTMLButtonElement>('.image-sample');
     if (button) void loadSample(button.dataset.sample ?? '');
   }, options);
-  position.addEventListener('input', updatePosition, options);
   zoomOut.addEventListener('click', () => setZoom(zoom - 0.25), options);
   zoomIn.addEventListener('click', () => setZoom(zoom + 0.25), options);
   zoomReset.addEventListener('click', () => setZoom(1), options);
   stage.addEventListener('pointerdown', event => {
-    if (!source || pointer || !event.isPrimary || event.button !== 0) return;
+    if (!source || pointer || event.target === divider || divider.contains(event.target as Node) || !event.isPrimary || event.button !== 0) return;
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
     stage.setPointerCapture(event.pointerId);
     stage.focus({ preventScroll: true });
@@ -668,6 +682,32 @@ export function mount(container: HTMLElement): () => void {
     else return;
     event.preventDefault();
     clampPan();
+  }, options);
+  divider.addEventListener('pointerdown', event => {
+    if (!source || dividerPointerId !== undefined || !event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    dividerPointerId = event.pointerId;
+    divider.setPointerCapture(event.pointerId);
+    divider.classList.add('is-dragging');
+    divider.focus({ preventScroll: true });
+    moveDivider(event.clientX);
+  }, options);
+  divider.addEventListener('pointermove', event => {
+    if (dividerPointerId !== event.pointerId) return;
+    moveDivider(event.clientX);
+  }, options);
+  divider.addEventListener('pointerup', event => stopDividerDrag(event.pointerId), options);
+  divider.addEventListener('pointercancel', event => stopDividerDrag(event.pointerId), options);
+  divider.addEventListener('lostpointercapture', event => stopDividerDrag(event.pointerId, false), options);
+  divider.addEventListener('keydown', event => {
+    const step = event.shiftKey ? 10 : 1;
+    if (event.key === 'ArrowLeft') updatePosition(position - step);
+    else if (event.key === 'ArrowRight') updatePosition(position + step);
+    else if (event.key === 'Home') updatePosition(0);
+    else if (event.key === 'End') updatePosition(100);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
   }, options);
   const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(clampPan);
   resizeObserver?.observe(stage);
@@ -711,6 +751,7 @@ export function mount(container: HTMLElement): () => void {
   return () => {
     listeners.abort();
     resizeObserver?.disconnect();
+    stopDividerDrag();
     if (pointer && stage.hasPointerCapture(pointer.id)) stage.releasePointerCapture(pointer.id);
     pointer = undefined;
     reading?.controller.abort();

@@ -93,17 +93,18 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
 
   const split = page.getByRole('slider', { name: '比較位置' });
   const initialUrl = await previewRight.getAttribute('src');
-  await expect(split).toHaveValue('50');
+  await expect(split).toHaveAttribute('aria-valuenow', '50');
   await split.press('ArrowRight');
-  await expect(split).toHaveValue('51');
+  await expect(split).toHaveAttribute('aria-valuenow', '51');
   await expect(split).toHaveAttribute('aria-valuetext', '左側 51%');
-  await split.scrollIntoViewIfNeeded();
+  await expect(page.locator('.image-position-control')).toHaveCount(0);
   const bounds = (await split.boundingBox())!;
+  const stageBounds = (await page.locator('.image-stage').boundingBox())!;
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width / 4, bounds.y + bounds.height / 2);
+  await page.mouse.move(stageBounds.x - 10, bounds.y + bounds.height / 2);
   await page.mouse.up();
-  expect(Number(await split.inputValue())).toBeLessThan(30);
+  expect(Number(await split.getAttribute('aria-valuenow'))).toBeLessThan(30);
   await expect(previewRight).toHaveAttribute('src', initialUrl!);
 
   await formatLeft.selectOption('image/jpeg');
@@ -251,7 +252,7 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
   await plus.click();
   await plus.click();
   await expect(reset).toHaveText('175%');
-  await expect(split).toHaveValue('65');
+  await expect(split).toHaveAttribute('aria-valuenow', '65');
   await expect(plus).toBeEnabled();
   await expect(minus).toBeEnabled();
   const fixedClip = await stage.evaluate(element => {
@@ -270,6 +271,7 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
   expect(fixedClip.leftClip).toContain('35%');
   expect(fixedClip.rightClip).toContain('65%');
   expect(fixedClip.aligned).toBe(true);
+  await stage.scrollIntoViewIfNeeded();
   const bounds = (await stage.boundingBox())!;
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
@@ -299,8 +301,9 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
     await session.detach();
   }
 
+  await stage.scrollIntoViewIfNeeded();
   const resizeBounds = (await stage.boundingBox())!;
-  await page.mouse.move(resizeBounds.x + resizeBounds.width / 2, resizeBounds.y + resizeBounds.height / 2);
+  await page.mouse.move(resizeBounds.x + resizeBounds.width * 0.25, resizeBounds.y + resizeBounds.height / 2);
   await page.mouse.down();
   await page.mouse.move(resizeBounds.x + 1, resizeBounds.y + 1);
   await page.mouse.up();
@@ -326,9 +329,11 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
   expect(clamped.y).toBeCloseTo(-clamped.maxY, 0);
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(preview).toBeVisible();
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await stage.scrollIntoViewIfNeeded();
+  const currentBounds = (await stage.boundingBox())!;
+  await page.mouse.move(currentBounds.x + currentBounds.width / 2, currentBounds.y + currentBounds.height / 2);
   await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width / 2 - 60, bounds.y + bounds.height / 2 - 30);
+  await page.mouse.move(currentBounds.x + currentBounds.width / 2 - 60, currentBounds.y + currentBounds.height / 2 - 30);
   await page.mouse.up();
   const panBeforeSettings = await stage.evaluate(element => ({ x: element.style.getPropertyValue('--pan-x'), y: element.style.getPropertyValue('--pan-y') }));
   await page.getByLabel('左の形式').selectOption('image/jpeg');
@@ -343,12 +348,12 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
     buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) });
   await expect(page.locator('.image-input-error')).toContainText('読み込めません');
   await expect(reset).toHaveText('175%');
-  await expect(split).toHaveValue('65');
+  await expect(split).toHaveAttribute('aria-valuenow', '65');
   expect(await preview.getAttribute('src')).toBe(initialUrl);
 
   await page.locator('[type=file]').setInputFiles(await testImage(page, 64, 32));
   await expect(reset).toHaveText('100%');
-  await expect(split).toHaveValue('50');
+  await expect(split).toHaveAttribute('aria-valuenow', '50');
   geometry = await preview.boundingBox();
   expect(geometry!.width).toBe(64);
   expect(geometry!.height).toBe(32);
@@ -459,7 +464,7 @@ test('比較画像エリアへのドロップと画像変更ボタンで置き�
   await expect(info).toContainText(image.name);
 
   const drag = await comparison.evaluate((area, bytes) => {
-    const slider = area.querySelector('.image-position')!;
+    const slider = area.querySelector('.image-divider')!;
     const file = new File([Uint8Array.from(bytes)], 'replacement.png', { type: 'image/png' });
     const files = new DataTransfer();
     files.items.add(file);
@@ -539,7 +544,7 @@ test('変換に失敗した側を通知し、反対側は個別に保存・復�
 });
 
 test.describe('タッチ操作', () => {
-  test.use({ hasTouch: true, viewport: { width: 360, height: 720 } });
+  test.use({ hasTouch: true, viewport: { width: 320, height: 720 } });
 
   test('比較位置をタップしても再変換しない', async ({ page }) => {
     await page.goto('./?tool=image-converter');
@@ -550,8 +555,11 @@ test.describe('タッチ操作', () => {
     const split = page.getByRole('slider', { name: '比較位置' });
     await split.scrollIntoViewIfNeeded();
     const bounds = (await split.boundingBox())!;
+    await expect(split).toHaveAttribute('aria-valuenow', '50');
+    expect(await split.evaluate(element => getComputedStyle(element).touchAction)).toBe('none');
     await page.touchscreen.tap(bounds.x + bounds.width * 0.75, bounds.y + bounds.height / 2);
-    expect(Number(await split.inputValue())).toBeGreaterThan(65);
+    expect(Number(await split.getAttribute('aria-valuenow'))).toBeGreaterThan(50);
+    expect(Number(await split.getAttribute('aria-valuenow'))).toBeLessThan(60);
     await expect(preview).toHaveAttribute('src', url!);
   });
 });
