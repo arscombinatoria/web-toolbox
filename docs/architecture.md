@@ -473,7 +473,7 @@ Claimsはiss/sub/aud/exp/nbf/iat/jtiを説明し、audの文字列配列も扱�
 
 UIは安全なvalue/textContent、readonly出力、独立したClaims・署名状態を使用します。入力・キー・方式変更、クリア、破棄で世代を更新し、検証・コピー完了時に世代と破棄状態を確認します。中止不能な暗号処理は完了後の表示を抑制し、破棄時はリスナー・タイマー・DOM入力と表示をクリアします。JavaScript文字列やWeb Crypto内部メモリの物理消去は保証できません。外部取得、URL/History/ストレージ/Cookie保存は行いません。
 
-画面は見出し・説明に続き、Encoded JWTとDecodedを並べるワークスペース、全幅のSignature、Claims・日時評価、署名検証の順です。ワークスペースはツールの実幅が52rem以上なら約0.95:1.05の2列、それより狭ければ縦一列にします。HeaderとPayloadは常に縦に並びます。Claimsの項目は狭い幅では1列、52rem以上では2列で、各説明のdt/ddを組にして表示します。入力JWTはデスクトップで15rem、Headerは10remの初期高さとし、縦方向にリサイズできます。
+画面は見出し・説明に続き、Encoded JWTとDecodedを並べるワークスペース、全幅のSignature、Claims・日時評価、署名検証の順です。ワークスペースはツールの実幅が52rem以上なら約0.95:1.05の2列、それより狭ければ縦一列にします。HeaderとPayloadは常に縦に並びます。Claimsの項目は狭い幅では1列、52rem以上では2列で、各説明のdt/ddを組にして表示します。JWT入力・Header・Payload・Signatureは対応ブラウザーで内容に合わせて高さを変え、それぞれ12rem・18rem・24rem・9remを上限とする内部スクロール領域です。縦方向の手動リサイズに対応し、JWT変更時はインライン高さを解除して内容に合わせ直します。`field-sizing: content`非対応ブラウザーではtextareaの`rows`値を初期高さとして使います。
 
 隣接Vitestテストは形式・Unicode・NumericDate境界、実際にテスト用キーで署名したHS256/RS256/ES256の成功・不一致・改ざん・不正キー・非対応alg、UI競合・破棄・非保存を検証します。`tests/jwt-debugger.spec.ts`は実署名、コピー成功/失敗、直接アクセス・再読み込み・履歴、ライト／ダーク両テーマの320/768/1280/1920px、幅の動的切替、2ペインと全幅セクションの順序・幅、Claimsの1/2列切替、長いJWT・Claim値の折り返しと横はみ出し、キーボード、非通信・非保存を確認します。
 

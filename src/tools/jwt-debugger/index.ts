@@ -27,8 +27,8 @@ export function mount(container: HTMLElement): () => void {
         <h2 id="jwt-decoded-title">Decoded</h2>
         <p data-meta></p>
         <div class="jwt-editors">
-          <div><label for="jwt-header">Header</label><textarea id="jwt-header" rows="10" readonly spellcheck="false"></textarea><button type="button" data-copy="header">Headerをコピー</button></div>
-          <div><label for="jwt-payload">Payload</label><textarea id="jwt-payload" rows="10" readonly spellcheck="false"></textarea><button type="button" data-copy="payload">Payloadをコピー</button></div>
+          <div><label for="jwt-header">Header</label><textarea id="jwt-header" rows="4" readonly spellcheck="false"></textarea><button type="button" data-copy="header">Headerをコピー</button></div>
+          <div><label for="jwt-payload">Payload</label><textarea id="jwt-payload" rows="6" readonly spellcheck="false"></textarea><button type="button" data-copy="payload">Payloadをコピー</button></div>
         </div>
         <p>結果は選択して手動でもコピーできます。</p>
         <p role="status" data-copy-status></p>
@@ -132,6 +132,11 @@ export function mount(container: HTMLElement): () => void {
   };
   const decode = () => {
     decoded = undefined;
+    // Native resize writes an inline height that disables field-sizing. Let each new JWT
+    // resume content sizing; the observer updates the highlight layer to the new box.
+    if (window.CSS?.supports('field-sizing', 'content')) {
+      for (const field of [input, header, payload, signature]) field.style.removeProperty('height');
+    }
     header.value = payload.value = signature.value = '';
     query('[data-error]').textContent = query('[data-meta]').textContent = query('[data-bytes]').textContent = '';
     try {

@@ -3,6 +3,10 @@
 .jwt-tool label { display: block; font-weight: 600; margin-top: var(--space-2); }
 .jwt-tool textarea, .jwt-tool input, .jwt-tool select { display: block; width: 100%; min-width: 0; max-width: 100%; margin: var(--space-1) 0 var(--space-2); padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--text); font: inherit; }
 .jwt-tool textarea { resize: vertical; }
+.jwt-tool :where(#jwt-input, #jwt-header, #jwt-payload, #jwt-signature) { field-sizing: content; min-height: calc(1lh + var(--space-2) + var(--space-2) + 2px); max-height: 12rem; overflow-y: auto; }
+.jwt-tool textarea#jwt-header { max-height: 18rem; }
+.jwt-tool textarea#jwt-payload { max-height: 24rem; }
+.jwt-tool textarea#jwt-signature { max-height: 9rem; }
 .jwt-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); min-width: 0; }
 .jwt-pane, .jwt-verification, .jwt-editors { min-width: 0; }
 .jwt-editors { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
@@ -22,8 +26,6 @@
 .jwt-verification-result p { margin: 0; }
 @container jwt-tool (min-width: 52rem) {
   .jwt-workspace { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: start; }
-  .jwt-source #jwt-input { height: 15rem; }
-  .jwt-editors #jwt-header { height: 10rem; }
   .jwt-claims dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

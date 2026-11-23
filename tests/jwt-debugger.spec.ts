@@ -79,8 +79,10 @@ for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1],
       expect(Math.abs(panes[0]!.y - panes[1]!.y)).toBeLessThanOrEqual(1);
       expect(panes[0]!.x + panes[0]!.width).toBeLessThanOrEqual(panes[1]!.x);
       const sourceInput = await page.locator('#jwt-input').boundingBox();
-      expect(sourceInput!.height).toBeGreaterThanOrEqual(224);
-      expect(sourceInput!.height).toBeLessThanOrEqual(288);
+      expect(sourceInput!.height).toBeGreaterThanOrEqual(80);
+      expect(sourceInput!.height).toBeLessThanOrEqual(192);
+      await expect(page.locator('#jwt-input')).toHaveCSS('field-sizing', 'content');
+      await expect(page.locator('#jwt-input')).toHaveValue(SAMPLE_JWT);
     } else {
       expect(panes[1]!.y).toBeGreaterThan(panes[0]!.y);
       expect(panes[0]!.y + panes[0]!.height).toBeLessThanOrEqual(panes[1]!.y);
@@ -309,7 +311,7 @@ test('長いJWTの折り返し・スクロール・リサイズ・256KiBと描�
   expect(sizes.scrollHeight).toBeGreaterThan(sizes.height);
   await input.evaluate(field => { field.scrollTop = field.scrollHeight; });
   await expect.poll(async () => { const d = await dimensions(); return Math.abs(d.top - d.layerTop); }).toBeLessThanOrEqual(1);
-  await input.evaluate(field => { field.style.height = '250px'; });
+  await input.evaluate(field => { field.style.height = '170px'; });
   await expect.poll(async () => (await dimensions()).layerHeight).toBe((await dimensions()).height);
   sizes = await dimensions(); expect(sizes.left).toBe(sizes.layerLeft);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
