@@ -45,8 +45,7 @@ export function mount(container: HTMLElement): () => void {
     <section class="jwt-verification" aria-labelledby="jwt-verification-title">
       <h2 id="jwt-verification-title">署名検証</h2><p data-alg-help></p><p data-warning role="status"></p><label for="jwt-alg">検証アルゴリズム・キー種別</label>
       <select id="jwt-alg"><option>HS256</option><option>RS256</option><option>ES256</option></select>
-      <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="password" autocomplete="off" spellcheck="false">
-        <button type="button" data-reveal aria-pressed="false">Secretを表示</button>
+      <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="text" autocomplete="off" spellcheck="false">
         <label for="jwt-encoding">Secret形式</label><select id="jwt-encoding"><option value="utf8">UTF-8</option><option value="base64">Base64をデコード</option></select></div>
       <div data-public-fields hidden><label for="jwt-public">公開鍵（SPKI PEM）</label><textarea id="jwt-public" rows="6" autocomplete="off" spellcheck="false"></textarea></div>
       <div class="jwt-verification-result"><button type="button" data-verify>検証</button><p role="status" data-verification>未検証</p></div>
@@ -162,15 +161,9 @@ export function mount(container: HTMLElement): () => void {
     query('[data-public-fields]').hidden = alg.value === 'HS256';
     invalidate();
   }, options);
-  query('[data-reveal]').addEventListener('click', () => {
-    secret.type = secret.type === 'password' ? 'text' : 'password';
-    query('[data-reveal]').textContent = secret.type === 'text' ? 'Secretを隠す' : 'Secretを表示';
-    query('[data-reveal]').setAttribute('aria-pressed', String(secret.type === 'text'));
-  }, options);
   query('[data-clear]').addEventListener('click', () => {
     hasInitialDemoSecret = false;
-    input.value = secret.value = publicKey.value = ''; secret.type = 'password';
-    query('[data-reveal]').textContent = 'Secretを表示'; query('[data-reveal]').setAttribute('aria-pressed', 'false');
+    input.value = secret.value = publicKey.value = '';
     decode(); input.focus();
   }, options);
   verify.addEventListener('click', async () => {

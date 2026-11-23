@@ -15,9 +15,9 @@ test('JWTの実検証・コピー・クリア・履歴・非通信・非保存',
   await expect(page.locator('[data-verification]')).toHaveText('未検証');
   await expect(page.locator('[data-claims]')).toContainText('期限切れ');
   await page.getByLabel('共有Secret', { exact: true }).fill(secret);
-  await expect(page.getByLabel('共有Secret', { exact: true })).toHaveAttribute('type', 'password');
-  await page.getByRole('button', { name: 'Secretを表示', exact: true }).click();
   await expect(page.getByLabel('共有Secret', { exact: true })).toHaveAttribute('type', 'text');
+  await expect(page.locator('[data-reveal]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Secretを(?:表示|隠す)/ })).toHaveCount(0);
   await page.getByRole('button', { name: '検証', exact: true }).click();
   await expect(page.locator('[data-verification]')).toHaveText('署名一致');
   await page.getByRole('button', { name: 'Payloadをコピー' }).click();
@@ -184,7 +184,8 @@ test('初期サンプルの署名検証・Secret編集・クリア・ツール�
   const key = page.getByLabel('共有Secret', { exact: true });
   await expect(input).toHaveValue(SAMPLE_JWT);
   await expect(key).toHaveValue(DEMO_SECRET);
-  await expect(key).toHaveAttribute('type', 'password');
+  await expect(key).toHaveAttribute('type', 'text');
+  await expect(page.locator('[data-reveal]')).toHaveCount(0);
   await expect(page.getByLabel('検証アルゴリズム・キー種別')).toHaveValue('HS256');
   await expect(page.getByLabel('Secret形式')).toHaveValue('utf8');
   await expect(page.getByLabel('Header', { exact: true })).toHaveValue(/"typ": "JWT"/);
