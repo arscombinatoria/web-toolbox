@@ -88,8 +88,8 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   const saveRight = page.getByRole('button', { name: '右をダウンロード' });
   const previewLeft = page.getByAltText('左側のプレビュー');
   const previewRight = page.getByAltText('右側のプレビュー');
-  const formatLeft = page.getByLabel('左の形式');
-  const formatRight = page.getByLabel('右の形式');
+  const formatLeft = page.getByLabel('左の出力形式');
+  const formatRight = page.getByLabel('右の出力形式');
   const qualityLeft = page.getByRole('slider', { name: '左のJPEG品質' });
   const qualityRight = page.getByRole('slider', { name: '右のJPEG品質' });
   const leftPanel = page.getByRole('group', { name: '左の設定' });
@@ -104,7 +104,7 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(page.getByRole('img', { name: '元画像のプレビュー' })).toBeVisible();
   await expect(previewRight).toBeVisible();
   await expect(page.locator('.image-info')).toContainText('64 × 32 px');
-  await expect(leftPanel.getByRole('status')).toHaveText(/元ファイル比 0%/);
+  await expect(leftPanel.getByRole('status')).toHaveText(/0% 元 /);
   const leftBounds = (await leftPanel.boundingBox())!;
   const rightBounds = (await rightPanel.boundingBox())!;
   expect(leftBounds.y).toBe(rightBounds.y);
@@ -147,7 +147,7 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   for (const [panel, bytes] of [[leftPanel, leftJpeg], [rightPanel, png]] as const) {
     const percent = (bytes.length - image.buffer.length) / image.buffer.length * 100;
     await expect(panel.getByRole('status')).toHaveText(
-      `出力サイズ ${formatFileSize(bytes.length)}（元ファイル比 ${percentFormat.format(percent)}%）`,
+      `${percentFormat.format(percent)}% 元 ${formatFileSize(image.buffer.length)} → 出力 ${formatFileSize(bytes.length)}`,
     );
   }
   await expect(page.getByText('左右比較', { exact: false })).toHaveCount(0);
@@ -171,8 +171,8 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(page.getByRole('img', { name: '元画像のプレビュー' })).toBeVisible();
   await expect(page.locator('.image-original-layer')).toHaveClass(/image-original-left.*image-original-right|image-original-right.*image-original-left/);
   await expect(page.locator('.image-stage canvas')).toHaveCount(1);
-  await expect(leftPanel.getByRole('status')).toHaveText(/元ファイル比 0%/);
-  await expect(rightPanel.getByRole('status')).toHaveText(/元ファイル比 0%/);
+  await expect(leftPanel.getByRole('status')).toHaveText(/0% 元 /);
+  await expect(rightPanel.getByRole('status')).toHaveText(/0% 元 /);
   expect(await saveImage(page, saveLeft, image.name)).toEqual(image.buffer);
   expect(await saveImage(page, saveRight, image.name)).toEqual(image.buffer);
 
@@ -212,7 +212,9 @@ test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を
     } else {
       await sampleButton.click();
     }
-    await expect(page.locator('.image-info')).toContainText(`${sample.filename} · ${sample.dimensions}`);
+    await expect(page.locator('.image-info')).toContainText(`${sample.filename} ${sample.dimensions}`);
+    await expect(sampleButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.image-sample[aria-pressed="true"]')).toHaveCount(1);
     if (index === 0) {
       await expect(sampleButton).toBeFocused();
       const previewBounds = (await page.locator('.image-stage').boundingBox())!;
@@ -236,10 +238,10 @@ test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を
   }
 
   await page.getByRole('button', { name: /輪郭イラスト/ }).click();
-  await expect(page.locator('.image-info')).toContainText('outline.png · 1200 × 900 px');
+  await expect(page.locator('.image-info')).toContainText('outline.png 1200 × 900 px');
   const leftSave = page.getByRole('button', { name: '左をダウンロード' });
   const rightSave = page.getByRole('button', { name: '右をダウンロード' });
-  const rightFormat = page.getByLabel('右の形式');
+  const rightFormat = page.getByLabel('右の出力形式');
   await rightFormat.selectOption('image/jpeg');
   const jpeg = await saveImage(page, rightSave, 'outline-right-q0.75.jpg');
   expect([...jpeg.subarray(0, 3)]).toEqual([255, 216, 255]);
@@ -377,7 +379,7 @@ test('ズーム・パンを画像の固定倍率で行い、比較位置と変�
   await page.mouse.move(currentBounds.x + currentBounds.width / 2 - 60, currentBounds.y + currentBounds.height / 2 - 30);
   await page.mouse.up();
   const panBeforeSettings = await stage.evaluate(element => ({ x: element.style.getPropertyValue('--pan-x'), y: element.style.getPropertyValue('--pan-y') }));
-  await page.getByLabel('左の形式').selectOption('image/jpeg');
+  await page.getByLabel('左の出力形式').selectOption('image/jpeg');
   const leftQuality = page.getByRole('slider', { name: '左のJPEG品質' });
   await leftQuality.fill('0.40');
   await expect(reset).toHaveText('175%');
@@ -530,7 +532,7 @@ test('サンプルカードは実幅に応じて列数を調整し、320〜1280p
 
       expect(layout.columns, `${width}px ${scheme}`).toBe(columns);
       expect(layout.scrollWidth, `${width}px ${scheme}`).toBeLessThanOrEqual(layout.viewportWidth);
-      expect(layout.detailsVisible, `${width}px ${scheme}`).toBe(width > 759);
+      expect(layout.detailsVisible, `${width}px ${scheme}`).toBe(true);
       expect(Math.min(...layout.titleWidths), `${width}px ${scheme} title width`).toBeGreaterThanOrEqual(width > 759 ? 64 : 32);
       for (const [index, card] of layout.cardRects.entries()) {
         for (const child of layout.contentRects[index]!) {
@@ -541,6 +543,52 @@ test('サンプルカードは実幅に応じて列数を調整し、320〜1280p
           const overlapsHorizontally = card.left < other.right && card.right > other.left;
           const overlapsVertically = card.top < other.bottom && card.bottom > other.top;
           expect(overlapsHorizontally && overlapsVertically, `${width}px ${scheme} cards overlap`).toBe(false);
+        }
+      }
+    }
+  }
+});
+
+test('比較・変換カードは320・768・1280pxの両テーマで重ならず、プレビューを保つ', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  await page.getByRole('checkbox', { name: '画質の自動評価' }).uncheck();
+  await page.locator('[type=file]').setInputFiles(await testImage(page));
+  await expect(page.locator('.image-stage canvas')).toBeVisible();
+
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    for (const width of [320, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      const layout = await page.locator('.image-tool').evaluate(root => {
+        const rect = (element: Element) => {
+          const bounds = element.getBoundingClientRect();
+          return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height };
+        };
+        const panels = [...root.querySelectorAll<HTMLElement>('.image-panel')];
+        const stage = root.querySelector<HTMLElement>('.image-stage')!;
+        const zoom = root.querySelector<HTMLElement>('.image-view-tools')!;
+        const content = panels.map(panel => [...panel.querySelectorAll<HTMLElement>('.image-result, .image-score, .image-save')].map(rect));
+        return {
+          panels: panels.map(rect), content,
+          stage: rect(stage), zoom: rect(zoom),
+          scrollWidth: document.documentElement.scrollWidth,
+          viewportWidth: innerWidth,
+        };
+      });
+      expect(layout.scrollWidth, `${width}px ${scheme} document`).toBeLessThanOrEqual(layout.viewportWidth);
+      expect(layout.zoom.top, `${width}px ${scheme} zoom position`).toBeGreaterThanOrEqual(layout.stage.bottom);
+      expect(layout.stage.height, `${width}px ${scheme} preview cap`).toBeLessThanOrEqual(900 * .65 + 2);
+      expect(layout.stage.height, `${width}px ${scheme} preview ratio`).toBeGreaterThanOrEqual(layout.stage.width * .5 - 2);
+      for (const [index, panel] of layout.panels.entries()) {
+        expect(panel.width, `${width}px ${scheme} panel`).toBeGreaterThan(0);
+        for (const item of layout.content[index]!) {
+          expect(item.left, `${width}px ${scheme} content left`).toBeGreaterThanOrEqual(panel.left);
+          expect(item.right, `${width}px ${scheme} content right`).toBeLessThanOrEqual(panel.right);
+        }
+        for (const other of layout.panels.slice(index + 1)) {
+          const horizontalOverlap = panel.left < other.right && panel.right > other.left;
+          const verticalOverlap = panel.top < other.bottom && panel.bottom > other.top;
+          expect(horizontalOverlap && verticalOverlap, `${width}px ${scheme} panels overlap`).toBe(false);
         }
       }
     }
@@ -563,7 +611,7 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
     }));
     expect(await page.locator('.image-sample-list').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
     expect(await sampleButtons.nth(0).getAttribute('aria-label')).toContain('3840 × 2560 px、JPEG、3.87 MB');
-    expect(await sampleButtons.nth(0).locator('span').evaluate(element => getComputedStyle(element).display)).toBe('none');
+    expect(await sampleButtons.nth(0).locator('span').evaluate(element => getComputedStyle(element).display)).toBe('block');
     expect(sampleBounds[0]!.y).toBe(sampleBounds[1]!.y);
     expect(sampleBounds[2]!.y).toBe(sampleBounds[3]!.y);
     expect(sampleBounds[0]!.y).toBeLessThan(sampleBounds[2]!.y);
@@ -689,19 +737,19 @@ test('変換に失敗した側を通知し、反対側は個別に保存・復�
   await expect(right.getByRole('button')).toBeDisabled();
   await expect(right.getByRole('status')).toBeEmpty();
   expect(await saveImage(page, left.getByRole('button'), image.name)).toEqual(image.buffer);
-  await expect(left.getByRole('status')).toHaveText(/元ファイル比 0%/);
+  await expect(left.getByRole('status')).toHaveText(/0% 元 /);
 
-  await left.getByLabel('左の形式').selectOption('image/png');
+  await left.getByLabel('左の出力形式').selectOption('image/png');
   await expect(left.getByRole('alert')).toContainText('左側：指定形式に変換できませんでした');
   await expect(left.getByRole('button')).toBeDisabled();
   await expect(right.getByRole('alert')).toContainText('指定形式に変換できませんでした');
   await expect(right.getByRole('button')).toBeDisabled();
   await expect(left.getByRole('status')).toBeEmpty();
-  await right.getByLabel('右の形式').selectOption('original');
+  await right.getByLabel('右の出力形式').selectOption('original');
   await expect(right.getByRole('alert')).toBeEmpty();
   await expect(left.getByRole('button')).toBeDisabled();
   await expect(right.getByRole('button')).toBeEnabled();
-  await expect(right.getByRole('status')).toHaveText(/元ファイル比 0%/);
+  await expect(right.getByRole('status')).toHaveText(/0% 元 /);
 });
 
 test.describe('タッチ操作', () => {
@@ -794,7 +842,7 @@ test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変�
   });
 
   await page.goto('./?tool=image-converter');
-  const jpegScore = /^SSIMULACRA2: -?\d+\.\d$/;
+  const jpegScore = /^-?\d+\.\d$/;
   const button = page.getByRole('button', { name: '画質を評価', exact: true });
   const left = page.locator('.image-panel[data-side=left] .image-score');
   const right = page.locator('.image-panel[data-side=right] .image-score');
@@ -803,7 +851,7 @@ test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変�
   await page.getByRole('checkbox', { name: '画質の自動評価' }).uncheck();
   await page.locator('[type=file]').setInputFiles(input);
   await expect(left).toHaveText('基準画像');
-  await page.getByLabel('左の形式').selectOption('image/jpeg');
+  await page.getByLabel('左の出力形式').selectOption('image/jpeg');
   await page.getByLabel('左のJPEG品質').fill('0.25');
   await expect(button).toBeEnabled();
   const wasmLoaded = page.waitForResponse(response => /\/web-toolbox\/assets\/ssimulacra2-0\.1\.0-[\w-]+\.wasm$/.test(response.url()));
@@ -817,7 +865,7 @@ test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変�
   await expect(status).toContainText('完了');
   await expect(left).toHaveText(jpegScore);
   await expect(right).toHaveText(jpegScore);
-  expect(Number((await right.textContent())?.split(': ')[1])).toBeLessThan(100);
+  expect(Number(await right.textContent())).toBeLessThan(100);
   const checks = await page.evaluate(async () => {
     const state = window as Window & { imageQualityChecks?: { referenceMatches: boolean; decodesMatch: Promise<boolean> }[] };
     return Promise.all((state.imageQualityChecks ?? []).map(async item => [item.referenceMatches, await item.decodesMatch]));
@@ -830,7 +878,7 @@ test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変�
   await expect(right).toHaveText(rightScore!);
   await expect(button).toBeEnabled();
   await expect(left).toHaveText('画質は未評価');
-  await page.getByLabel('左の形式').selectOption('image/png');
+  await page.getByLabel('左の出力形式').selectOption('image/png');
   await expect(left).toHaveText('画質評価は未対応');
   await expect(page.getByRole('button', { name: '左をダウンロード' })).toBeEnabled();
   expect(external).toEqual([]);
@@ -846,7 +894,7 @@ test('初回と品質変更後に自動評価し、連続操作では最後の�
   const quality = page.getByRole('slider', { name: '右のJPEG品質' });
   const status = page.locator('.image-evaluation-status');
   const save = page.getByRole('button', { name: '右をダウンロード' });
-  const jpegScore = /^SSIMULACRA2: -?\d+\.\d$/;
+  const jpegScore = /^-?\d+\.\d$/;
   await page.locator('[type=file]').setInputFiles(await testImage(page));
   await expect(auto).toBeChecked();
   await expect(save).toBeEnabled();
@@ -865,7 +913,7 @@ test('初回と品質変更後に自動評価し、連続操作では最後の�
   await quality.fill('0.01');
   await page.clock.runFor(180);
   await expect(save).toBeEnabled();
-  await expect(score).toHaveText('画質は未評価');
+  await expect(score).toHaveText('評価待機中…');
   await page.clock.runFor(619);
   expect(workers).toHaveLength(1);
   await page.clock.runFor(1);
@@ -904,7 +952,7 @@ test('2048×2048のJPEGを実Wasmで自動評価する', async ({ page }) => {
   await expect(page.locator('.image-evaluation-limit')).toBeEmpty();
   expect((await wasmLoaded).ok()).toBe(true);
   await expect(page.locator('.image-evaluation-status')).toContainText('完了', { timeout: 30_000 });
-  await expect(page.locator('.image-panel[data-side=right] .image-score')).toHaveText(/^SSIMULACRA2: -?\d+\.\d$/);
+  await expect(page.locator('.image-panel[data-side=right] .image-score')).toHaveText(/^-?\d+\.\d$/);
   await expect.poll(() => page.workers().length).toBe(0);
 });
 
@@ -916,6 +964,7 @@ test('評価の画素数を超えてもJPEGの変換と保存が使える', asyn
   const image = await testImage(page, 3200, 3200);
   await page.locator('[type=file]').setInputFiles({ ...image, name: 'large.png' });
   await expect(page.locator('.image-evaluation-limit')).toContainText('10,000,000画素');
+  await expect(page.locator('.image-panel[data-side=right] .image-score')).toHaveText('評価上限超過');
   await expect(page.getByRole('button', { name: '画質を評価' })).toBeDisabled();
   const jpeg = await saveImage(page, page.getByRole('button', { name: '右をダウンロード' }), 'large-right-q0.75.jpg');
   expect([...jpeg.subarray(0, 3)]).toEqual([255, 216, 255]);
@@ -972,10 +1021,11 @@ test('狭い画面と両テーマで、Wasmロード中の中止と失敗から�
   await page.route(wasm, route => route.fulfill({ status: 503 }), { times: 1 });
   await start.click();
   await expect(status).toContainText('評価できませんでした');
+  await expect(score).toHaveText('評価に失敗');
   await expect(page.getByRole('button', { name: '右をダウンロード' })).toBeEnabled();
   await start.click();
   await expect(status).toContainText('完了');
-  await expect(score).toHaveText(/^SSIMULACRA2: /);
+  await expect(score).toHaveText(/^-?\d+\.\d$/);
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);

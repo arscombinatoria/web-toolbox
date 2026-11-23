@@ -64,7 +64,7 @@ function setup(active = bitmap()) {
     preview.decode = decodePreview;
     return {
       format, slider, preview, decodePreview,
-      output: panel.querySelector('.image-result')!,
+      output: panel.querySelector<HTMLParagraphElement>('.image-result')!,
       error: panel.querySelector('.image-error')!,
       score: panel.querySelector('.image-score')!,
       save: panel.querySelector<HTMLButtonElement>('.image-save')!,
@@ -274,6 +274,28 @@ it('4つのサンプルは種類・寸法・サイズを読み上げ、選択時
   expect(decode).toHaveBeenCalledOnce();
 });
 
+it('サンプルの選択状態は成功時だけ切り替わり、読み込み中は現在の選択を保つ', async () => {
+  const pending = deferred<Response>();
+  const fetchMock = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(new Blob(['sample'], { type: 'image/png' })))
+    .mockReturnValueOnce(pending.promise);
+  vi.stubGlobal('fetch', fetchMock);
+  setup();
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('.image-sample')];
+  expect(buttons.every(button => button.getAttribute('aria-pressed') === 'false')).toBe(true);
+  buttons[1]!.click();
+  await flush();
+  expect(buttons[1]!.getAttribute('aria-pressed')).toBe('true');
+  buttons[2]!.click();
+  await flush();
+  expect(buttons[1]!.getAttribute('aria-pressed')).toBe('true');
+  expect(buttons[2]!.getAttribute('aria-pressed')).toBe('false');
+  pending.resolve(new Response(new Blob(['sample'], { type: 'image/png' })));
+  await flush();
+  expect(buttons[1]!.getAttribute('aria-pressed')).toBe('false');
+  expect(buttons[2]!.getAttribute('aria-pressed')).toBe('true');
+});
+
 it('サンプル一覧はDOM順と位置を保ち、成功時だけ画面外の比較プレビューへスクロールする', async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(['sample'], { type: 'image/png' })));
   vi.stubGlobal('fetch', fetchMock);
@@ -423,8 +445,10 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   expect(right.slider.value).toBe('0.75');
   expect(decode).toHaveBeenCalledOnce();
   expect(encode).toHaveBeenCalledExactlyOnceWith(active, 'image/jpeg', 0.75);
-  expect(left.output.textContent).toContain('2 B（元ファイル比 0%）');
-  expect(right.output.textContent).toContain('4 B（元ファイル比 +100%）');
+  expect(left.output.textContent).toContain('0% 元 2 B → 出力 2 B');
+  expect(left.output.dataset.change).toBe('same');
+  expect(right.output.textContent).toContain('+100% 元 2 B → 出力 4 B');
+  expect(right.output.dataset.change).toBe('increase');
   expect(document.querySelector('.image-info')?.textContent).toContain('元ファイル 2 B');
 
   right.select('original');
@@ -432,7 +456,7 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   expect(right.qualityLabel.hidden).toBe(true);
   expect(document.querySelector('.image-original-layer')?.classList.contains('image-original-left')).toBe(true);
   expect(document.querySelector('.image-original-layer')?.classList.contains('image-original-right')).toBe(true);
-  expect(right.output.textContent).toContain('2 B（元ファイル比 0%）');
+  expect(right.output.textContent).toContain('0% 元 2 B → 出力 2 B');
   expect(encode).toHaveBeenCalledOnce();
   expect(createUrl).toHaveBeenLastCalledWith(file);
   left.save.click();
@@ -449,8 +473,20 @@ it('KB表示はサイズだけを丸め、元ファイル比をバイト数か�
   await flush();
 
   expect(info.textContent).toContain('元ファイル 1 KB');
-  expect(left.output.textContent).toBe('出力サイズ 1 KB（元ファイル比 0%）');
-  expect(right.output.textContent).toBe('出力サイズ 1.25 KB（元ファイル比 +25%）');
+  expect(left.output.textContent).toBe('0% 元 1 KB → 出力 1 KB');
+  expect(left.output.dataset.change).toBe('same');
+  expect(right.output.textContent).toBe('+25% 元 1 KB → 出力 1.25 KB');
+  expect(right.output.dataset.change).toBe('increase');
+});
+
+it('表示が+0%に丸まってもバイト数の増加方向を保持する', async () => {
+  const { choose, right } = setup();
+  vi.mocked(encode).mockResolvedValue(new Blob([new Uint8Array(1_000_001)], { type: 'image/jpeg' }));
+  choose('large.png', undefined, new Uint8Array(1_000_000));
+  await flush();
+
+  expect(right.output.textContent).toBe('+0% 元 1 MB → 出力 1 MB');
+  expect(right.output.dataset.change).toBe('increase');
 });
 
 it('不正な置換を保ち、同じ有効画像を再選択して比較を置き換える', async () => {
@@ -514,7 +550,7 @@ it('品質を独立して保持し、変更した側だけを変換する', asyn
   expect(right.save.disabled).toBe(false);
   expect(right.preview.src).toBe(rightUrl);
   expect(left.output.textContent).toBe('変換しています…');
-  expect(right.output.textContent).toBe('出力サイズ 4 B（元ファイル比 +100%）');
+  expect(right.output.textContent).toBe('+100% 元 2 B → 出力 4 B');
   left.save.click();
   right.save.click();
   expect(download).toHaveBeenCalledOnce();
@@ -555,7 +591,7 @@ it('同じ設定の変換を共有し、成功結果のURLは左右で独立し�
   encoding.resolve(png);
   await flush();
   expect(createUrl.mock.calls.slice(-2)).toEqual([[png], [png]]);
-  expect(left.output.textContent).toContain('1 B（元ファイル比 -50%）');
+  expect(left.output.textContent).toContain('-50% 元 2 B → 出力 1 B');
   expect(right.output.textContent).toBe(left.output.textContent);
   const leftUrl = left.preview.src;
   const rightUrl = right.preview.src;
@@ -563,8 +599,8 @@ it('同じ設定の変換を共有し、成功結果のURLは左右で独立し�
   expect(revokeUrl).toHaveBeenCalledWith(leftUrl);
   expect(revokeUrl).not.toHaveBeenCalledWith(rightUrl);
   expect(right.preview.src).toBe(rightUrl);
-  expect(left.output.textContent).toBe('出力サイズ 2 B（元ファイル比 0%）');
-  expect(right.output.textContent).toBe('出力サイズ 1 B（元ファイル比 -50%）');
+  expect(left.output.textContent).toBe('0% 元 2 B → 出力 2 B');
+  expect(right.output.textContent).toBe('-50% 元 2 B → 出力 1 B');
 });
 
 it('左右の設定変更が重なっても古いエンコードとプレビュー結果を破棄する', async () => {
@@ -600,7 +636,7 @@ it('左右の設定変更が重なっても古いエンコードとプレビュ�
   expect(right.error.textContent).toBe('');
   expect(left.save.disabled).toBe(false);
   expect(right.save.disabled).toBe(false);
-  expect(left.output.textContent).toBe('出力サイズ 4 B（元ファイル比 +100%）');
+  expect(left.output.textContent).toBe('+100% 元 2 B → 出力 4 B');
   expect(right.output.textContent).toBe(left.output.textContent);
 });
 
@@ -678,7 +714,7 @@ it('置換のデコード中は現在の結果と採点を維持し、置換確�
   await flush();
   workers[0]!.reply({ index: 0, score: 88.25 });
   await flush();
-  expect(right.score.textContent).toBe('SSIMULACRA2: 88.3');
+  expect(right.score.textContent).toBe('88.3');
 
   left.select('image/jpeg');
   await flush();
@@ -693,7 +729,7 @@ it('置換のデコード中は現在の結果と採点を維持し、置換確�
   vi.mocked(decode).mockReturnValueOnce(candidate.promise);
   choose('replacement.png');
   expect(info.textContent).toContain('first.png');
-  expect(right.score.textContent).toBe('SSIMULACRA2: 88.3');
+  expect(right.score.textContent).toBe('88.3');
   expect(activeWorker.terminate).not.toHaveBeenCalled();
 
   const replacement = bitmap(30, 20);
@@ -794,7 +830,7 @@ it('左右で同じJPEG Blobを採点するのは一度で、別のBlobに変わ
   expect(worker!.postMessage).toHaveBeenCalledWith({ reference: duplicate, jpegs: [jpeg] }, [duplicate]);
   worker!.reply({ index: 0, score: 101.234 });
   await flush();
-  expect(left.score.textContent).toBe('SSIMULACRA2: 101.2');
+  expect(left.score.textContent).toBe('101.2');
   expect(right.score.textContent).toBe(left.score.textContent);
   expect(worker!.terminate).toHaveBeenCalledOnce();
   expect(evaluationStatus.textContent).toContain('完了');
@@ -804,7 +840,7 @@ it('左右で同じJPEG Blobを採点するのは一度で、別のBlobに変わ
   vi.mocked(encode).mockResolvedValueOnce(changed);
   left.quality('0.25');
   expect(left.score.textContent).not.toContain('101.2');
-  expect(right.score.textContent).toBe('SSIMULACRA2: 101.2');
+  expect(right.score.textContent).toBe('101.2');
   await vi.advanceTimersByTimeAsync(180);
   expect(workers).toHaveLength(1);
   evaluate.click();
@@ -889,7 +925,7 @@ it('Wasmロード失敗と非有限の結果から復帰し、変換・保存は
   expect(download).toHaveBeenCalledOnce();
   workers[2]!.reply({ index: 0, score: -14.3 });
   await flush();
-  expect(right.score.textContent).toBe('SSIMULACRA2: -14.3');
+  expect(right.score.textContent).toBe('-14.3');
   expect(evaluationStatus.textContent).toContain('完了');
 });
 
@@ -912,7 +948,7 @@ it('初回の画像選択から800msで自動評価を開始する', async () =>
   expect(evaluationStatus.textContent).toContain('評価しています');
   workers[0]!.reply({ index: 0, score: 82 });
   await flush();
-  expect(right.score.textContent).toBe('SSIMULACRA2: 82.0');
+  expect(right.score.textContent).toBe('82.0');
 });
 
 it('採点中の変更で古いWorkerを止め、連続操作の最後の品質だけを自動評価する', async () => {
@@ -928,9 +964,9 @@ it('採点中の変更で古いWorkerを止め、連続操作の最後の品質�
   vi.mocked(encode).mockResolvedValueOnce(first).mockResolvedValueOnce(last);
   left.select('image/jpeg');
   await flush();
-  expect(left.score.textContent).toBe('SSIMULACRA2: 85.0');
+  expect(left.score.textContent).toBe('85.0');
   left.quality('0.35');
-  expect(left.score.textContent).toBe('');
+  expect(left.score.textContent).toBe('変換待ち…');
   await vi.advanceTimersByTimeAsync(800);
   const oldWorker = workers[1]!;
   expect(oldWorker.postMessage.mock.calls[0]![0].jpegs).toEqual([first]);
@@ -947,17 +983,17 @@ it('採点中の変更で古いWorkerを止め、連続操作の最後の品質�
   expect(vi.mocked(encode).mock.lastCall?.[2]).toBe(0.65);
   expect(workers).toHaveLength(2);
   expect(evaluationStatus.textContent).toContain('待機');
-  expect(left.score.textContent).toBe('画質は未評価');
-  expect(right.score.textContent).toBe('SSIMULACRA2: 85.0');
+  expect(left.score.textContent).toBe('評価待機中…');
+  expect(right.score.textContent).toBe('85.0');
 
   await vi.advanceTimersByTimeAsync(1);
   expect(workers[2]!.postMessage.mock.calls[0]![0].jpegs).toEqual([last]);
   lateReply(new MessageEvent('message', { data: { index: 0, score: 42 } }));
-  expect(left.score.textContent).toBe('画質は未評価');
+  expect(left.score.textContent).toBe('評価中…');
   workers[2]!.reply({ index: 0, score: 83 });
   await flush();
-  expect(left.score.textContent).toBe('SSIMULACRA2: 83.0');
-  expect(right.score.textContent).toBe('SSIMULACRA2: 85.0');
+  expect(left.score.textContent).toBe('83.0');
+  expect(right.score.textContent).toBe('85.0');
 });
 
 it.each(['auto', 'manual'])('JPEGとプレビューの完了を待ってから%s評価する', async mode => {
@@ -1011,7 +1047,7 @@ it('自動評価をオフにすると待機と実行を止め、手動評価は�
   expect(workers[1]!.terminate).not.toHaveBeenCalled();
   workers[1]!.reply({ index: 0, score: 65 });
   await flush();
-  expect(right.score.textContent).toBe('SSIMULACRA2: 65.0');
+  expect(right.score.textContent).toBe('65.0');
 });
 
 it('待機中の中止は同じ設定で再開せず、入力変更とツール破棄は古い待機を消す', async () => {

@@ -3,7 +3,7 @@ import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
 import { evaluateJpegs } from './quality/client';
-import { evaluationLimit, isEvaluable } from './quality/rules';
+import { evaluationLimit, isEvaluable, MIN_EVALUATION_SIDE } from './quality/rules';
 import './style.css';
 
 const sideDefinitions = [
@@ -35,12 +35,6 @@ export function mount(container: HTMLElement): () => void {
     <h1 tabindex="-1"></h1>
     <p class="tool-description"></p>
     <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp" hidden>
-    <div class="image-evaluation-options">
-      <label class="image-evaluation-toggle">
-        <input type="checkbox" aria-describedby="image-evaluation-cost" checked>画質の自動評価
-      </label>
-      <p id="image-evaluation-cost" class="image-note">大きい画像の評価には数秒かかり、多くのメモリを使います。</p>
-    </div>
     <section class="image-samples" aria-label="サンプル画像">
       <h2>サンプルで試す</h2>
       <div class="image-sample-list"></div>
@@ -50,12 +44,15 @@ export function mount(container: HTMLElement): () => void {
     <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
     <section hidden aria-label="画像の比較と変換設定">
       <div class="image-comparison-area">
-        <div class="image-replace"><span>画像をドロップして変更</span><button type="button" class="image-change">画像を変更</button></div>
-        <p class="image-info"></p>
-        <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
+        <div class="image-replace">
+          <p class="image-info"><strong class="image-filename"></strong><span class="image-file-details"></span></p>
+          <button type="button" class="image-change" aria-describedby="image-drop-hint">画像を変更</button>
+          <span id="image-drop-hint" class="image-drop-hint">比較エリアへのドロップでも変更できます</span>
+        </div>
         <div class="image-stage" tabindex="0" role="group" aria-label="画像プレビュー。ドラッグまたは矢印キーで移動できます">
           <div class="image-layer image-original-layer"><canvas role="img" aria-label="元画像のプレビュー" hidden></canvas></div>
           ${sideDefinitions.map(({ id, label }) => `<div class="image-layer" data-side="${id}"><img data-side="${id}" alt="${label}側のプレビュー" hidden></div>`).join('')}
+          <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
           <span class="image-divider" role="slider" tabindex="0" aria-label="比較位置" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="左側 50%"><span class="image-divider-handle" aria-hidden="true"></span></span>
         </div>
         <div class="image-view-tools" role="group" aria-label="表示倍率">
@@ -68,25 +65,46 @@ export function mount(container: HTMLElement): () => void {
         ${sideDefinitions.map(({ id, label, initialEncoder }) => `
           <fieldset class="image-panel" data-side="${id}">
             <legend>${label}の設定</legend>
-            <label>${label}の形式 <select>
-              ${Object.entries(encoders).map(([key, { label }]) => `<option value="${key}"${key === initialEncoder ? ' selected' : ''}>${label}</option>`).join('')}
-            </select></label>
-            <label class="image-quality" ${encoders[initialEncoder].hasQuality ? '' : 'hidden'}>
-              JPEG品質 <input type="range" aria-label="${label}のJPEG品質" min="0.01" max="1" step="0.01" value="${initialQuality}">
-              <span>${initialQuality.toFixed(2)}</span>
-            </label>
-            <p class="image-result" role="status" aria-atomic="true"></p>
-            <p class="image-score" aria-live="polite" aria-atomic="true"></p>
-            <p class="image-error" role="alert"></p>
-            <button type="button" class="image-save" disabled>${label}をダウンロード</button>
+            <div class="image-panel-content">
+              <label>出力形式 <select aria-label="${label}の出力形式">
+                ${Object.entries(encoders).map(([key, { label }]) => `<option value="${key}"${key === initialEncoder ? ' selected' : ''}>${label}</option>`).join('')}
+              </select></label>
+              <label class="image-quality" ${encoders[initialEncoder].hasQuality ? '' : 'hidden'}>
+                JPEG品質 <input type="range" aria-label="${label}のJPEG品質" min="0.01" max="1" step="0.01" value="${initialQuality}">
+                <span>${initialQuality.toFixed(2)}</span>
+              </label>
+              <div class="image-metrics" role="group" aria-label="${label}側の変換結果">
+                <div class="image-metric">
+                  <p id="image-size-label-${id}" class="image-metric-label">容量増減</p>
+                  <p class="image-result" role="status" aria-labelledby="image-size-label-${id}" aria-atomic="true"><strong class="image-size-change"></strong><span class="image-output-size"></span></p>
+                </div>
+                <div class="image-metric" aria-live="polite" aria-atomic="true">
+                  <p class="image-metric-label">SSIMULACRA2</p>
+                  <p class="image-score"></p>
+                </div>
+              </div>
+              <p class="image-error" role="alert"></p>
+              <button type="button" class="image-save" disabled>${label}をダウンロード</button>
+            </div>
           </fieldset>
         `).join('')}
       </div>
-      <div class="image-evaluation">
-        <div class="image-evaluation-actions">
+    </section>
+    <section class="image-evaluation" aria-labelledby="image-evaluation-heading">
+      <h2 id="image-evaluation-heading">画質評価</h2>
+      <div class="image-evaluation-controls">
+        <label class="image-evaluation-toggle">
+          <input type="checkbox" aria-describedby="image-evaluation-cost" checked>画質の自動評価
+        </label>
+        <div class="image-evaluation-actions" hidden>
           <button type="button" class="image-evaluate" disabled>画質を評価</button>
           <button type="button" class="image-evaluation-cancel" disabled>評価を中止</button>
         </div>
+      </div>
+      <p class="image-evaluation-status" role="status" aria-atomic="true"></p>
+      <p class="image-evaluation-limit" role="status" aria-atomic="true"></p>
+      <p id="image-evaluation-cost" class="image-note">大きい画像の評価には時間がかかり、多くのメモリを使います。</p>
+      <div class="image-evaluation-details" hidden>
         <p class="image-note">SSIMULACRA2は、元画像との見た目の近さを示す参考スコアです。透明部分は白背景で比較します。</p>
         <details class="image-score-guide">
           <summary>スコアの目安を見る</summary>
@@ -108,8 +126,6 @@ export function mount(container: HTMLElement): () => void {
           <p>これらは厳密な区間ではなく代表的な目安です。高いほど元画像に近いことを示します。100点満点の採点方式ではありません。</p>
           <p>詳しくは<a href="https://github.com/cloudinary/ssimulacra2#usage">SSIMULACRA2公式の使用方法</a>を参照してください。</p>
         </details>
-        <p class="image-evaluation-limit"></p>
-        <p class="image-evaluation-status" role="status" aria-atomic="true"></p>
       </div>
     </section>
     <p class="image-note">画像はブラウザ内で処理します。JPEGでは透明部分が白になります。EXIFなどのメタデータは保持されない場合があります。</p>`;
@@ -122,7 +138,8 @@ export function mount(container: HTMLElement): () => void {
   const change = get<HTMLButtonElement>('.image-change');
   change.prepend(createIcon(ImagePlus));
   const section = get<HTMLElement>('.image-tool > section[aria-label="画像の比較と変換設定"]');
-  const info = get('.image-info');
+  const filenameLabel = get('.image-filename');
+  const fileDetails = get('.image-file-details');
   const stage = get<HTMLElement>('.image-stage');
   let original = get<HTMLCanvasElement>('canvas');
   const divider = get<HTMLElement>('.image-divider');
@@ -147,6 +164,7 @@ export function mount(container: HTMLElement): () => void {
     button.type = 'button';
     button.className = 'image-sample';
     button.dataset.sample = sample.id;
+    button.setAttribute('aria-pressed', 'false');
     button.setAttribute('aria-label', `${sample.label}、${sample.dimensions}、${sample.type === 'image/jpeg' ? 'JPEG' : 'PNG'}、${sample.size}`);
     const thumbnail = document.createElement('img');
     thumbnail.src = `${import.meta.env.BASE_URL}samples/${sample.id}-thumb.${sample.id === 'red-panda' ? 'jpg' : 'png'}`;
@@ -161,6 +179,8 @@ export function mount(container: HTMLElement): () => void {
     sampleList.append(button);
   }
   const autoEvaluation = get<HTMLInputElement>('.image-evaluation-toggle input');
+  const evaluationActions = get<HTMLElement>('.image-evaluation-actions');
+  const evaluationDetails = get<HTMLElement>('.image-evaluation-details');
   const evaluate = get<HTMLButtonElement>('.image-evaluate');
   evaluate.prepend(createIcon(ScanEye));
   const cancelEvaluation = get<HTMLButtonElement>('.image-evaluation-cancel');
@@ -173,10 +193,11 @@ export function mount(container: HTMLElement): () => void {
   let selectionGeneration = 0;
   let reading: Selection | undefined;
   let source: { file: File; bitmap: ImageBitmap } | undefined;
-  let evaluation: { controller: AbortController; mode: EvaluationMode } | undefined;
+  let evaluation: { controller: AbortController; mode: EvaluationMode; jpegs: Blob[]; started: boolean } | undefined;
   let requestedEvaluation: { mode: EvaluationMode; readyAt: number } | undefined;
   let evaluationTimer: ReturnType<typeof setTimeout> | undefined;
   let scores = new WeakMap<Blob, number>();
+  let failedEvaluations = new WeakSet<Blob>();
 
   function createSide({ id, label, initialEncoder }: typeof sideDefinitions[number]) {
     const panel = get<HTMLFieldSetElement>(`.image-panel[data-side="${id}"]`);
@@ -195,7 +216,9 @@ export function mount(container: HTMLElement): () => void {
       qualityLabel: panel.querySelector<HTMLLabelElement>('.image-quality')!,
       qualityInput: panel.querySelector<HTMLInputElement>('.image-quality input')!,
       qualityValue: panel.querySelector('.image-quality span')!,
-      output: panel.querySelector('.image-result')!,
+      output: panel.querySelector<HTMLParagraphElement>('.image-result')!,
+      sizeChange: panel.querySelector('.image-size-change')!,
+      outputSize: panel.querySelector('.image-output-size')!,
       error: panel.querySelector('.image-error')!,
       score: panel.querySelector('.image-score')!,
       save: panel.querySelector<HTMLButtonElement>('.image-save')!,
@@ -220,10 +243,25 @@ export function mount(container: HTMLElement): () => void {
     return [...blobs];
   }
 
+  function evaluationMessage(side: Side, blob: Blob | undefined, limit: string | undefined) {
+    if (side.encoder === 'original') return '基準画像';
+    if (!isEvaluable(side.encoder)) return '画質評価は未対応';
+    if (limit && source) {
+      const { width, height } = source.bitmap;
+      return Math.min(width, height) < MIN_EVALUATION_SIDE ? '画像が小さすぎます' : '評価上限超過';
+    }
+    if (side.result.status === 'failed') return '変換失敗';
+    if (side.result.status === 'pending') return '変換待ち…';
+    if (blob && evaluation?.jpegs.includes(blob)) return evaluation.started ? '評価中…' : '評価待機中…';
+    if (blob && requestedEvaluation) return '評価待機中…';
+    if (blob && failedEvaluations.has(blob)) return '評価に失敗';
+    return '画質は未評価';
+  }
+
   function updateEvaluation() {
     const currentSource = source;
     const limit = currentSource && evaluationLimit(currentSource.bitmap.width, currentSource.bitmap.height);
-    limitNotice.textContent = limit ?? '';
+    if (limitNotice.textContent !== (limit ?? '')) limitNotice.textContent = limit ?? '';
     const converting = sides.some(side => isEvaluable(side.encoder) && side.result.status === 'pending');
     const jpegs = unevaluatedJpegs();
     const canEvaluate = currentSource && !limit && (converting || jpegs.length > 0);
@@ -236,10 +274,8 @@ export function mount(container: HTMLElement): () => void {
     for (const side of sides) {
       const blob = evaluationBlob(side);
       const score = blob ? scores.get(blob) : undefined;
-      const message = side.encoder === 'original' ? '基準画像' :
-        !isEvaluable(side.encoder) ? '画質評価は未対応' :
-        score !== undefined ? 'SSIMULACRA2: ' + score.toFixed(1) :
-        blob && !limit ? '画質は未評価' : '';
+      const message = score === undefined ? evaluationMessage(side, blob, limit) : score.toFixed(1);
+      side.score.classList.toggle('has-score', score !== undefined);
       if (side.score.textContent !== message) side.score.textContent = message;
     }
 
@@ -283,16 +319,20 @@ export function mount(container: HTMLElement): () => void {
 
   async function startEvaluation(mode: EvaluationMode, bitmap: ImageBitmap, jpegs: Blob[], generation: number) {
     const controller = new AbortController();
-    const job = { controller, mode };
+    const job = { controller, mode, jpegs, started: false };
     const isCurrent = () => evaluation === job && generation === inputGeneration;
     evaluation = job;
+    for (const jpeg of jpegs) failedEvaluations.delete(jpeg);
     if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
     updateEvaluation();
     try {
       await evaluateJpegs(
         bitmap, jpegs, controller.signal,
         () => {
-          if (isCurrent()) evaluationStatus.textContent = '画質を評価しています…';
+          if (!isCurrent()) return;
+          job.started = true;
+          evaluationStatus.textContent = '画質を評価しています…';
+          updateEvaluation();
         },
         (jpeg, score) => {
           if (!isCurrent() || !sides.some(side => evaluationBlob(side) === jpeg)) return;
@@ -306,6 +346,10 @@ export function mount(container: HTMLElement): () => void {
         if (cause instanceof DOMException && cause.name === 'AbortError') {
           evaluationStatus.textContent = '画質評価を中止しました。';
         } else {
+          // If one JPEG completed before the worker failed, its cached score remains valid.
+          for (const jpeg of jpegs) {
+            if (!scores.has(jpeg)) failedEvaluations.add(jpeg);
+          }
           setIconMessage(evaluationStatus, CircleAlert, '画質を評価できませんでした。もう一度お試しください。');
         }
       }
@@ -336,12 +380,14 @@ export function mount(container: HTMLElement): () => void {
     showOriginal(side, false);
     if (side.url) URL.revokeObjectURL(side.url);
     side.url = undefined;
-    side.output.textContent = side.error.textContent = '';
+    side.sizeChange.textContent = side.outputSize.textContent = side.error.textContent = '';
+    delete side.output.dataset.change;
   }
 
   function clearSource() {
     stopEvaluation();
     scores = new WeakMap();
+    failedEvaluations = new WeakSet();
     sides.forEach(invalidate);
     source?.bitmap.close();
     source = undefined;
@@ -449,7 +495,13 @@ export function mount(container: HTMLElement): () => void {
         showOriginal(side, true);
       }
       side.result = { status: 'ready', blob, filename };
-      side.output.textContent = '出力サイズ ' + formatFileSize(blob.size) + '（元ファイル比 ' + sizeChange(file.size, blob.size) + '）';
+      side.output.dataset.change = blob.size < file.size ? 'reduction' : blob.size > file.size ? 'increase' : 'same';
+      side.sizeChange.textContent = sizeChange(file.size, blob.size);
+      const originalSize = document.createElement('span');
+      originalSize.textContent = ' 元 ' + formatFileSize(file.size);
+      const convertedSize = document.createElement('span');
+      convertedSize.textContent = ' → 出力 ' + formatFileSize(blob.size);
+      side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
       updateEvaluation();
     } catch (cause) {
@@ -469,7 +521,7 @@ export function mount(container: HTMLElement): () => void {
     const currentInput = inputGeneration;
     const currentSide = side.generation;
     side.result = { status: 'pending' };
-    side.output.textContent = '変換しています…';
+    side.sizeChange.textContent = '変換しています…';
     updateEvaluation();
     if (delay === 0) {
       void convert(side, currentInput, currentSide);
@@ -502,7 +554,7 @@ export function mount(container: HTMLElement): () => void {
     return reading === selection && selection.generation === selectionGeneration;
   }
 
-  async function selectFiles(files: readonly File[] | null, selection: Selection = beginSelection()): Promise<boolean> {
+  async function selectFiles(files: readonly File[] | null, selection: Selection = beginSelection(), sampleId?: string): Promise<boolean> {
     if (!selectionIsCurrent(selection)) return false;
     if (!files?.length) {
       reading = undefined;
@@ -572,12 +624,18 @@ export function mount(container: HTMLElement): () => void {
     if (pointer && stage.hasPointerCapture(pointer.id)) stage.releasePointerCapture(pointer.id);
     pointer = undefined;
     resetView();
-    info.textContent = file.name + ' · ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + formatFileSize(file.size);
+    filenameLabel.textContent = file.name;
+    fileDetails.textContent = ' ' + bitmap.width + ' × ' + bitmap.height + ' px · 元ファイル ' + formatFileSize(file.size);
+    sampleList.querySelectorAll<HTMLButtonElement>('.image-sample').forEach(button => {
+      const selected = button.dataset.sample === sampleId;
+      button.setAttribute('aria-pressed', String(selected));
+    });
     inputStatus.textContent = inputError.textContent = '';
     const moveFocus = document.activeElement === drop;
     resetInitialDrag();
     drop.hidden = true;
     section.hidden = false;
+    evaluationActions.hidden = evaluationDetails.hidden = false;
     if (moveFocus) change.focus({ preventScroll: true });
     for (const side of sides) convertSide(side);
     if (autoEvaluation.checked) requestEvaluation('auto', changedAt);
@@ -595,7 +653,7 @@ export function mount(container: HTMLElement): () => void {
       const blob = await response.blob();
       if (!selectionIsCurrent(selection)) return;
       const file = new File([blob], sample.filename, { type: sample.type });
-      if (await selectFiles([file], selection)) {
+      if (await selectFiles([file], selection, sample.id)) {
         const bounds = stage.getBoundingClientRect();
         if (bounds.top < 0 || bounds.bottom > window.innerHeight) {
           stage.scrollIntoView({ block: bounds.top < 0 ? 'start' : 'end', inline: 'nearest' });
