@@ -9,7 +9,11 @@
 .jwt-editors > div { min-width: 0; }
 .jwt-tool p, .jwt-tool dd { overflow-wrap: anywhere; }
 .jwt-tool dd { white-space: pre-wrap; margin: var(--space-1) 0 var(--space-2); }
-.jwt-tool dt { font-weight: 600; }
+.jwt-tool dt { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.jwt-signature, .jwt-claims { min-width: 0; margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); }
+.jwt-signature h2 label { margin: 0; font-size: inherit; }
+.jwt-claims dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2) var(--space-3); min-width: 0; margin: var(--space-2) 0 0; }
+.jwt-claim { min-width: 0; }
 .jwt-tool p { color: var(--muted); }
 .jwt-tool [role="alert"] { color: var(--text); }
 .jwt-tool button:disabled { opacity: 0.55; cursor: default; }
@@ -20,6 +24,7 @@
   .jwt-workspace { grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); align-items: start; }
   .jwt-source #jwt-input { height: 15rem; }
   .jwt-editors #jwt-header { height: 10rem; }
+  .jwt-claims dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .jwt-tool {

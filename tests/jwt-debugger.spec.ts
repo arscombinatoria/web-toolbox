@@ -53,13 +53,27 @@ for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1],
     const workspace = page.locator('.jwt-workspace');
     const sourcePane = page.locator('.jwt-source');
     const decodedPane = page.locator('.jwt-decoded');
+    const signature = page.locator('.jwt-signature');
+    const claims = page.locator('.jwt-claims');
     await expect(page.locator('.jwt-tool > h1')).toHaveAttribute('tabindex', '-1');
     await expect(sourcePane.getByRole('heading', { name: 'Encoded JWT' })).toBeVisible();
     await expect(decodedPane.getByRole('heading', { name: 'Decoded' })).toBeVisible();
+    await expect(page.locator('.jwt-tool')).toHaveCSS('container-type', 'inline-size');
+    await expect(signature.getByRole('heading', { name: 'Signature（Base64URL）' })).toBeVisible();
+    await expect(claims.getByRole('heading', { name: 'Claims・日時評価（署名とは独立）' })).toBeVisible();
     await expect(page.locator('.jwt-verification')).toBeVisible();
+    expect(await workspace.locator('.jwt-signature, .jwt-claims').count()).toBe(0);
+    expect(await page.locator('.jwt-tool > .jwt-workspace ~ .jwt-signature ~ .jwt-claims ~ .jwt-verification').count()).toBe(1);
     const panes = await Promise.all([sourcePane.boundingBox(), decodedPane.boundingBox()]);
     const containerWidth = await workspace.evaluate(element => element.clientWidth);
     expect(containerWidth >= 832 ? 2 : 1).toBe(columns);
+    const [workspaceBox, signatureBox, claimsBox] = await Promise.all([workspace.boundingBox(), signature.boundingBox(), claims.boundingBox()]);
+    for (const box of [signatureBox, claimsBox]) {
+      expect(Math.abs(box!.x - workspaceBox!.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(box!.width - workspaceBox!.width)).toBeLessThanOrEqual(1);
+    }
+    const claimsColumns = await claims.locator('[data-claims]').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+    expect(claimsColumns).toBe(containerWidth >= 832 ? 2 : 1);
     if (columns === 2) {
       expect(panes[0]!.x).toBeLessThan(panes[1]!.x);
       expect(Math.abs(panes[0]!.y - panes[1]!.y)).toBeLessThanOrEqual(1);
@@ -123,6 +137,28 @@ test('JWTレイアウトは同じ画面内の幅変更にも追従する', async
   await assertLayout(1280, 2);
 });
 
+test('長いIssuer・Audience・Unicode・日時Claimを全幅で折り返し、dt/ddを保つ', async ({ page }) => {
+  const payload = Buffer.from(JSON.stringify({
+    iss: '発行者😀'.repeat(900), aud: ['a'.repeat(9000)], exp: Math.floor(Date.now() / 1000) + 3600,
+  })).toString('base64url');
+  await page.goto('./?tool=jwt-debugger');
+  await page.getByLabel('JWT入力', { exact: true }).fill(`e30.${payload}.`);
+  for (const width of [320, 768, 1280, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    const claims = page.locator('.jwt-claims');
+    await expect(claims.locator('dl > .jwt-claim')).toHaveCount(7);
+    for (const item of await claims.locator('dl > .jwt-claim').all()) {
+      await expect(item.locator('dt')).toHaveCount(1);
+      await expect(item.locator('dd')).toHaveCount(1);
+      await expect.poll(() => item.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await expect.poll(() => item.locator('dd').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    }
+    await expect(claims.locator('[data-claims]')).toContainText('UTC');
+    await expect(claims.locator('[data-claims]')).toContainText('JST');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
 test('元のJSONの大きな整数と小数を表示・コピーする', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const source = '{"id":9223372036854775807,"tiny":1e-400,"fraction":0.1234567890123456789012345,"exp":100.00000000000000001}';
@@ -153,7 +189,9 @@ test('初期サンプルの署名検証・Secret編集・クリア・ツール�
   await expect(page.getByLabel('Secret形式')).toHaveValue('utf8');
   await expect(page.getByLabel('Header', { exact: true })).toHaveValue(/"typ": "JWT"/);
   await expect(page.getByLabel('Payload', { exact: true })).toHaveValue(/サンプルユーザー/);
-  await expect(page.getByLabel('Signature（Base64URL）', { exact: true })).toHaveValue(SAMPLE_JWT.split('.')[2]!);
+  const signature = page.getByRole('textbox', { name: 'Signature（Base64URL）', exact: true });
+  await expect(signature).toHaveAttribute('readonly', '');
+  await expect(signature).toHaveValue(SAMPLE_JWT.split('.')[2]!);
   await expect(page.locator('[data-claims]')).toContainText('UTC');
   await expect(page.locator('[data-claims]')).toContainText('JST');
   await expect(page.locator('[data-verification]')).toHaveText('未検証');
@@ -163,9 +201,10 @@ test('初期サンプルの署名検証・Secret編集・クリア・ツール�
   await key.fill('my-secret'); await input.fill(SAMPLE_JWT); await expect(key).toHaveValue('my-secret');
   await key.fill(DEMO_SECRET); await input.fill(`${SAMPLE_JWT} `); await expect(key).toHaveValue(DEMO_SECRET);
   await page.getByRole('button', { name: '入力をクリア' }).click();
-  for (const label of ['JWT入力', '共有Secret', '公開鍵（SPKI PEM）', 'Header', 'Payload', 'Signature（Base64URL）']) {
+  for (const label of ['JWT入力', '共有Secret', '公開鍵（SPKI PEM）', 'Header', 'Payload']) {
     await expect(page.getByLabel(label, { exact: true })).toHaveValue('');
   }
+  await expect(page.getByRole('textbox', { name: 'Signature（Base64URL）', exact: true })).toHaveValue('');
   await expect(page.locator('[data-claims]')).toBeEmpty();
   await expect(page.locator('[data-verification]')).toHaveText('未検証');
   await page.reload(); await expect(input).toHaveValue(SAMPLE_JWT);

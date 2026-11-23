@@ -8,14 +8,22 @@ let dispose: (() => void) | undefined;
 afterEach(() => { dispose?.(); document.body.replaceChildren(); vi.unstubAllGlobals(); });
 const field = (id: string) => document.querySelector<HTMLInputElement>(`#jwt-${id}`)!;
 const fill = (id: string, value: string) => { field(id).value = value; field(id).dispatchEvent(new Event('input')); };
-it('2-pane構造でデコードと検証領域を分け、既存の入力関連付けを保つ', () => {
+it('2-paneの後に全幅領域を並べ、Claimのdt/ddと既存の入力関連付けを保つ', () => {
   dispose = mount(document.body);
   const tool = document.querySelector('.jwt-tool')!;
   expect(tool.querySelector('h1')?.getAttribute('tabindex')).toBe('-1');
   const workspace = tool.querySelector('.jwt-workspace')!;
   expect([...workspace.children].map(node => node.className)).toEqual(['jwt-pane jwt-source', 'jwt-pane jwt-decoded']);
+  const signature = tool.querySelector('.jwt-signature')!;
+  const claims = tool.querySelector('.jwt-claims')!;
   expect(tool.querySelector('.jwt-verification')).toBeTruthy();
-  expect(workspace.nextElementSibling).toBe(tool.querySelector('.jwt-verification'));
+  expect(workspace.nextElementSibling).toBe(signature);
+  expect(signature.nextElementSibling).toBe(claims);
+  expect(claims.nextElementSibling).toBe(tool.querySelector('.jwt-verification'));
+  expect(workspace.contains(signature)).toBe(false);
+  const allClaims = [...claims.querySelectorAll('dl > .jwt-claim')];
+  expect(allClaims).toHaveLength(7);
+  for (const item of allClaims) expect([...item.children].map(node => node.tagName)).toEqual(['DT', 'DD']);
   expect(tool.querySelector('#jwt-input')?.getAttribute('aria-describedby')).toBe('jwt-privacy jwt-sample');
   for (const id of ['input', 'header', 'payload', 'signature', 'secret', 'public', 'alg', 'encoding']) {
     expect(tool.querySelector(`#jwt-${id}`)).toBeTruthy();
@@ -101,6 +109,8 @@ it('初期サンプルを解析し、自動検証せず、初期デモSecretだ�
   expect(JSON.parse(field('header').value)).toEqual({ alg: 'HS256', typ: 'JWT' });
   expect(JSON.parse(field('payload').value).name).toBe('サンプルユーザー');
   expect(field('signature').value).toBe(SAMPLE_JWT.split('.')[2]);
+  expect(field('signature').hasAttribute('readonly')).toBe(true);
+  expect(document.querySelector('[data-bytes]')!.textContent).toBe('Signature: 32 バイト');
   expect(document.querySelector('[data-claims]')!.textContent).toContain('UTC');
   expect(document.querySelector('[data-claims]')!.textContent).toContain('JST');
   expect(field('alg').value).toBe('HS256'); expect(field('encoding').value).toBe('utf8');
@@ -108,6 +118,19 @@ it('初期サンプルを解析し、自動検証せず、初期デモSecretだ�
   expect(document.querySelector('[data-verification]')!.textContent).toBe('未検証');
   expect(verifySignature).not.toHaveBeenCalled();
   fill('input', token); expect(field('secret').value).toBe('');
+});
+it('端末時計に従って1秒ごとにNumericDateを再評価する', () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(999_000);
+    dispose = mount(document.body);
+    fill('input', `e30.${btoa('{"exp":1000}').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}.`);
+    expect(document.querySelector('[data-claims]')!.textContent).toContain('期限内');
+    vi.advanceTimersByTime(1000);
+    expect(document.querySelector('[data-claims]')!.textContent).toContain('期限切れ');
+  } finally {
+    dispose?.(); dispose = undefined; vi.useRealTimers(); document.body.replaceChildren();
+  }
 });
 it.each(['my-secret', DEMO_SECRET])('手動編集したSecretは同じデモ文字列でも保持する: %s', value => {
   dispose = mount(document.body); fill('secret', value); fill('input', token);

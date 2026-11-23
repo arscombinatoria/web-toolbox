@@ -32,10 +32,16 @@ export function mount(container: HTMLElement): () => void {
         </div>
         <p>結果は選択して手動でもコピーできます。</p>
         <p role="status" data-copy-status></p>
-        <label for="jwt-signature">Signature（Base64URL）</label><textarea id="jwt-signature" rows="2" readonly></textarea><p data-bytes></p>
-        <h3>Claims・日時評価（署名とは独立）</h3><p>現在の端末時計で評価します。期限内でもJWT全体の有効性・安全性は保証されません。</p><dl data-claims></dl>
       </section>
     </div>
+    <section class="jwt-signature" aria-labelledby="jwt-signature-title">
+      <h2 id="jwt-signature-title"><label for="jwt-signature">Signature（Base64URL）</label></h2>
+      <textarea id="jwt-signature" rows="2" readonly></textarea><p data-bytes></p>
+    </section>
+    <section class="jwt-claims" aria-labelledby="jwt-claims-title">
+      <h2 id="jwt-claims-title">Claims・日時評価（署名とは独立）</h2>
+      <p>現在の端末時計で評価します。期限内でもJWT全体の有効性・安全性は保証されません。</p><dl data-claims></dl>
+    </section>
     <section class="jwt-verification" aria-labelledby="jwt-verification-title">
       <h2 id="jwt-verification-title">署名検証</h2><p data-alg-help></p><p data-warning role="status"></p><label for="jwt-alg">検証アルゴリズム・キー種別</label>
       <select id="jwt-alg"><option>HS256</option><option>RS256</option><option>ES256</option></select>
@@ -118,9 +124,10 @@ export function mount(container: HTMLElement): () => void {
     list.replaceChildren();
     if (!decoded) return;
     for (const claim of analyzeClaims(decoded.payload, Date.now() / 1000, decoded.impreciseClaims)) {
+      const item = document.createElement('div'); item.className = 'jwt-claim';
       const term = document.createElement('dt'); term.textContent = `${claim.name}: ${claim.description}`;
       const detail = document.createElement('dd'); detail.textContent = claim.detail;
-      list.append(term, detail);
+      item.append(term, detail); list.append(item);
     }
   };
   const decode = () => {
