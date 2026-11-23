@@ -52,16 +52,16 @@ export function mount(container: HTMLElement): () => void {
       <div class="image-comparison-area">
         <div class="image-replace"><span>画像をドロップして変更</span><button type="button" class="image-change">画像を変更</button></div>
         <p class="image-info"></p>
-        <div class="image-view-tools" role="group" aria-label="表示倍率">
-          <button type="button" class="image-zoom-out" aria-label="縮小"></button>
-          <button type="button" class="image-zoom-reset" aria-label="表示倍率を100%に戻す（現在 100%）">100%</button>
-          <button type="button" class="image-zoom-in" aria-label="拡大"></button>
-        </div>
         <div class="image-captions">${sideDefinitions.map(({ id }) => `<strong data-side="${id}"></strong>`).join('')}</div>
         <div class="image-stage" tabindex="0" role="group" aria-label="画像プレビュー。ドラッグまたは矢印キーで移動できます">
           <div class="image-layer image-original-layer"><canvas role="img" aria-label="元画像のプレビュー" hidden></canvas></div>
           ${sideDefinitions.map(({ id, label }) => `<div class="image-layer" data-side="${id}"><img data-side="${id}" alt="${label}側のプレビュー" hidden></div>`).join('')}
           <span class="image-divider" role="slider" tabindex="0" aria-label="比較位置" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-valuetext="左側 50%"><span class="image-divider-handle" aria-hidden="true"></span></span>
+        </div>
+        <div class="image-view-tools" role="group" aria-label="表示倍率">
+          <button type="button" class="image-zoom-out" aria-label="縮小"></button>
+          <button type="button" class="image-zoom-reset" aria-label="表示倍率を100%に戻す（現在 100%）">100%</button>
+          <button type="button" class="image-zoom-in" aria-label="拡大"></button>
         </div>
       </div>
       <div class="image-controls">
