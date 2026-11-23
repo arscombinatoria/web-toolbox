@@ -114,7 +114,8 @@ it('初期サンプルを解析し、自動検証せず、初期デモSecretだ�
   expect(document.querySelector('[data-claims]')!.textContent).toContain('UTC');
   expect(document.querySelector('[data-claims]')!.textContent).toContain('JST');
   expect(field('alg').value).toBe('HS256'); expect(field('encoding').value).toBe('utf8');
-  expect(field('secret').value).toBe(DEMO_SECRET); expect(field('secret').type).toBe('password');
+  expect(field('secret').value).toBe(DEMO_SECRET); expect(field('secret').type).toBe('text');
+  expect(document.querySelector('[data-reveal]')).toBeNull();
   expect(document.querySelector('[data-verification]')!.textContent).toBe('未検証');
   expect(verifySignature).not.toHaveBeenCalled();
   fill('input', token); expect(field('secret').value).toBe('');
