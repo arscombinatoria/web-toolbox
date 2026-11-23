@@ -9,7 +9,7 @@
 .image-drop.is-over, .image-drop:focus-visible { background: var(--accent-soft); border-color: var(--accent); }
 .image-samples { margin: 0 0 var(--space-2); }
 .image-samples h2 { margin: 0 0 var(--space-1); font-size: 1rem; }
-.image-sample-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-1); }
+.image-sample-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--space-1); }
 .image-sample {
   display: grid; grid-template-columns: 4rem minmax(0, 1fr); grid-template-rows: auto auto; align-items: center;
   gap: 0 var(--space-1); min-width: 0; padding: var(--space-1); text-align: left;

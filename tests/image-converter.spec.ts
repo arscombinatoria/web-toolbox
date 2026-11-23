@@ -484,6 +484,56 @@ test('画像選択エリアは画面高に追従し、文言を中央に収め�
   }
 });
 
+test('サンプルカードは実幅に応じて列数を調整し、320〜1280pxの両テーマで収まる', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  const expectedColumns = new Map([[320, 2], [768, 2], [900, 2], [1024, 3], [1280, 4]]);
+
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
+    for (const [width, columns] of expectedColumns) {
+      await page.setViewportSize({ width, height: 900 });
+      const layout = await page.locator('.image-samples').evaluate(section => {
+        const list = section.querySelector<HTMLElement>('.image-sample-list')!;
+        const cards = [...list.querySelectorAll<HTMLButtonElement>('.image-sample')];
+        const rect = (element: Element) => {
+          const { left, right, top, bottom } = element.getBoundingClientRect();
+          return { left, right, top, bottom };
+        };
+        const cardRects = cards.map(rect);
+        const contentRects = cards.map(card => [...card.querySelectorAll('img, strong, span')]
+          .filter(child => getComputedStyle(child).display !== 'none')
+          .map(rect));
+        return {
+          columns: new Set(cardRects.map(card => card.left)).size,
+          cardRects,
+          contentRects,
+          titleWidths: cards.map(card => card.querySelector('strong')!.getBoundingClientRect().width),
+          detailsVisible: getComputedStyle(cards[0]!.querySelector('span')!).display !== 'none',
+          viewportWidth: window.innerWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+        };
+      });
+
+      expect(layout.columns, `${width}px ${scheme}`).toBe(columns);
+      expect(layout.scrollWidth, `${width}px ${scheme}`).toBeLessThanOrEqual(layout.viewportWidth);
+      expect(layout.detailsVisible, `${width}px ${scheme}`).toBe(width > 759);
+      expect(Math.min(...layout.titleWidths), `${width}px ${scheme} title width`).toBeGreaterThanOrEqual(width > 759 ? 64 : 32);
+      for (const [index, card] of layout.cardRects.entries()) {
+        for (const child of layout.contentRects[index]!) {
+          expect(child.left, `${width}px ${scheme} card ${index}`).toBeGreaterThanOrEqual(card.left);
+          expect(child.right, `${width}px ${scheme} card ${index}`).toBeLessThanOrEqual(card.right);
+        }
+        for (const other of layout.cardRects.slice(index + 1)) {
+          const overlapsHorizontally = card.left < other.right && card.right > other.left;
+          const overlapsVertically = card.top < other.bottom && card.bottom > other.top;
+          expect(overlapsHorizontally && overlapsVertically, `${width}px ${scheme} cards overlap`).toBe(false);
+        }
+      }
+    }
+  }
+});
+
 test('320pxの両テーマでドロップ後も失敗した置換から復帰できる', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 });
   for (const scheme of ['dark', 'light'] as const) {
@@ -499,7 +549,7 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
       return { x, y };
     }));
     expect(await page.locator('.image-sample-list').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
-    expect(await sampleButtons.nth(0).getAttribute('aria-label')).toContain('1280 × 853 px、JPEG、314.62 KB');
+    expect(await sampleButtons.nth(0).getAttribute('aria-label')).toContain('3840 × 2560 px、JPEG、3.87 MB');
     expect(await sampleButtons.nth(0).locator('span').evaluate(element => getComputedStyle(element).display)).toBe('none');
     expect(sampleBounds[0]!.y).toBe(sampleBounds[1]!.y);
     expect(sampleBounds[2]!.y).toBe(sampleBounds[3]!.y);
