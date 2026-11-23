@@ -15,23 +15,37 @@
 .image-input-status, .image-input-error { margin: var(--space-1) 0; }
 .image-input-status:empty, .image-input-error:empty { margin: 0; }
 .image-info { overflow-wrap: anywhere; }
+.image-view-tools { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-1); margin-block: var(--space-1); }
+.image-view-tools button { display: inline-flex; align-items: center; justify-content: center; min-width: 2.25rem; min-height: 2.25rem; padding: var(--space-1); }
+.image-view-tools .image-zoom-reset { min-width: 4rem; font-variant-numeric: tabular-nums; }
+.image-view-tools button:disabled { opacity: .5; cursor: default; }
+.image-view-tools svg { width: 1rem; height: 1rem; }
 .image-captions { display: flex; justify-content: space-between; gap: var(--space-1); }
 .image-captions strong:last-child { text-align: right; }
 .image-stage {
-  --split: 50%;
+  --split: 50%; --zoom: 1; --pan-x: 0px; --pan-y: 0px;
   position: relative; width: 100%; max-height: 65vh; min-height: 3rem; overflow: hidden;
   border: 1px solid var(--border); border-radius: var(--radius);
   background: repeating-conic-gradient(var(--border) 0 25%, var(--surface) 0 50%) 0 0 / 16px 16px;
+  touch-action: none; cursor: default;
 }
-.image-stage canvas, .image-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.image-stage img[data-side="left"],
-.image-original-left:not(.image-original-right) { clip-path: inset(0 calc(100% - var(--split)) 0 0); }
-.image-stage img[data-side="right"],
-.image-original-right:not(.image-original-left) { clip-path: inset(0 0 0 var(--split)); }
+.image-stage.can-pan { cursor: grab; }
+.image-stage.can-pan:active { cursor: grabbing; }
+.image-stage:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.image-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.image-layer[hidden] { display: none; }
+.image-layer[data-side="left"], .image-original-left:not(.image-original-right) { clip-path: inset(0 calc(100% - var(--split)) 0 0); }
+.image-layer[data-side="right"], .image-original-right:not(.image-original-left) { clip-path: inset(0 0 0 var(--split)); }
+.image-stage canvas, .image-stage img {
+  position: absolute; left: 50%; top: 50%; max-width: none; max-height: none;
+  width: var(--image-width); height: var(--image-height);
+  transform: translate(calc(-50% + var(--pan-x)), calc(-50% + var(--pan-y))) scale(var(--zoom));
+  transform-origin: center;
+}
 .image-divider { position: absolute; inset-block: 0; left: var(--split); width: 2px; transform: translateX(-50%); background: white; box-shadow: 0 0 3px #000; }
-.image-divider::after { content: '↔'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); border-radius: 50%; background: var(--surface); color: var(--accent); padding: .1rem .45rem; border: 1px solid var(--accent); }
-.image-position { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; touch-action: pan-y; }
-.image-stage:has(.image-position:focus-visible) { outline: 3px solid var(--accent); outline-offset: 3px; }
+.image-position-control { padding: 0 var(--space-1); }
+.image-position { display: block; width: 100%; margin: var(--space-1) 0 0; accent-color: var(--accent); cursor: ew-resize; touch-action: pan-y; }
+.image-position:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .image-controls {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: var(--space-2); margin-top: var(--space-2);

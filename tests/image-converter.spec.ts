@@ -153,6 +153,9 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
 
   await formatLeft.selectOption('original');
   await formatRight.selectOption('original');
+  await expect(page.getByRole('img', { name: '元画像のプレビュー' })).toBeVisible();
+  await expect(page.locator('.image-original-layer')).toHaveClass(/image-original-left.*image-original-right|image-original-right.*image-original-left/);
+  await expect(page.locator('.image-stage canvas')).toHaveCount(1);
   await expect(leftPanel.getByRole('status')).toHaveText(/元ファイル比 0%/);
   await expect(rightPanel.getByRole('status')).toHaveText(/元ファイル比 0%/);
   expect(await saveImage(page, saveLeft, image.name)).toEqual(image.buffer);
@@ -163,6 +166,163 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(page.locator('.image-drop')).toBeVisible();
   await expect(saveLeft).toBeHidden();
   await expect(saveRight).toBeHidden();
+});
+
+test('ズーム・パンを画像の固定倍率で行い、比較位置と変換状態を保つ', async ({ page, browserName }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  let workerCount = 0;
+  page.on('worker', () => workerCount++);
+  await page.locator('[type=file]').setInputFiles(await testImage(page, 800, 600));
+  const stage = page.locator('.image-stage');
+  const preview = page.getByAltText('右側のプレビュー');
+  const original = page.getByRole('img', { name: '元画像のプレビュー' });
+  const minus = page.getByRole('button', { name: '縮小' });
+  const plus = page.getByRole('button', { name: '拡大' });
+  const reset = page.getByRole('button', { name: /表示倍率を100%に戻す/ });
+  const split = page.getByRole('slider', { name: '比較位置' });
+  await expect(preview).toBeVisible();
+  await expect(original).toBeVisible();
+  const initialUrl = await preview.getAttribute('src');
+  const initialGeometry = await stage.evaluate(element => {
+    const stageRect = element.getBoundingClientRect();
+    const canvas = element.querySelector('canvas')!.getBoundingClientRect();
+    const image = element.querySelector('img[data-side="right"]')!.getBoundingClientRect();
+    return {
+      canvas: { x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
+      image: { x: image.x, y: image.y, width: image.width, height: image.height },
+      stage: { x: stageRect.x, y: stageRect.y, width: stageRect.width, height: stageRect.height },
+    };
+  });
+  expect(initialGeometry.canvas.width).toBe(800);
+  expect(initialGeometry.canvas.height).toBe(600);
+  expect(initialGeometry.image).toEqual(initialGeometry.canvas);
+  expect(initialGeometry.canvas.x + 400).toBeCloseTo(initialGeometry.stage.x + initialGeometry.stage.width / 2, 0);
+  expect(initialGeometry.canvas.y + 300).toBeCloseTo(initialGeometry.stage.y + initialGeometry.stage.height / 2, 0);
+
+  await split.focus();
+  for (let index = 0; index < 15; index++) await split.press('ArrowRight');
+  await plus.click();
+  await expect(reset).toHaveText('125%');
+  let geometry = await preview.boundingBox();
+  expect(geometry!.width).toBe(1000);
+  expect(geometry!.height).toBeCloseTo(750, 2);
+  const dividerBeforePan = await stage.locator('.image-divider').boundingBox();
+  await plus.click();
+  await plus.click();
+  await expect(reset).toHaveText('175%');
+  await expect(split).toHaveValue('65');
+  await expect(plus).toBeEnabled();
+  await expect(minus).toBeEnabled();
+  const fixedClip = await stage.evaluate(element => {
+    const stageRect = element.getBoundingClientRect();
+    const left = element.querySelector('.image-layer[data-side="left"]')!;
+    const right = element.querySelector('.image-layer[data-side="right"]')!;
+    const leftRect = left.getBoundingClientRect();
+    const rightRect = right.getBoundingClientRect();
+    return {
+      leftClip: getComputedStyle(left).clipPath,
+      rightClip: getComputedStyle(right).clipPath,
+      aligned: leftRect.x === stageRect.x + 1 && rightRect.x === stageRect.x + 1 &&
+        leftRect.width === stageRect.width - 2 && rightRect.width === stageRect.width - 2,
+    };
+  });
+  expect(fixedClip.leftClip).toContain('35%');
+  expect(fixedClip.rightClip).toContain('65%');
+  expect(fixedClip.aligned).toBe(true);
+  const bounds = (await stage.boundingBox())!;
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 - 80, bounds.y + bounds.height / 2 - 50);
+  await page.mouse.up();
+  const moved = await preview.boundingBox();
+  expect(moved!.x).toBeLessThan(initialGeometry.image.x);
+  expect(moved!.y).toBeLessThan(initialGeometry.image.y);
+  const dividerAfterPan = await stage.locator('.image-divider').boundingBox();
+  expect(dividerAfterPan!.x).toBeCloseTo(dividerBeforePan!.x, 0);
+  await expect(preview).toHaveAttribute('src', initialUrl!);
+
+  if (browserName === 'chromium') {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+    const touchBounds = (await stage.boundingBox())!;
+    const x = touchBounds.x + touchBounds.width / 2;
+    const y = touchBounds.y + touchBounds.height / 2;
+    const beforeTouch = await preview.boundingBox();
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - 30, y: y - 25, id: 1 }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const afterTouch = await preview.boundingBox();
+    expect(afterTouch!.x).toBeLessThan(beforeTouch!.x);
+    expect(afterTouch!.y).toBeLessThan(beforeTouch!.y);
+    await session.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await session.detach();
+  }
+
+  const resizeBounds = (await stage.boundingBox())!;
+  await page.mouse.move(resizeBounds.x + resizeBounds.width / 2, resizeBounds.y + resizeBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBounds.x + 1, resizeBounds.y + 1);
+  await page.mouse.up();
+  const viewBeforeResize = await stage.evaluate(element => ({ x: element.style.getPropertyValue('--pan-x'), y: element.style.getPropertyValue('--pan-y') }));
+  expect(Number.parseFloat(viewBeforeResize.x)).toBeLessThan(0);
+  expect(Number.parseFloat(viewBeforeResize.y)).toBeLessThan(0);
+  await page.setViewportSize({ width: 2560, height: 1800 });
+  await expect.poll(() => stage.evaluate(element => ({
+    x: element.style.getPropertyValue('--pan-x'), y: element.style.getPropertyValue('--pan-y'),
+  }))).not.toEqual(viewBeforeResize);
+  const clamped = await stage.evaluate(element => {
+    const width = Number.parseFloat(element.style.getPropertyValue('--image-width'));
+    const height = Number.parseFloat(element.style.getPropertyValue('--image-height'));
+    const zoom = Number.parseFloat(element.style.getPropertyValue('--zoom'));
+    return {
+      x: Number.parseFloat(element.style.getPropertyValue('--pan-x')),
+      y: Number.parseFloat(element.style.getPropertyValue('--pan-y')),
+      maxX: Math.max(0, (width * zoom - element.clientWidth) / 2),
+      maxY: Math.max(0, (height * zoom - element.clientHeight) / 2),
+    };
+  });
+  expect(clamped.x).toBeCloseTo(-clamped.maxX, 0);
+  expect(clamped.y).toBeCloseTo(-clamped.maxY, 0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(preview).toBeVisible();
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 - 60, bounds.y + bounds.height / 2 - 30);
+  await page.mouse.up();
+  const panBeforeSettings = await stage.evaluate(element => ({ x: element.style.getPropertyValue('--pan-x'), y: element.style.getPropertyValue('--pan-y') }));
+  await page.getByLabel('左の形式').selectOption('image/jpeg');
+  const leftQuality = page.getByRole('slider', { name: '左のJPEG品質' });
+  await leftQuality.fill('0.40');
+  await expect(reset).toHaveText('175%');
+  expect(await stage.evaluate(element => ({ x: element.style.getPropertyValue('--pan-x'), y: element.style.getPropertyValue('--pan-y') }))).toEqual(panBeforeSettings);
+  await expect(preview).toHaveAttribute('src', initialUrl!);
+  expect(workerCount).toBe(0);
+
+  await page.locator('[type=file]').setInputFiles({ name: 'broken.png', mimeType: 'image/png',
+    buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) });
+  await expect(page.locator('.image-input-error')).toContainText('読み込めません');
+  await expect(reset).toHaveText('175%');
+  await expect(split).toHaveValue('65');
+  expect(await preview.getAttribute('src')).toBe(initialUrl);
+
+  await page.locator('[type=file]').setInputFiles(await testImage(page, 64, 32));
+  await expect(reset).toHaveText('100%');
+  await expect(split).toHaveValue('50');
+  geometry = await preview.boundingBox();
+  expect(geometry!.width).toBe(64);
+  expect(geometry!.height).toBe(32);
+  expect(await preview.getAttribute('src')).not.toBe(initialUrl);
+  await stage.focus();
+  await stage.press('ArrowRight');
+  await expect(stage).toHaveCSS('--pan-x', '0px');
+  for (let index = 0; index < 3; index++) await minus.click();
+  await expect(reset).toHaveText('25%');
+  await expect(minus).toBeDisabled();
+  for (let index = 0; index < 15; index++) await plus.click();
+  await expect(reset).toHaveText('400%');
+  await expect(plus).toBeDisabled();
 });
 
 test('画像選択エリアは画面高に追従し、文言を中央に収める', async ({ page }) => {

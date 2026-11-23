@@ -82,6 +82,11 @@ function setup(active = bitmap()) {
   return {
     active, createUrl, revokeUrl, download, choose, drop: get<HTMLElement>('.image-drop'),
     comparisonArea: get<HTMLElement>('.image-comparison-area'),
+    stage: get<HTMLElement>('.image-stage'),
+    zoomOut: get<HTMLButtonElement>('.image-zoom-out'),
+    zoomReset: get<HTMLButtonElement>('.image-zoom-reset'),
+    zoomIn: get<HTMLButtonElement>('.image-zoom-in'),
+    position: get<HTMLInputElement>('.image-position'),
     input,
     change: get<HTMLButtonElement>('.image-change'),
     section: get<HTMLElement>('.image-tool section'),
@@ -99,6 +104,57 @@ function setup(active = bitmap()) {
 }
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
+
+it('ズームは25〜400%で刻み、矢印移動を境界に収め、処理状態を変えない', async () => {
+  const { choose, stage, zoomIn, zoomOut, zoomReset, position, createUrl } = setup();
+  const { workers, copy } = mockScoring();
+  const viewport = stage;
+  Object.defineProperties(viewport, {
+    clientWidth: { configurable: true, value: 100 },
+    clientHeight: { configurable: true, value: 100 },
+  });
+  choose();
+  await flush();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(1);
+  expect(copy).toHaveBeenCalledOnce();
+  const encodes = vi.mocked(encode).mock.calls.length;
+  const urls = createUrl.mock.calls.length;
+  expect(document.querySelector('canvas')?.style.width).toBe('');
+  expect(stage.style.getPropertyValue('--image-width')).toBe('64px');
+  expect(zoomReset.textContent).toBe('100%');
+  expect(position.value).toBe('50');
+
+  for (let index = 0; index < 12; index++) zoomIn.click();
+  expect(zoomReset.textContent).toBe('400%');
+  expect(zoomIn.disabled).toBe(true);
+  expect(workers).toHaveLength(1);
+  expect(workers[0]!.terminate).not.toHaveBeenCalled();
+  for (let index = 0; index < 12; index++) {
+    stage.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    stage.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  }
+  expect(stage.style.getPropertyValue('--pan-x')).toBe('78px');
+  expect(stage.style.getPropertyValue('--pan-y')).toBe('14px');
+  zoomReset.click();
+  expect(zoomReset.textContent).toBe('100%');
+  expect(stage.style.getPropertyValue('--pan-x')).toBe('0px');
+  expect(stage.style.getPropertyValue('--pan-y')).toBe('0px');
+  expect(zoomOut.disabled).toBe(false);
+  for (let index = 0; index < 3; index++) zoomOut.click();
+  expect(zoomReset.textContent).toBe('25%');
+  expect(zoomOut.disabled).toBe(true);
+  expect(position.value).toBe('50');
+  expect(vi.mocked(encode).mock.calls).toHaveLength(encodes);
+  expect(createUrl.mock.calls).toHaveLength(urls);
+  workers[0]!.reply({ index: 0, score: 90 });
+  await flush();
+  expect(workers[0]!.terminate).toHaveBeenCalledOnce();
+  zoomIn.click();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(1);
+  expect(copy).toHaveBeenCalledOnce();
+});
 
 it('画像を変更ボタンに装飾アイコンを表示し、ボタン名を維持する', () => {
   const { change } = setup();
@@ -138,7 +194,7 @@ it('SSIMULACRA2の目安表は閉じた状態で表示され、代表値と公�
 });
 
 it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エンコードせず保存できる', async () => {
-  const { choose, active, left, right, getCanvas, createUrl, download } = setup();
+  const { choose, active, left, right, createUrl, download } = setup();
   const file = choose('input.alpha.png');
   await flush();
   expect(left.format.value).toBe('original');
@@ -153,8 +209,8 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   right.select('original');
   expect(left.qualityLabel.hidden).toBe(true);
   expect(right.qualityLabel.hidden).toBe(true);
-  expect(getCanvas().classList.contains('image-original-left')).toBe(true);
-  expect(getCanvas().classList.contains('image-original-right')).toBe(true);
+  expect(document.querySelector('.image-original-layer')?.classList.contains('image-original-left')).toBe(true);
+  expect(document.querySelector('.image-original-layer')?.classList.contains('image-original-right')).toBe(true);
   expect(right.output.textContent).toContain('2 B（元ファイル比 0%）');
   expect(encode).toHaveBeenCalledOnce();
   expect(createUrl).toHaveBeenLastCalledWith(file);
