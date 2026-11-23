@@ -168,6 +168,45 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(saveRight).toBeHidden();
 });
 
+test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を保存する', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  const samples = [
+    { name: 'レッサーパンダ・写真、1280 × 853 px、JPEG、314.62 KB', filename: 'red-panda.jpg', dimensions: '1280 × 853 px' },
+    { name: '輪郭イラスト、1200 × 900 px、PNG、70.22 KB', filename: 'outline.png', dimensions: '1200 × 900 px' },
+    { name: '架空のスマートフォン画面、900 × 1600 px、PNG、80.82 KB', filename: 'mobile-screen.png', dimensions: '900 × 1600 px' },
+    { name: '透明な幾何学、1200 × 900 px、PNG、542.94 KB', filename: 'geometry.png', dimensions: '1200 × 900 px' },
+  ];
+  const thumbs = page.locator('.image-sample img');
+  await expect(thumbs).toHaveCount(4);
+  await expect(thumbs.nth(0)).toHaveAttribute('src', /\/web-toolbox\/samples\/red-panda-thumb\.jpg$/);
+  for (const [index, sample] of samples.entries()) {
+    const sampleButton = page.getByRole('button', { name: sample.name, exact: true });
+    if (index === 0) {
+      await sampleButton.focus();
+      await sampleButton.press('Enter');
+    } else {
+      await sampleButton.click();
+    }
+    await expect(page.locator('.image-info')).toContainText(`${sample.filename} · ${sample.dimensions}`);
+    const saved = await saveImage(page, page.getByRole('button', { name: '左をダウンロード' }), sample.filename);
+    expect(saved).toEqual(await readFile(`public/samples/${sample.filename}`));
+  }
+
+  await page.getByRole('button', { name: /輪郭イラスト/ }).click();
+  await expect(page.locator('.image-info')).toContainText('outline.png · 1200 × 900 px');
+  const leftSave = page.getByRole('button', { name: '左をダウンロード' });
+  const rightSave = page.getByRole('button', { name: '右をダウンロード' });
+  const rightFormat = page.getByLabel('右の形式');
+  await rightFormat.selectOption('image/jpeg');
+  const jpeg = await saveImage(page, rightSave, 'outline-right-q0.75.jpg');
+  expect([...jpeg.subarray(0, 3)]).toEqual([255, 216, 255]);
+  await rightFormat.selectOption('image/png');
+  const png = await saveImage(page, rightSave, 'outline-right.png');
+  expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  await expect(leftSave).toBeEnabled();
+});
+
 test('ズーム・パンを画像の固定倍率で行い、比較位置と変換状態を保つ', async ({ page, browserName }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('./?tool=image-converter');
@@ -362,6 +401,7 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
     await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
     const initial = page.locator('.image-drop');
     const initialBounds = (await initial.boundingBox())!;
+    const samplesBefore = (await page.locator('.image-samples').boundingBox())!;
     expect(initialBounds.height).toBe(216);
     await initial.evaluate(async button => {
       const canvas = document.createElement('canvas');
@@ -375,15 +415,18 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
     await expect(saveLeft).toBeEnabled();
     await expect(saveRight).toBeEnabled();
     await expect(initial).toBeHidden();
+    const samplesAfter = (await page.locator('.image-samples').boundingBox())!;
     const comparisonBounds = (await page.locator('.image-comparison-area').boundingBox())!;
-    expect(comparisonBounds.y).toBeCloseTo(initialBounds.y, 0);
+    expect(samplesAfter.y).toBeCloseTo(initialBounds.y, 0);
+    expect(samplesAfter.height).toBeCloseTo(samplesBefore.height, 0);
+    expect(comparisonBounds.y).toBeCloseTo(samplesAfter.y + samplesAfter.height, 0);
     expect(comparisonBounds.width).toBeCloseTo(initialBounds.width, 0);
     await page.locator('[type=file]').setInputFiles({ name: 'broken.png', mimeType: 'image/png',
       buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) });
     const inputError = page.locator('.image-input-error');
     await expect(inputError).toHaveAttribute('role', 'alert');
     await expect(inputError).toContainText('読み込めません');
-    await expect(page.locator('.image-tool section')).toBeVisible();
+    await expect(page.locator('.image-tool > section[aria-label="画像の比較と変換設定"]')).toBeVisible();
     await expect(saveLeft).toBeEnabled();
     await expect(page.locator('.image-info')).toContainText('drop.webp');
     const left = (await page.getByRole('group', { name: '左の設定' }).boundingBox())!;

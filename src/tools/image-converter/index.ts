@@ -13,8 +13,15 @@ const sideDefinitions = [
 const initialQuality = 0.75;
 const autoEvaluationDelay = 800;
 const evaluationWaiting = '画質評価を待機しています…';
+const sampleImages = [
+  { id: 'red-panda', label: 'レッサーパンダ・写真', dimensions: '1280 × 853 px', filename: 'red-panda.jpg', type: 'image/jpeg', size: '314.62 KB' },
+  { id: 'outline', label: '輪郭イラスト', dimensions: '1200 × 900 px', filename: 'outline.png', type: 'image/png', size: '70.22 KB' },
+  { id: 'mobile-screen', label: '架空のスマートフォン画面', dimensions: '900 × 1600 px', filename: 'mobile-screen.png', type: 'image/png', size: '80.82 KB' },
+  { id: 'geometry', label: '透明な幾何学', dimensions: '1200 × 900 px', filename: 'geometry.png', type: 'image/png', size: '542.94 KB' },
+] as const;
 
 type EvaluationMode = 'auto' | 'manual';
+type Selection = { generation: number; controller: AbortController; changedAt: number };
 
 type SideResult =
   | { status: 'idle' | 'failed' }
@@ -37,6 +44,10 @@ export function mount(container: HTMLElement): () => void {
       <p id="image-evaluation-cost" class="image-note">大きい画像の評価には数秒かかり、多くのメモリを使います。</p>
     </div>
     <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
+    <section class="image-samples" aria-label="サンプル画像">
+      <h2>サンプルで試す</h2>
+      <div class="image-sample-list"></div>
+    </section>
     <section hidden aria-label="画像の比較と変換設定">
       <div class="image-comparison-area">
         <div class="image-replace"><span>画像をドロップして変更</span><button type="button" class="image-change">画像を変更</button></div>
@@ -113,7 +124,7 @@ export function mount(container: HTMLElement): () => void {
   const drop = get<HTMLButtonElement>('.image-drop');
   const change = get<HTMLButtonElement>('.image-change');
   change.prepend(createIcon(ImagePlus));
-  const section = get<HTMLElement>('section');
+  const section = get<HTMLElement>('.image-tool > section[aria-label="画像の比較と変換設定"]');
   const info = get('.image-info');
   const stage = get<HTMLElement>('.image-stage');
   let original = get<HTMLCanvasElement>('canvas');
@@ -131,6 +142,25 @@ export function mount(container: HTMLElement): () => void {
   let pointer: { id: number; x: number; y: number } | undefined;
   const inputStatus = get('.image-input-status');
   const inputError = get('.image-input-error');
+  const sampleList = get('.image-sample-list');
+  for (const sample of sampleImages) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'image-sample';
+    button.dataset.sample = sample.id;
+    button.setAttribute('aria-label', `${sample.label}、${sample.dimensions}、${sample.type === 'image/jpeg' ? 'JPEG' : 'PNG'}、${sample.size}`);
+    const thumbnail = document.createElement('img');
+    thumbnail.src = `${import.meta.env.BASE_URL}samples/${sample.id}-thumb.${sample.id === 'red-panda' ? 'jpg' : 'png'}`;
+    thumbnail.alt = '';
+    thumbnail.loading = 'lazy';
+    thumbnail.decoding = 'async';
+    const title = document.createElement('strong');
+    title.textContent = sample.label;
+    const detail = document.createElement('span');
+    detail.textContent = `${sample.dimensions} · ${sample.type === 'image/jpeg' ? 'JPEG' : 'PNG'} · ${sample.size}`;
+    button.append(thumbnail, title, detail);
+    sampleList.append(button);
+  }
   const autoEvaluation = get<HTMLInputElement>('.image-evaluation-toggle input');
   const evaluate = get<HTMLButtonElement>('.image-evaluate');
   evaluate.prepend(createIcon(ScanEye));
@@ -141,7 +171,8 @@ export function mount(container: HTMLElement): () => void {
   const listeners = new AbortController();
   const options = { signal: listeners.signal };
   let inputGeneration = 0;
-  let reading: AbortController | undefined;
+  let selectionGeneration = 0;
+  let reading: Selection | undefined;
   let source: { file: File; bitmap: ImageBitmap } | undefined;
   let evaluation: { controller: AbortController; mode: EvaluationMode } | undefined;
   let requestedEvaluation: { mode: EvaluationMode; readyAt: number } | undefined;
@@ -444,29 +475,48 @@ export function mount(container: HTMLElement): () => void {
     if (source && autoEvaluation.checked) requestEvaluation('auto', changedAt);
   }
 
-  async function selectFiles(files: FileList | null) {
-    if (!files?.length) return;
+  function beginSelection(): Selection {
+    reading?.controller.abort();
+    const selection = { generation: ++selectionGeneration, controller: new AbortController(), changedAt: performance.now() };
+    reading = selection;
+    inputError.textContent = '';
+    inputStatus.textContent = '画像を読み込んでいます…';
+    return selection;
+  }
+
+  function selectionIsCurrent(selection: Selection): boolean {
+    return reading === selection && selection.generation === selectionGeneration;
+  }
+
+  async function selectFiles(files: readonly File[] | null, selection: Selection = beginSelection()) {
+    if (!selectionIsCurrent(selection)) return;
+    if (!files?.length) {
+      reading = undefined;
+      inputStatus.textContent = '';
+      return;
+    }
     inputError.textContent = '';
     if (files.length !== 1) {
+      reading = undefined;
+      inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, '画像は1枚ずつ選択してください。');
       return;
     }
     const file = files[0]!;
     if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      reading = undefined;
+      inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, 'JPEG・PNG・WebPの画像を選択してください。');
       return;
     }
-    const changedAt = performance.now();
-    const controller = new AbortController();
-    reading?.abort();
-    reading = controller;
-    inputStatus.textContent = '画像を読み込んでいます…';
+    const changedAt = selection.changedAt;
+    const { controller } = selection;
 
     let bitmap: ImageBitmap | undefined;
     let preview: HTMLCanvasElement | undefined;
     try {
       bitmap = await decode(file, controller.signal);
-      if (reading !== controller) {
+      if (!selectionIsCurrent(selection)) {
         bitmap.close();
         return;
       }
@@ -481,13 +531,18 @@ export function mount(container: HTMLElement): () => void {
     } catch (cause) {
       bitmap?.close();
       if (preview) preview.width = preview.height = 0;
-      if (reading !== controller) return;
+      if (!selectionIsCurrent(selection)) return;
       reading = undefined;
       inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '画像を読み込めませんでした。');
       return;
     }
 
+    if (!selectionIsCurrent(selection)) {
+      bitmap.close();
+      if (preview) preview.width = preview.height = 0;
+      return;
+    }
     reading = undefined;
     ++inputGeneration;
     clearSource();
@@ -511,6 +566,26 @@ export function mount(container: HTMLElement): () => void {
     if (moveFocus) change.focus({ preventScroll: true });
     for (const side of sides) convertSide(side);
     if (autoEvaluation.checked) requestEvaluation('auto', changedAt);
+  }
+
+  async function loadSample(sampleId: string) {
+    const sample = sampleImages.find(candidate => candidate.id === sampleId);
+    if (!sample) return;
+    const selection = beginSelection();
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}samples/${sample.filename}`, { signal: selection.controller.signal });
+      if (!selectionIsCurrent(selection)) return;
+      if (!response.ok) throw new Error(`サンプル画像を取得できませんでした（${response.status}）。`);
+      const blob = await response.blob();
+      if (!selectionIsCurrent(selection)) return;
+      const file = new File([blob], sample.filename, { type: sample.type });
+      await selectFiles([file], selection);
+    } catch (cause) {
+      if (!selectionIsCurrent(selection)) return;
+      reading = undefined;
+      inputStatus.textContent = '';
+      setIconMessage(inputError, CircleAlert, cause instanceof Error && !(cause instanceof DOMException) ? cause.message : 'サンプル画像を読み込めませんでした。');
+    }
   }
 
   function hasFiles(event: DragEvent) {
@@ -546,7 +621,7 @@ export function mount(container: HTMLElement): () => void {
       if (!hasFiles(event) && !event.dataTransfer?.files.length) return;
       event.preventDefault();
       reset();
-      void selectFiles(event.dataTransfer?.files ?? null);
+      void selectFiles(event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : null);
     }, options);
     return reset;
   }
@@ -555,7 +630,11 @@ export function mount(container: HTMLElement): () => void {
   addDropHandlers(get<HTMLElement>('.image-comparison-area'));
   drop.addEventListener('click', () => input.click(), options);
   change.addEventListener('click', () => input.click(), options);
-  input.addEventListener('change', () => { void selectFiles(input.files); input.value = ''; }, options);
+  input.addEventListener('change', () => { void selectFiles(input.files ? Array.from(input.files) : null); input.value = ''; }, options);
+  sampleList.addEventListener('click', event => {
+    const button = (event.target as Element).closest<HTMLButtonElement>('.image-sample');
+    if (button) void loadSample(button.dataset.sample ?? '');
+  }, options);
   position.addEventListener('input', updatePosition, options);
   zoomOut.addEventListener('click', () => setZoom(zoom - 0.25), options);
   zoomIn.addEventListener('click', () => setZoom(zoom + 0.25), options);
@@ -634,7 +713,7 @@ export function mount(container: HTMLElement): () => void {
     resizeObserver?.disconnect();
     if (pointer && stage.hasPointerCapture(pointer.id)) stage.releasePointerCapture(pointer.id);
     pointer = undefined;
-    reading?.abort();
+    reading?.controller.abort();
     reading = undefined;
     ++inputGeneration;
     clearSource();
