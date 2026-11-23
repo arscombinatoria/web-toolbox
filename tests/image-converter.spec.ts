@@ -173,7 +173,7 @@ test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を
   await page.goto('./?tool=image-converter');
   await page.getByLabel('画質の自動評価').uncheck();
   const samples = [
-    { name: 'レッサーパンダ・写真、1280 × 853 px、JPEG、314.62 KB', filename: 'red-panda.jpg', dimensions: '1280 × 853 px' },
+    { name: 'レッサーパンダ・写真、3840 × 2560 px、JPEG、3.87 MB', filename: 'red-panda.jpg', dimensions: '3840 × 2560 px' },
     { name: '輪郭イラスト、1200 × 900 px、PNG、70.22 KB', filename: 'outline.png', dimensions: '1200 × 900 px' },
     { name: '架空のスマートフォン画面、900 × 1600 px、PNG、80.82 KB', filename: 'mobile-screen.png', dimensions: '900 × 1600 px' },
     { name: '透明な幾何学、1200 × 900 px、PNG、542.94 KB', filename: 'geometry.png', dimensions: '1200 × 900 px' },
@@ -192,6 +192,16 @@ test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を
     await expect(page.locator('.image-info')).toContainText(`${sample.filename} · ${sample.dimensions}`);
     const saved = await saveImage(page, page.getByRole('button', { name: '左をダウンロード' }), sample.filename);
     expect(saved).toEqual(await readFile(`public/samples/${sample.filename}`));
+    if (index === 0) {
+      const converted = await saveImage(page, page.getByRole('button', { name: '右をダウンロード' }), 'red-panda-right-q0.75.jpg');
+      const dimensions = await page.evaluate(async base64 => {
+        const image = new Image();
+        image.src = `data:image/jpeg;base64,${base64}`;
+        await image.decode();
+        return [image.naturalWidth, image.naturalHeight];
+      }, converted.toString('base64'));
+      expect(dimensions).toEqual([3840, 2560]);
+    }
   }
 
   await page.getByRole('button', { name: /輪郭イラスト/ }).click();
@@ -800,9 +810,9 @@ test('評価の画素数を超えてもJPEGの変換と保存が使える', asyn
   await page.goto('./?tool=image-converter');
   const workers: string[] = [];
   page.on('worker', worker => workers.push(worker.url()));
-  const image = await testImage(page, 1985, 2113);
+  const image = await testImage(page, 3200, 3200);
   await page.locator('[type=file]').setInputFiles({ ...image, name: 'large.png' });
-  await expect(page.locator('.image-evaluation-limit')).toContainText('4,194,304画素');
+  await expect(page.locator('.image-evaluation-limit')).toContainText('10,000,000画素');
   await expect(page.getByRole('button', { name: '画質を評価' })).toBeDisabled();
   const jpeg = await saveImage(page, page.getByRole('button', { name: '右をダウンロード' }), 'large-right-q0.75.jpg');
   expect([...jpeg.subarray(0, 3)]).toEqual([255, 216, 255]);

@@ -259,7 +259,7 @@ it('4つのサンプルは種類・寸法・サイズを読み上げ、選択時
   const buttons = [...document.querySelectorAll<HTMLButtonElement>('.image-sample')];
   expect(buttons).toHaveLength(4);
   expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
-    'レッサーパンダ・写真、1280 × 853 px、JPEG、314.62 KB',
+    'レッサーパンダ・写真、3840 × 2560 px、JPEG、3.87 MB',
     '輪郭イラスト、1200 × 900 px、PNG、70.22 KB',
     '架空のスマートフォン画面、900 × 1600 px、PNG、80.82 KB',
     '透明な幾何学、1200 × 900 px、PNG、542.94 KB',
@@ -715,7 +715,7 @@ it('片側のJPEG変換が失敗しても、出力済みの反対側を採点で
   expect(workers[0]!.postMessage.mock.calls[0]![0].jpegs).toEqual([jpeg]);
 });
 
-it.each([[7, 8, '各辺8 px'], [2048, 2049, '4,194,304画素']])(
+it.each([[7, 8, '各辺8 px'], [2500, 4001, '10,000,000画素']])(
   '採点の寸法制限 %i×%i でも通常変換と保存が使える', async (width, height, reason) => {
     const { choose, evaluate, limit, right, download } = setup(bitmap(width, height));
     const { copy, workers } = mockScoring();
