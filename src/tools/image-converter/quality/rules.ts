@@ -1,6 +1,6 @@
 import type { EncoderId } from '../encoder';
 
-export const MAX_EVALUATION_PIXELS = 4_194_304;
+export const MAX_EVALUATION_PIXELS = 10_000_000;
 export const MIN_EVALUATION_SIDE = 8;
 
 export function evaluationLimit(width: number, height: number): string | undefined {
