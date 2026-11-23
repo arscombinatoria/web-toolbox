@@ -26,7 +26,7 @@ jobs:
       - run: npm run test:badge
       - run: npm run build
       - run: npx playwright install --with-deps --only-shell chromium firefox
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- --workers=3
       - name: Generate coverage badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: node scripts/generate-coverage-badge.mjs
