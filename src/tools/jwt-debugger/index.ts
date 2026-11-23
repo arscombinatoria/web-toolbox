@@ -15,25 +15,37 @@ export function mount(container: HTMLElement): () => void {
     <h1 tabindex="-1"></h1><p class="tool-description"></p>
     <p id="jwt-privacy">入力内容はブラウザ内で処理し、外部送信・保存しません。デコード成功は署名の正当性を意味しません。</p>
     <p>3セグメントのCompact JWS専用です。JWE（5セグメント）は非対応です。各入力の上限は256KiBです。</p>
-    <label for="jwt-input">JWT入力</label><textarea id="jwt-input" rows="5" spellcheck="false" autocomplete="off" aria-describedby="jwt-privacy jwt-sample"></textarea>
-    <p id="jwt-sample">初回表示には署名検証を試せるサンプルJWTとデモ用Secretを設定しています。デモ用Secretは公開された学習用キーであり、実際の認証システムでは使用できません。</p>
-    <button type="button" data-clear>入力をクリア</button><p role="alert" data-error></p>
-    <div class="jwt-editors">
-      <div><label for="jwt-header">Header</label><textarea id="jwt-header" rows="10" readonly spellcheck="false"></textarea><button type="button" data-copy="header">Headerをコピー</button></div>
-      <div><label for="jwt-payload">Payload</label><textarea id="jwt-payload" rows="10" readonly spellcheck="false"></textarea><button type="button" data-copy="payload">Payloadをコピー</button></div>
+    <div class="jwt-workspace">
+      <section class="jwt-pane jwt-source" aria-labelledby="jwt-source-title">
+        <h2 id="jwt-source-title">Encoded JWT</h2>
+        <label for="jwt-input">JWT入力</label><textarea id="jwt-input" rows="5" spellcheck="false" autocomplete="off" aria-describedby="jwt-privacy jwt-sample"></textarea>
+        <button type="button" data-clear>入力をクリア</button>
+        <p id="jwt-sample">初回表示には署名検証を試せるサンプルJWTとデモ用Secretを設定しています。デモ用Secretは公開された学習用キーであり、実際の認証システムでは使用できません。</p>
+        <p role="alert" data-error></p>
+      </section>
+      <section class="jwt-pane jwt-decoded" aria-labelledby="jwt-decoded-title">
+        <h2 id="jwt-decoded-title">Decoded</h2>
+        <p data-meta></p>
+        <div class="jwt-editors">
+          <div><label for="jwt-header">Header</label><textarea id="jwt-header" rows="10" readonly spellcheck="false"></textarea><button type="button" data-copy="header">Headerをコピー</button></div>
+          <div><label for="jwt-payload">Payload</label><textarea id="jwt-payload" rows="10" readonly spellcheck="false"></textarea><button type="button" data-copy="payload">Payloadをコピー</button></div>
+        </div>
+        <p>結果は選択して手動でもコピーできます。</p>
+        <p role="status" data-copy-status></p>
+        <label for="jwt-signature">Signature（Base64URL）</label><textarea id="jwt-signature" rows="2" readonly></textarea><p data-bytes></p>
+        <h3>Claims・日時評価（署名とは独立）</h3><p>現在の端末時計で評価します。期限内でもJWT全体の有効性・安全性は保証されません。</p><dl data-claims></dl>
+      </section>
     </div>
-    <p>結果は選択して手動でもコピーできます。</p><p data-meta></p>
-    <label for="jwt-signature">Signature（Base64URL）</label><textarea id="jwt-signature" rows="2" readonly></textarea><p data-bytes></p>
-    <h2>Claims・日時評価（署名とは独立）</h2><p>現在の端末時計で評価します。期限内でもJWT全体の有効性・安全性は保証されません。</p><dl data-claims></dl>
-    <h2>署名検証</h2><p data-alg-help></p><p data-warning role="status"></p><label for="jwt-alg">検証アルゴリズム・キー種別</label>
-    <select id="jwt-alg"><option>HS256</option><option>RS256</option><option>ES256</option></select>
-    <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="password" autocomplete="off" spellcheck="false">
-    <button type="button" data-reveal aria-pressed="false">Secretを表示</button>
-    <label for="jwt-encoding">Secret形式</label><select id="jwt-encoding"><option value="utf8">UTF-8</option><option value="base64">Base64をデコード</option></select></div>
-    <div data-public-fields hidden><label for="jwt-public">公開鍵（SPKI PEM）</label><textarea id="jwt-public" rows="6" autocomplete="off" spellcheck="false"></textarea></div>
-    <button type="button" data-verify>検証</button><p role="status" data-verification>未検証</p>
-    <p>署名一致は、指定キーに対する署名のみの確認です。発行者・Audience・有効期間などを含むJWT全体の信頼性は保証しません。alg: noneはデコードのみ。jku・x5u・kidからの取得、JWKS取得は行いません。</p>
-    <p role="status" data-copy-status></p>`;
+    <section class="jwt-verification" aria-labelledby="jwt-verification-title">
+      <h2 id="jwt-verification-title">署名検証</h2><p data-alg-help></p><p data-warning role="status"></p><label for="jwt-alg">検証アルゴリズム・キー種別</label>
+      <select id="jwt-alg"><option>HS256</option><option>RS256</option><option>ES256</option></select>
+      <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="password" autocomplete="off" spellcheck="false">
+        <button type="button" data-reveal aria-pressed="false">Secretを表示</button>
+        <label for="jwt-encoding">Secret形式</label><select id="jwt-encoding"><option value="utf8">UTF-8</option><option value="base64">Base64をデコード</option></select></div>
+      <div data-public-fields hidden><label for="jwt-public">公開鍵（SPKI PEM）</label><textarea id="jwt-public" rows="6" autocomplete="off" spellcheck="false"></textarea></div>
+      <div class="jwt-verification-result"><button type="button" data-verify>検証</button><p role="status" data-verification>未検証</p></div>
+      <p>署名一致は、指定キーに対する署名のみの確認です。発行者・Audience・有効期間などを含むJWT全体の信頼性は保証しません。alg: noneはデコードのみ。jku・x5u・kidからの取得、JWKS取得は行いません。</p>
+    </section>`;
   const query = <T extends HTMLElement>(selector: string) => view.querySelector<T>(selector)!;
   const tool = findTool('jwt-debugger')!;
   query('h1').textContent = tool.name;

@@ -45,11 +45,34 @@ test('JWTの実検証・コピー・クリア・履歴・非通信・非保存',
   await page.goBack(); await expect(page.getByLabel('JWT入力', { exact: true })).toHaveValue(SAMPLE_JWT);
   await expect(page.getByLabel('共有Secret', { exact: true })).toHaveValue(DEMO_SECRET);
 });
-for (const theme of ['light', 'dark']) for (const width of [1280, 320]) {
+for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1], [768, 1], [1280, 2], [1920, 2]] as const) {
   test(`JWT ${theme} ${width}px・キーボード`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('./?tool=jwt-debugger');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+    const workspace = page.locator('.jwt-workspace');
+    const sourcePane = page.locator('.jwt-source');
+    const decodedPane = page.locator('.jwt-decoded');
+    await expect(page.locator('.jwt-tool > h1')).toHaveAttribute('tabindex', '-1');
+    await expect(sourcePane.getByRole('heading', { name: 'Encoded JWT' })).toBeVisible();
+    await expect(decodedPane.getByRole('heading', { name: 'Decoded' })).toBeVisible();
+    await expect(page.locator('.jwt-verification')).toBeVisible();
+    const panes = await Promise.all([sourcePane.boundingBox(), decodedPane.boundingBox()]);
+    const containerWidth = await workspace.evaluate(element => element.clientWidth);
+    expect(containerWidth >= 832 ? 2 : 1).toBe(columns);
+    if (columns === 2) {
+      expect(panes[0]!.x).toBeLessThan(panes[1]!.x);
+      expect(Math.abs(panes[0]!.y - panes[1]!.y)).toBeLessThanOrEqual(1);
+      expect(panes[0]!.x + panes[0]!.width).toBeLessThanOrEqual(panes[1]!.x);
+      const sourceInput = await page.locator('#jwt-input').boundingBox();
+      expect(sourceInput!.height).toBeGreaterThanOrEqual(224);
+      expect(sourceInput!.height).toBeLessThanOrEqual(288);
+    } else {
+      expect(panes[1]!.y).toBeGreaterThan(panes[0]!.y);
+      expect(panes[0]!.y + panes[0]!.height).toBeLessThanOrEqual(panes[1]!.y);
+    }
+    const verificationBox = await page.locator('.jwt-verification').boundingBox();
+    expect(verificationBox!.y).toBeGreaterThanOrEqual(Math.max(panes[0]!.y + panes[0]!.height, panes[1]!.y + panes[1]!.height));
     await page.getByLabel('JWT入力', { exact: true }).fill('eyJhbGciOiJub25lIn0.eyJzdWIiOiI8c2NyaXB0PiJ9.');
     for (const id of ['input', 'header', 'payload']) {
       const field = page.locator(`#jwt-${id}`);
@@ -59,14 +82,46 @@ for (const theme of ['light', 'dark']) for (const width of [1280, 320]) {
     expect(await page.getByLabel('Payload', { exact: true }).inputValue()).toContain('<script>');
     const header = await page.getByLabel('Header', { exact: true }).boundingBox();
     const payload = await page.getByLabel('Payload', { exact: true }).boundingBox();
-    if (width === 1280) expect(header!.y).toBe(payload!.y);
-    else expect(payload!.y).toBeGreaterThan(header!.y);
+    expect(payload!.y).toBeGreaterThan(header!.y);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const button = page.getByRole('button', { name: '検証', exact: true });
     await button.focus(); await expect(button).toHaveCSS('outline-style', 'solid');
     await page.keyboard.press('Enter'); await expect(page.locator('[data-verification]')).toContainText('検証不可');
   });
 }
+
+test('JWTレイアウトは同じ画面内の幅変更にも追従する', async ({ page }) => {
+  await page.goto('./?tool=jwt-debugger');
+  const workspace = page.locator('.jwt-workspace');
+  const source = page.locator('.jwt-source');
+  const decoded = page.locator('.jwt-decoded');
+  const assertLayout = async (width: number, columns: number) => {
+    await page.setViewportSize({ width, height: 900 });
+    const measure = async () => {
+      const [sourceBox, decodedBox] = await Promise.all([source.boundingBox(), decoded.boundingBox()]);
+      const containerWidth = await workspace.evaluate(element => element.clientWidth);
+      const actualColumns = containerWidth >= 832 ? 2 : 1;
+      return { actualColumns, sourceBox, decodedBox };
+    };
+    await expect.poll(async () => (await measure()).actualColumns).toBe(columns);
+    const { sourceBox, decodedBox } = await measure();
+    if (columns === 2) {
+      expect(decodedBox!.x).toBeGreaterThan(sourceBox!.x);
+      expect(sourceBox!.x + sourceBox!.width).toBeLessThanOrEqual(decodedBox!.x);
+      expect(Math.abs(sourceBox!.y - decodedBox!.y)).toBeLessThanOrEqual(1);
+    } else {
+      expect(decodedBox!.y).toBeGreaterThan(sourceBox!.y);
+      expect(sourceBox!.y + sourceBox!.height).toBeLessThanOrEqual(decodedBox!.y);
+    }
+    const verification = await page.locator('.jwt-verification').boundingBox();
+    expect(verification!.y).toBeGreaterThanOrEqual(Math.max(sourceBox!.y + sourceBox!.height, decodedBox!.y + decodedBox!.height));
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  };
+  await assertLayout(320, 1);
+  await assertLayout(1920, 2);
+  await assertLayout(768, 1);
+  await assertLayout(1280, 2);
+});
 
 test('元のJSONの大きな整数と小数を表示・コピーする', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -192,11 +247,15 @@ for (const theme of ['light', 'dark']) {
 }
 
 test('長いJWTの折り返し・スクロール・リサイズ・256KiBと描画上限', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 900 });
   await page.goto('./?tool=jwt-debugger');
   const input = page.locator('#jwt-input');
   const segment = Buffer.from('{"s":"' + 'a'.repeat(30000) + '"}').toString('base64url');
   await input.fill(`e30.${segment}.`);
+  for (const width of [320, 768, 1280, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 320, height: 900 });
   const dimensions = async () => input.evaluate(field => {
     const layer = field.parentElement!.querySelector('pre')!;
     return { width: field.clientWidth, scrollWidth: field.scrollWidth, height: field.clientHeight, scrollHeight: field.scrollHeight,
