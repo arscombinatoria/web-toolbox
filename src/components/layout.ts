@@ -21,7 +21,6 @@ export function createLayout(root: HTMLElement) {
     <div class="layout">
       <div class="sidebar-slot"></div>
       <main id="main-content" tabindex="-1">
-        <div class="content-heading"><span class="eyebrow">日々の作業を、少し手軽に。</span></div>
         <section class="tool-content" aria-label="メイン画面"></section>
         <p class="footer-note">Web Toolbox · ブラウザで使える小さな便利ツール集</p>
       </main>
@@ -47,7 +46,11 @@ export function createLayout(root: HTMLElement) {
       const link = document.createElement('a');
       link.href = toolUrl(tool.id).href;
       link.dataset.toolId = tool.id;
-      link.append(createIcon(tool.icon), tool.name);
+      if (tool.sidebarName) link.setAttribute('aria-label', `${tool.sidebarName}（${tool.name}）`);
+      const label = document.createElement('span');
+      label.className = 'sidebar-label';
+      label.textContent = tool.sidebarName ?? tool.name;
+      link.append(createIcon(tool.icon), label);
       item.append(link);
       list.append(item);
     }
@@ -101,7 +104,6 @@ export function createLayout(root: HTMLElement) {
     themeSelect: root.querySelector<HTMLSelectElement>('.theme-control select')!,
     select(id: string | null) {
       brand.href = homeUrl().href;
-      root.querySelector<HTMLElement>('.content-heading')!.hidden = id === null;
       for (const link of nav.querySelectorAll<HTMLAnchorElement>('a')) {
         if (link.hasAttribute('data-home') ? id === null : link.dataset.toolId === id) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');

@@ -24,7 +24,10 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
     await expect(heading).toHaveText(name);
     await expect(heading).toBeFocused();
     await expect(page).toHaveTitle(`${name} | Web Toolbox`);
-    const selected = page.getByRole('navigation').getByRole('link', { name, exact: true });
+    const navigationName = name === 'JavaScript正規表現ビジュアライザー'
+      ? `正規表現の可視化（${name}）`
+      : name;
+    const selected = page.getByRole('navigation').getByRole('link', { name: navigationName, exact: true });
     await expect(selected).toHaveAttribute('aria-current', 'page');
     await expect(selected.locator('svg')).toBeVisible();
     await expect(home).not.toHaveAttribute('aria-current');
@@ -117,7 +120,7 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'ホーム', exact: true })).toBeFocused();
   await expect(dialog.locator('nav a > svg')).toHaveCount(9);
-  await expect(dialog.getByRole('link', { name: 'JavaScript正規表現ビジュアライザー', exact: true }).locator('svg')).toBeVisible();
+  await expect(dialog.getByRole('link', { name: '正規表現の可視化（JavaScript正規表現ビジュアライザー）', exact: true }).locator('svg')).toBeVisible();
   // 最後のリンクからTabを押すとダイアログ内に戻る。
   await dialog.getByRole('link', { name: '画像変換', exact: true }).focus();
   await page.keyboard.press('Tab');
