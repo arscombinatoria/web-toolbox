@@ -86,7 +86,7 @@ function setup(active = bitmap()) {
     zoomOut: get<HTMLButtonElement>('.image-zoom-out'),
     zoomReset: get<HTMLButtonElement>('.image-zoom-reset'),
     zoomIn: get<HTMLButtonElement>('.image-zoom-in'),
-    position: get<HTMLInputElement>('.image-position'),
+    divider: get<HTMLElement>('.image-divider'),
     input,
     change: get<HTMLButtonElement>('.image-change'),
     section: get<HTMLElement>('.image-tool > section[aria-label="画像の比較と変換設定"]'),
@@ -105,8 +105,90 @@ function setup(active = bitmap()) {
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
+function pointerEvent(type: string, pointerId: number, clientX = 0) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    pointerId: { value: pointerId }, isPrimary: { value: true }, button: { value: 0 }, clientX: { value: clientX },
+  });
+  return event;
+}
+
+it('比較バーのARIA sliderは境界・Shift移動を反映し、パンと変換処理に干渉しない', async () => {
+  const { choose, stage, divider, zoomIn } = setup();
+  choose();
+  await flush();
+  const encodes = vi.mocked(encode).mock.calls.length;
+  expect(divider.getAttribute('role')).toBe('slider');
+  expect(divider.getAttribute('aria-valuemin')).toBe('0');
+  expect(divider.getAttribute('aria-valuemax')).toBe('100');
+  Object.defineProperties(stage, {
+    clientWidth: { configurable: true, value: 100 },
+    clientHeight: { configurable: true, value: 100 },
+  });
+  for (let index = 0; index < 12; index++) zoomIn.click();
+  divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+  expect(divider.getAttribute('aria-valuenow')).toBe('51');
+  expect(stage.style.getPropertyValue('--pan-x')).toBe('0px');
+  expect(divider.getAttribute('aria-valuetext')).toBe('左側 51%');
+  divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', shiftKey: true, bubbles: true, cancelable: true }));
+  expect(divider.getAttribute('aria-valuenow')).toBe('41');
+  divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
+  expect(divider.getAttribute('aria-valuenow')).toBe('0');
+  divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+  expect(divider.getAttribute('aria-valuenow')).toBe('0');
+  divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }));
+  expect(divider.getAttribute('aria-valuenow')).toBe('100');
+  expect(stage.style.getPropertyValue('--split')).toBe('100%');
+  expect(vi.mocked(encode).mock.calls).toHaveLength(encodes);
+});
+
+it('比較バーはPointer Captureでドラッグし、cancel・画像変更・破棄時に後始末する', async () => {
+  const { choose, divider, stage, unmount } = setup();
+  const captures = new Set<number>();
+  const release = vi.fn((id: number) => captures.delete(id));
+  Object.defineProperties(divider, {
+    setPointerCapture: { configurable: true, value: vi.fn((id: number) => captures.add(id)) },
+    hasPointerCapture: { configurable: true, value: (id: number) => captures.has(id) },
+    releasePointerCapture: { configurable: true, value: release },
+    getBoundingClientRect: { configurable: true, value: () => ({ left: 10, width: 100, top: 0, height: 100, right: 110, bottom: 100, x: 10, y: 0, toJSON() {} }) },
+  });
+  Object.defineProperty(stage, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => ({ left: 10, width: 100, top: 0, height: 100, right: 110, bottom: 100, x: 10, y: 0, toJSON() {} }),
+  });
+  choose();
+  await flush();
+  expect(divider.dispatchEvent(pointerEvent('pointerdown', 1, 60))).toBe(false);
+  expect(divider.classList.contains('is-dragging')).toBe(true);
+  expect(divider.getAttribute('aria-valuenow')).toBe('50');
+  divider.dispatchEvent(pointerEvent('pointermove', 1, 85));
+  expect(divider.getAttribute('aria-valuenow')).toBe('75');
+  divider.dispatchEvent(pointerEvent('pointermove', 1, 150));
+  expect(divider.getAttribute('aria-valuenow')).toBe('100');
+  divider.dispatchEvent(pointerEvent('pointercancel', 1));
+  expect(divider.classList.contains('is-dragging')).toBe(false);
+  expect(release).toHaveBeenCalledWith(1);
+
+  divider.dispatchEvent(pointerEvent('pointerdown', 4, 40));
+  captures.delete(4);
+  divider.dispatchEvent(pointerEvent('lostpointercapture', 4));
+  expect(divider.classList.contains('is-dragging')).toBe(false);
+
+  divider.dispatchEvent(pointerEvent('pointerdown', 2, 40));
+  choose('replacement.png');
+  await flush();
+  expect(divider.getAttribute('aria-valuenow')).toBe('50');
+  expect(divider.classList.contains('is-dragging')).toBe(false);
+  expect(release).toHaveBeenCalledWith(2);
+
+  divider.dispatchEvent(pointerEvent('pointerdown', 3, 40));
+  unmount();
+  expect(divider.classList.contains('is-dragging')).toBe(false);
+  expect(release).toHaveBeenCalledWith(3);
+});
+
 it('ズームは25〜400%で刻み、矢印移動を境界に収め、処理状態を変えない', async () => {
-  const { choose, stage, zoomIn, zoomOut, zoomReset, position, createUrl } = setup();
+  const { choose, stage, zoomIn, zoomOut, zoomReset, divider, createUrl } = setup();
   const { workers, copy } = mockScoring();
   const viewport = stage;
   Object.defineProperties(viewport, {
@@ -123,7 +205,7 @@ it('ズームは25〜400%で刻み、矢印移動を境界に収め、処理状�
   expect(document.querySelector('canvas')?.style.width).toBe('');
   expect(stage.style.getPropertyValue('--image-width')).toBe('64px');
   expect(zoomReset.textContent).toBe('100%');
-  expect(position.value).toBe('50');
+  expect(divider.getAttribute('aria-valuenow')).toBe('50');
 
   for (let index = 0; index < 12; index++) zoomIn.click();
   expect(zoomReset.textContent).toBe('400%');
@@ -144,7 +226,7 @@ it('ズームは25〜400%で刻み、矢印移動を境界に収め、処理状�
   for (let index = 0; index < 3; index++) zoomOut.click();
   expect(zoomReset.textContent).toBe('25%');
   expect(zoomOut.disabled).toBe(true);
-  expect(position.value).toBe('50');
+  expect(divider.getAttribute('aria-valuenow')).toBe('50');
   expect(vi.mocked(encode).mock.calls).toHaveLength(encodes);
   expect(createUrl.mock.calls).toHaveLength(urls);
   workers[0]!.reply({ index: 0, score: 90 });
