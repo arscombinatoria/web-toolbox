@@ -98,6 +98,7 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(split).toHaveAttribute('aria-valuenow', '51');
   await expect(split).toHaveAttribute('aria-valuetext', '左側 51%');
   await expect(page.locator('.image-position-control')).toHaveCount(0);
+  await page.locator('.image-stage').scrollIntoViewIfNeeded();
   const bounds = (await split.boundingBox())!;
   const stageBounds = (await page.locator('.image-stage').boundingBox())!;
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
@@ -172,6 +173,15 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
 test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を保存する', async ({ page }) => {
   await page.goto('./?tool=image-converter');
   await page.getByLabel('画質の自動評価').uncheck();
+  const sampleSection = page.locator('.image-samples');
+  await sampleSection.evaluate(element => {
+    (window as Window & { sampleNodesBefore?: Element[] }).sampleNodesBefore = [...element.querySelectorAll('.image-sample')];
+  });
+  await expect(sampleSection).toHaveCount(1);
+  await expect(sampleSection).toBeVisible();
+  expect(await page.locator('.image-sample-list').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(4);
+  await expect(page.locator('.image-drop')).toHaveCount(1);
+  expect(await sampleSection.evaluate(element => element.compareDocumentPosition(document.querySelector('.image-drop')!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
   const samples = [
     { name: 'レッサーパンダ・写真、1280 × 853 px、JPEG、314.62 KB', filename: 'red-panda.jpg', dimensions: '1280 × 853 px' },
     { name: '輪郭イラスト、1200 × 900 px、PNG、70.22 KB', filename: 'outline.png', dimensions: '1200 × 900 px' },
@@ -190,6 +200,14 @@ test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を
       await sampleButton.click();
     }
     await expect(page.locator('.image-info')).toContainText(`${sample.filename} · ${sample.dimensions}`);
+    if (index === 0) {
+      await expect(sampleButton).toBeFocused();
+      const previewBounds = (await page.locator('.image-stage').boundingBox())!;
+      const viewportHeight = await page.evaluate(() => window.innerHeight);
+      expect(previewBounds.y).toBeGreaterThanOrEqual(0);
+      expect(previewBounds.y + previewBounds.height).toBeLessThanOrEqual(viewportHeight);
+    }
+    expect(await sampleSection.evaluate(element => [...element.querySelectorAll('.image-sample')].every((button, position) => button === (window as typeof window & { sampleNodesBefore?: Element[] }).sampleNodesBefore?.[position]))).toBe(true);
     const saved = await saveImage(page, page.getByRole('button', { name: '左をダウンロード' }), sample.filename);
     expect(saved).toEqual(await readFile(`public/samples/${sample.filename}`));
   }
@@ -465,6 +483,18 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
     const initial = page.locator('.image-drop');
     const initialBounds = (await initial.boundingBox())!;
     const samplesBefore = (await page.locator('.image-samples').boundingBox())!;
+    const sampleButtons = page.locator('.image-sample');
+    const sampleBounds = await sampleButtons.evaluateAll(buttons => buttons.map(button => {
+      const { x, y } = button.getBoundingClientRect();
+      return { x, y };
+    }));
+    expect(await page.locator('.image-sample-list').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
+    expect(await sampleButtons.nth(0).getAttribute('aria-label')).toContain('1280 × 853 px、JPEG、314.62 KB');
+    expect(await sampleButtons.nth(0).locator('span').evaluate(element => getComputedStyle(element).display)).toBe('none');
+    expect(sampleBounds[0]!.y).toBe(sampleBounds[1]!.y);
+    expect(sampleBounds[2]!.y).toBe(sampleBounds[3]!.y);
+    expect(sampleBounds[0]!.y).toBeLessThan(sampleBounds[2]!.y);
+    expect(samplesBefore.y + samplesBefore.height).toBeLessThan(initialBounds.y);
     expect(initialBounds.height).toBe(216);
     await initial.evaluate(async button => {
       const canvas = document.createElement('canvas');
@@ -480,9 +510,9 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
     await expect(initial).toBeHidden();
     const samplesAfter = (await page.locator('.image-samples').boundingBox())!;
     const comparisonBounds = (await page.locator('.image-comparison-area').boundingBox())!;
-    expect(samplesAfter.y).toBeCloseTo(initialBounds.y, 0);
+    expect(samplesAfter.y).toBeCloseTo(samplesBefore.y, 0);
     expect(samplesAfter.height).toBeCloseTo(samplesBefore.height, 0);
-    expect(comparisonBounds.y).toBeCloseTo(samplesAfter.y + samplesAfter.height, 0);
+    expect(comparisonBounds.y).toBeGreaterThanOrEqual(samplesAfter.y + samplesAfter.height);
     expect(comparisonBounds.width).toBeCloseTo(initialBounds.width, 0);
     await page.locator('[type=file]').setInputFiles({ name: 'broken.png', mimeType: 'image/png',
       buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) });
