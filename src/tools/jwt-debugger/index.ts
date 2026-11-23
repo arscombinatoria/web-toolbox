@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Copy, Trash2 } from 'lucide';
+import { Check, CircleAlert, Copy, ShieldCheck, Trash2 } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { analyzeClaims, decodeJwt, MAX_BYTES } from './logic';
@@ -69,6 +69,7 @@ export function mount(container: HTMLElement): () => void {
   const copies = [...view.querySelectorAll<HTMLButtonElement>('[data-copy]')];
   query('[data-clear]').prepend(createIcon(Trash2));
   for (const copy of copies) copy.prepend(createIcon(Copy));
+  verify.prepend(createIcon(ShieldCheck));
   for (const field of [input, secret, publicKey]) field.maxLength = MAX_BYTES;
   const listeners = new AbortController();
   const options = { signal: listeners.signal };

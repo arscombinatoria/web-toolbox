@@ -8,6 +8,16 @@ let dispose: (() => void) | undefined;
 afterEach(() => { dispose?.(); document.body.replaceChildren(); vi.unstubAllGlobals(); });
 const field = (id: string) => document.querySelector<HTMLInputElement>(`#jwt-${id}`)!;
 const fill = (id: string, value: string) => { field(id).value = value; field(id).dispatchEvent(new Event('input')); };
+it('検証ボタンに隠しSVGアイコンを表示し、ボタン名を維持する', () => {
+  dispose = mount(document.body);
+  const button = document.querySelector<HTMLButtonElement>('[data-verify]')!;
+  const icon = button.querySelector('svg.icon')!;
+  expect(icon.getAttribute('width')).toBe('16');
+  expect(icon.getAttribute('height')).toBe('16');
+  expect(icon.getAttribute('aria-hidden')).toBe('true');
+  expect(button.textContent?.trim()).toBe('検証');
+  expect(button.hasAttribute('aria-label')).toBe(false);
+});
 it('2-paneの後に全幅領域を並べ、Claimのdt/ddと既存の入力関連付けを保つ', () => {
   dispose = mount(document.body);
   const tool = document.querySelector('.jwt-tool')!;
