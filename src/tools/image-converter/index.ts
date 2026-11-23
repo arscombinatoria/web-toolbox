@@ -35,19 +35,19 @@ export function mount(container: HTMLElement): () => void {
     <h1 tabindex="-1"></h1>
     <p class="tool-description"></p>
     <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp" hidden>
-    <p class="image-input-status" role="status" aria-atomic="true"></p>
-    <p class="image-input-error" role="alert"></p>
     <div class="image-evaluation-options">
       <label class="image-evaluation-toggle">
         <input type="checkbox" aria-describedby="image-evaluation-cost" checked>画質の自動評価
       </label>
       <p id="image-evaluation-cost" class="image-note">大きい画像の評価には数秒かかり、多くのメモリを使います。</p>
     </div>
-    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
     <section class="image-samples" aria-label="サンプル画像">
       <h2>サンプルで試す</h2>
       <div class="image-sample-list"></div>
     </section>
+    <p class="image-input-status" role="status" aria-atomic="true"></p>
+    <p class="image-input-error" role="alert"></p>
+    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
     <section hidden aria-label="画像の比較と変換設定">
       <div class="image-comparison-area">
         <div class="image-replace"><span>画像をドロップして変更</span><button type="button" class="image-change">画像を変更</button></div>
@@ -502,26 +502,26 @@ export function mount(container: HTMLElement): () => void {
     return reading === selection && selection.generation === selectionGeneration;
   }
 
-  async function selectFiles(files: readonly File[] | null, selection: Selection = beginSelection()) {
-    if (!selectionIsCurrent(selection)) return;
+  async function selectFiles(files: readonly File[] | null, selection: Selection = beginSelection()): Promise<boolean> {
+    if (!selectionIsCurrent(selection)) return false;
     if (!files?.length) {
       reading = undefined;
       inputStatus.textContent = '';
-      return;
+      return false;
     }
     inputError.textContent = '';
     if (files.length !== 1) {
       reading = undefined;
       inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, '画像は1枚ずつ選択してください。');
-      return;
+      return false;
     }
     const file = files[0]!;
     if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       reading = undefined;
       inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, 'JPEG・PNG・WebPの画像を選択してください。');
-      return;
+      return false;
     }
     const changedAt = selection.changedAt;
     const { controller } = selection;
@@ -532,7 +532,7 @@ export function mount(container: HTMLElement): () => void {
       bitmap = await decode(file, controller.signal);
       if (!selectionIsCurrent(selection)) {
         bitmap.close();
-        return;
+        return false;
       }
       // 描画できることを確認してから、表示中のCanvasと処理を切り替える。
       preview = original.cloneNode(false) as HTMLCanvasElement;
@@ -545,17 +545,17 @@ export function mount(container: HTMLElement): () => void {
     } catch (cause) {
       bitmap?.close();
       if (preview) preview.width = preview.height = 0;
-      if (!selectionIsCurrent(selection)) return;
+      if (!selectionIsCurrent(selection)) return false;
       reading = undefined;
       inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '画像を読み込めませんでした。');
-      return;
+      return false;
     }
 
     if (!selectionIsCurrent(selection)) {
       bitmap.close();
       if (preview) preview.width = preview.height = 0;
-      return;
+      return false;
     }
     reading = undefined;
     ++inputGeneration;
@@ -581,6 +581,7 @@ export function mount(container: HTMLElement): () => void {
     if (moveFocus) change.focus({ preventScroll: true });
     for (const side of sides) convertSide(side);
     if (autoEvaluation.checked) requestEvaluation('auto', changedAt);
+    return true;
   }
 
   async function loadSample(sampleId: string) {
@@ -594,7 +595,12 @@ export function mount(container: HTMLElement): () => void {
       const blob = await response.blob();
       if (!selectionIsCurrent(selection)) return;
       const file = new File([blob], sample.filename, { type: sample.type });
-      await selectFiles([file], selection);
+      if (await selectFiles([file], selection)) {
+        const bounds = stage.getBoundingClientRect();
+        if (bounds.top < 0 || bounds.bottom > window.innerHeight) {
+          stage.scrollIntoView({ block: bounds.top < 0 ? 'start' : 'end', inline: 'nearest' });
+        }
+      }
     } catch (cause) {
       if (!selectionIsCurrent(selection)) return;
       reading = undefined;
