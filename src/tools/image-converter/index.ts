@@ -14,7 +14,7 @@ const initialQuality = 0.75;
 const autoEvaluationDelay = 800;
 const evaluationWaiting = '画質評価を待機しています…';
 const sampleImages = [
-  { id: 'red-panda', label: 'レッサーパンダ・写真', dimensions: '1280 × 853 px', filename: 'red-panda.jpg', type: 'image/jpeg', size: '314.62 KB' },
+  { id: 'red-panda', label: 'レッサーパンダ・写真', dimensions: '3840 × 2560 px', filename: 'red-panda.jpg', type: 'image/jpeg', size: '3.87 MB' },
   { id: 'outline', label: '輪郭イラスト', dimensions: '1200 × 900 px', filename: 'outline.png', type: 'image/png', size: '70.22 KB' },
   { id: 'mobile-screen', label: '架空のスマートフォン画面', dimensions: '900 × 1600 px', filename: 'mobile-screen.png', type: 'image/png', size: '80.82 KB' },
   { id: 'geometry', label: '透明な幾何学', dimensions: '1200 × 900 px', filename: 'geometry.png', type: 'image/png', size: '542.94 KB' },

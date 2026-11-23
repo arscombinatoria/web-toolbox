@@ -1,9 +1,13 @@
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { chromium } from '@playwright/test';
+
+const photoUrl = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e6/Red_Panda_-_52301663056.jpg/3840px-Red_Panda_-_52301663056.jpg?download';
+const photoSha256 = '149f3498bd8c74f1a109a1e98d55618943afa684057a56ce94cc7c80c4936b4b';
 
 async function generate() {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -17,17 +21,17 @@ const browser = await chromium.launch({
 try {
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1 });
 
-async function renderImageData({ mime, data, width, height, quality }) {
+async function renderImageData({ mime, data, width, height }) {
   await page.setContent(`<img id="source" src="data:${mime};base64,${data}"><canvas id="output"></canvas>`);
-  await page.evaluate(async ({ width, height, quality }) => {
+  await page.evaluate(async ({ width, height }) => {
     const image = document.querySelector('#source');
     await image.decode();
     const canvas = document.querySelector('#output');
     canvas.width = width;
     canvas.height = height;
     canvas.getContext('2d').drawImage(image, 0, 0, width, height);
-    window.result = canvas.toDataURL(quality ? 'image/jpeg' : 'image/png', quality ?? undefined);
-  }, { width, height, quality });
+    window.result = canvas.toDataURL('image/png');
+  }, { width, height });
   return page.evaluate(() => window.result.split(',')[1]);
 }
 
@@ -43,16 +47,36 @@ async function rasterizeSvg(name, width, height) {
 
 const temporarySourceDir = await mkdtemp(resolve(tmpdir(), 'web-toolbox-samples-'));
 const photoSource = resolve(temporarySourceDir, 'red-panda.jpg');
-let photoData;
+let photoBytes;
 try {
-  execFileSync('curl', ['--fail', '--location', '--silent', '--show-error', 'https://commons.wikimedia.org/wiki/Special:Redirect/file/Red_Panda_-_52301663056.jpg', '--output', photoSource]);
-  photoData = (await readFile(photoSource)).toString('base64');
+  const metadata = execFileSync('curl', ['--fail', '--location', '--silent', '--show-error', '--write-out', '%{http_code}\n%{content_type}', photoUrl, '--output', photoSource], { encoding: 'utf8' });
+  const [status, contentType] = metadata.trimEnd().split('\n');
+  if (status !== '200') throw new Error(`Wikimedia JPEG取得失敗: HTTP ${status ?? '不明'} (${photoUrl})`);
+  if (contentType?.split(';', 1)[0]?.trim().toLowerCase() !== 'image/jpeg') {
+    throw new Error(`Wikimedia JPEG取得失敗: Content-Typeがimage/jpegではありません (${contentType || 'なし'})`);
+  }
+  photoBytes = await readFile(photoSource);
+} catch (error) {
+  throw new Error(`Wikimedia JPEGを取得できませんでした (${photoUrl})。ネットワーク接続と配布元の応答を確認してください。原因: ${error.message}`, { cause: error });
 } finally {
   await rm(temporarySourceDir, { recursive: true, force: true });
 }
-await writeDataUrl(resolve(outputDir, 'red-panda.jpg'), await renderImageData({
-  mime: 'image/jpeg', data: photoData, width: 1280, height: 853, quality: 0.84,
-}));
+const photoData = photoBytes.toString('base64');
+const photoDimensions = await page.evaluate(async data => {
+  const image = new Image();
+  image.src = `data:image/jpeg;base64,${data}`;
+  await image.decode();
+  return { width: image.naturalWidth, height: image.naturalHeight };
+}, photoData);
+if (photoDimensions.width !== 3840 || photoDimensions.height !== 2560) {
+  throw new Error(`Wikimedia JPEG寸法不一致: expected 3840×2560, received ${photoDimensions.width}×${photoDimensions.height}。URLの派生サイズまたは画像差し替えを確認してください。`);
+}
+const actualPhotoSha256 = createHash('sha256').update(photoBytes).digest('hex');
+if (actualPhotoSha256 !== photoSha256) {
+  throw new Error(`Wikimedia JPEGのSHA-256不一致: expected ${photoSha256}, received ${actualPhotoSha256} (${photoBytes.length} bytes)。配布元の画像更新または応答内容の変更を確認してください。`);
+}
+console.log(`red-panda.jpg source: ${photoDimensions.width}x${photoDimensions.height}, ${photoBytes.length} bytes, SHA-256 ${actualPhotoSha256}`);
+await writeFile(resolve(outputDir, 'red-panda.jpg'), photoBytes);
 await rasterizeSvg('outline', 1200, 900);
 
 const htmlPath = resolve(sourceDir, 'mobile-screen.html');
@@ -66,7 +90,7 @@ await page.screenshot({ path: resolve(outputDir, 'mobile-screen.png'), fullPage:
 await rasterizeSvg('geometry', 1200, 900);
 
 for (const [id, filename, width, height] of [
-  ['red-panda', 'red-panda.jpg', 1280, 853],
+  ['red-panda', 'red-panda.jpg', 3840, 2560],
   ['outline', 'outline.png', 1200, 900],
   ['mobile-screen', 'mobile-screen.png', 900, 1600],
   ['geometry', 'geometry.png', 1200, 900],
