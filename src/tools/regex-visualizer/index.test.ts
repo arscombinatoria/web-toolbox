@@ -33,6 +33,41 @@ function setup() {
 }
 afterEach(() => { document.body.replaceChildren(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
+it('入力・オプション・図の順に並び、図の読み方は閉じた状態から操作できる', () => {
+  const ui = setup();
+  const tool = document.querySelector<HTMLElement>('.regex-tool')!;
+  const order = [...tool.children].map(node => node.className || node.tagName.toLowerCase());
+  expect(order.slice(0, 5)).toEqual(['h1', 'tool-description', 'regex-input-section', 'regex-options', 'regex-diagram-section']);
+  const inputSection = tool.querySelector('.regex-input-section')!;
+  const inputOrder = [...inputSection.children].map(node => node.id || node.tagName.toLowerCase());
+  expect(inputOrder).toEqual(['label', 'regex-help', 'regex-pattern', 'button', 'regex-error']);
+  const input = inputSection.querySelector<HTMLTextAreaElement>('#regex-pattern')!;
+  expect(input.rows).toBe(3); expect(input.getAttribute('spellcheck')).toBe('false'); expect(input.getAttribute('aria-describedby')).toBe('regex-help regex-error');
+  expect(inputSection.querySelector('[role="alert"]')).not.toBeNull();
+  expect(inputSection.querySelector<HTMLElement>('#regex-error')!.style.display).toBe('');
+  const flags = [...tool.querySelectorAll<HTMLInputElement>('.regex-flags input')];
+  expect(flags.map(flag => flag.value)).toEqual(['d', 'g', 'i', 'm', 's', 'u', 'v', 'y']);
+  expect(flags.every(flag => flag.type === 'checkbox' && flag.getAttribute('aria-label')?.startsWith(`${flag.value}：`))).toBe(true);
+  expect(tool.querySelector('.regex-options legend')?.textContent).toBe('フラグ');
+  expect(tool.querySelector('.regex-options p')?.textContent).toContain('u と v は同時指定できません');
+  const diagram = tool.querySelector('.regex-diagram-section')!;
+  expect(diagram.querySelector('.regex-diagram-heading h2')?.textContent).toBe('Railroad Diagram');
+  expect(diagram.querySelectorAll('.regex-diagram-actions button')).toHaveLength(2);
+  expect(diagram.querySelector('[role="status"]')).not.toBeNull();
+  expect(diagram.querySelector('aside.regex-warnings[aria-label="意味上の注意"][hidden]')).not.toBeNull();
+  expect(diagram.querySelector('#regex-legend')?.textContent).toContain('破線は0文字');
+  expect(diagram.querySelector('.regex-canvas')?.getAttribute('aria-describedby')).toBe('regex-legend');
+  const guide = diagram.querySelector<HTMLDetailsElement>('details.regex-reading-guide')!;
+  expect(guide.open).toBe(false);
+  guide.open = true;
+  expect(guide.open).toBe(true);
+  expect(guide.textContent).toContain('合計回数');
+  expect(guide.textContent).toContain('集合の内部は原文表記です');
+  expect(tool.querySelector(':scope > p:not(.tool-description)')?.textContent).toContain('送信・保存しません');
+  expect(tool.querySelector(':scope > details summary')?.textContent).toBe('対応範囲と制約');
+  ui.dispose();
+});
+
 it('デバウンス・trimなし・u/v排他・全フラグと空文字をWorkerへ渡す', () => {
   const ui = setup(); ui.fill(' a '); ui.fill(' b ');
   expect(FakeWorker.instances).toHaveLength(0); ui.tick();
