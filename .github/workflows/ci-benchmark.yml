@@ -20,6 +20,22 @@ jobs:
           cache: npm
       - run: npm ci
 
+  npm-cache-prime-container:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'perf/ci-benchmark')
+    runs-on: ubuntu-latest
+    container: &playwright-container
+      image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:766137e2d9caad4744187e53cdc89320ba6f2eb57cff097374020944b44dd0a9
+      options: --user 1001
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.1
+          cache: npm
+      - run: npm ci
+
   benchmark:
     name: ${{ matrix.case }} / run ${{ matrix.repetition }}
     needs: npm-cache-prime
@@ -111,11 +127,12 @@ jobs:
           BENCHMARK_VITEST_POOL: ${{ matrix.pool }}
           BENCHMARK_NPM_CACHE: ${{ matrix.cache }}
           BENCHMARK_NPM_CACHE_HIT: ${{ steps.node.outputs.cache-hit }}
+          BENCHMARK_TARGET_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ci-benchmark.mjs
 
   benchmark-playwright-container:
     name: playwright-container-w3 / run ${{ matrix.repetition }}
-    needs: npm-cache-prime
+    needs: npm-cache-prime-container
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.head_ref, 'perf/ci-benchmark')
@@ -124,8 +141,7 @@ jobs:
       matrix:
         repetition: [1, 2, 3]
     runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:766137e2d9caad4744187e53cdc89320ba6f2eb57cff097374020944b44dd0a9
+    container: *playwright-container
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -144,4 +160,6 @@ jobs:
           BENCHMARK_NPM_CACHE: 'true'
           BENCHMARK_NPM_CACHE_HIT: ${{ steps.node.outputs.cache-hit }}
           BENCHMARK_BROWSER_MODE: preinstalled
+          BENCHMARK_CONTAINER_IMAGE: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:766137e2d9caad4744187e53cdc89320ba6f2eb57cff097374020944b44dd0a9
+          BENCHMARK_TARGET_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ci-benchmark.mjs

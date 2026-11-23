@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { availableParallelism, cpus } from 'node:os';
+import { relative } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { spawn } from 'node:child_process';
@@ -83,7 +85,7 @@ function coverageTotals() {
   const files = Object.entries(report)
     .filter(([key]) => key !== 'total')
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([path, values]) => [path, Object.fromEntries(Object.entries(values).map(([key, value]) => [
+    .map(([path, values]) => [relative(process.cwd(), path), Object.fromEntries(Object.entries(values).map(([key, value]) => [
       key,
       { total: value.total, covered: value.covered, pct: value.pct },
     ]))]);
@@ -95,6 +97,7 @@ const metadata = {
   runId: process.env.GITHUB_RUN_ID ?? null,
   repository: process.env.GITHUB_REPOSITORY ?? null,
   sha: process.env.GITHUB_SHA ?? null,
+  headSha: process.env.BENCHMARK_TARGET_SHA ?? null,
   condition: process.env.BENCHMARK_CASE ?? 'local',
   repetition: Number(process.env.BENCHMARK_REPETITION ?? 0) || null,
   node: process.version,
@@ -102,6 +105,9 @@ const metadata = {
   playwrightVersion: JSON.parse(readFileSync('package-lock.json', 'utf8')).packages['node_modules/@playwright/test'].version,
   runnerOs: process.env.ImageOS ?? null,
   runnerImageVersion: process.env.ImageVersion ?? null,
+  cpuModel: cpus()[0]?.model ?? null,
+  cpuCount: availableParallelism(),
+  containerImage: process.env.BENCHMARK_CONTAINER_IMAGE ?? null,
   workers,
   vitestPool: pool,
   isolation: true,
