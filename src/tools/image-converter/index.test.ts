@@ -89,7 +89,7 @@ function setup(active = bitmap()) {
     position: get<HTMLInputElement>('.image-position'),
     input,
     change: get<HTMLButtonElement>('.image-change'),
-    section: get<HTMLElement>('.image-tool section'),
+    section: get<HTMLElement>('.image-tool > section[aria-label="画像の比較と変換設定"]'),
     inputError: get('.image-input-error'),
     left: side('left'), right: side('right'),
     info: get('.image-info'),
@@ -168,6 +168,98 @@ it('画質を評価ボタンに装飾アイコンを表示し、ボタン名を�
   expect(evaluate.querySelector('svg.icon')).not.toBeNull();
   expect(evaluate.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   expect(evaluate.textContent).toBe('画質を評価');
+});
+
+it('4つのサンプルは種類・寸法・サイズを読み上げ、選択時にだけ本体を取得する', async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(['sample'], { type: 'image/png' })));
+  vi.stubGlobal('fetch', fetchMock);
+  const { inputError } = setup();
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('.image-sample')];
+  expect(buttons).toHaveLength(4);
+  expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
+    'レッサーパンダ・写真、1280 × 853 px、JPEG、314.62 KB',
+    '輪郭イラスト、1200 × 900 px、PNG、70.22 KB',
+    '架空のスマートフォン画面、900 × 1600 px、PNG、80.82 KB',
+    '透明な幾何学、1200 × 900 px、PNG、542.94 KB',
+  ]);
+  expect(buttons.every(button => button.querySelector('img')?.loading === 'lazy')).toBe(true);
+  expect(fetchMock).not.toHaveBeenCalled();
+  buttons[1]!.click();
+  await flush();
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(fetchMock.mock.calls[0]![0]).toBe('/samples/outline.png');
+  expect(inputError.textContent).toBe('');
+  expect(decode).toHaveBeenCalledOnce();
+});
+
+it('後から始めたサンプル取得が先行する遅い取得より優先される', async () => {
+  const first = deferred<Response>();
+  const second = deferred<Response>();
+  const fetchMock = vi.fn<typeof fetch>()
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  vi.stubGlobal('fetch', fetchMock);
+  const { info } = setup();
+  document.querySelector<HTMLButtonElement>('[data-sample="outline"]')!.click();
+  document.querySelector<HTMLButtonElement>('[data-sample="geometry"]')!.click();
+  second.resolve(new Response(new Blob(['second'], { type: 'image/png' })));
+  await flush();
+  first.resolve(new Response(new Blob(['first'], { type: 'image/png' })));
+  await flush();
+  expect(decode).toHaveBeenCalledOnce();
+  expect(vi.mocked(decode).mock.calls[0]![0].name).toBe('geometry.png');
+  expect(info.textContent).toContain('geometry.png');
+});
+
+it('通常ファイル選択は未完了のサンプル取得を中止し、遅れて届いた応答に上書きされない', async () => {
+  const pending = deferred<Response>();
+  const fetchMock = vi.fn<typeof fetch>().mockReturnValue(pending.promise);
+  vi.stubGlobal('fetch', fetchMock);
+  const { choose, info } = setup();
+  document.querySelector<HTMLButtonElement>('[data-sample="outline"]')!.click();
+  const signal = fetchMock.mock.calls[0]![1]?.signal;
+  choose('user-file.png');
+  expect(signal?.aborted).toBe(true);
+  await flush();
+  pending.resolve(new Response(new Blob(['stale'], { type: 'image/png' })));
+  await flush();
+  expect(decode).toHaveBeenCalledOnce();
+  expect(vi.mocked(decode).mock.calls[0]![0].name).toBe('user-file.png');
+  expect(info.textContent).toContain('user-file.png');
+});
+
+it('サンプル取得中にツールを離れると中止し、遅い応答から画面やデコードを更新しない', async () => {
+  const pending = deferred<Response>();
+  const fetchMock = vi.fn<typeof fetch>().mockReturnValue(pending.promise);
+  vi.stubGlobal('fetch', fetchMock);
+  const { inputError, unmount } = setup();
+  const detachedAlert = inputError;
+  document.querySelector<HTMLButtonElement>('[data-sample="geometry"]')!.click();
+  const signal = fetchMock.mock.calls[0]![1]?.signal;
+  unmount();
+  expect(signal?.aborted).toBe(true);
+  pending.resolve(new Response(new Blob(['stale'], { type: 'image/png' })));
+  await flush();
+  expect(decode).not.toHaveBeenCalled();
+  expect(detachedAlert.textContent).toBe('');
+  expect(document.body.childElementCount).toBe(0);
+});
+
+it('サンプル取得失敗時も現在のプレビューとダウンロード結果を保つ', async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 }));
+  vi.stubGlobal('fetch', fetchMock);
+  const { choose, info, left, right } = setup();
+  choose('kept.png');
+  await flush();
+  const canvas = document.querySelector('canvas');
+  const sourceInfo = info.textContent;
+  document.querySelector<HTMLButtonElement>('[data-sample="outline"]')!.click();
+  await flush();
+  expect(document.querySelector('canvas')).toBe(canvas);
+  expect(info.textContent).toBe(sourceInfo);
+  expect(left.save.disabled).toBe(false);
+  expect(right.save.disabled).toBe(false);
+  expect(document.querySelector('.image-input-error')?.textContent).toContain('503');
 });
 
 it('SSIMULACRA2の目安表は閉じた状態で表示され、代表値と公式出典を案内する', () => {
