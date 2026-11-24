@@ -1,7 +1,7 @@
-import { Check, CircleAlert, Copy, Trash2 } from 'lucide';
+import { ArrowLeftRight, Check, CircleAlert, Copy, Trash2 } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
-import { convertWidth, type Categories } from './logic';
+import { convertWidth, measureText, type Categories } from './logic';
 import './style.css';
 
 export function mount(container: HTMLElement): () => void {
@@ -27,13 +27,14 @@ export function mount(container: HTMLElement): () => void {
         <label><input type="checkbox" name="spaces" checked> スペース</label>
       </div>
     </fieldset>
+    <div class="width-editor-actions"><button type="button" data-swap disabled>入れ替え</button></div>
     <div class="width-editors">
-      <div><label for="width-input">入力</label>
-        <textarea id="width-input" rows="8" spellcheck="false" aria-describedby="width-privacy"></textarea>
+      <div><div class="width-field-label"><label for="width-input">入力</label><span id="width-input-count" class="width-count">0文字 / 0行</span></div>
+        <textarea id="width-input" rows="8" spellcheck="false" aria-describedby="width-input-count width-privacy"></textarea>
         <button type="button" data-clear>入力をクリア</button>
       </div>
-      <div><label for="width-output">変換結果</label>
-        <textarea id="width-output" rows="8" readonly spellcheck="false" aria-describedby="width-copy-help"></textarea>
+      <div><div class="width-field-label"><label for="width-output">変換結果</label><span id="width-output-count" class="width-count">0文字 / 0行</span></div>
+        <textarea id="width-output" rows="8" readonly spellcheck="false" aria-describedby="width-output-count width-copy-help"></textarea>
         <button type="button" data-copy>結果をコピー</button>
         <p id="width-copy-help">結果は選択して手動でもコピーできます。</p>
       </div>
@@ -56,8 +57,12 @@ export function mount(container: HTMLElement): () => void {
   const output = view.querySelector<HTMLTextAreaElement>('#width-output')!;
   const copy = view.querySelector<HTMLButtonElement>('[data-copy]')!;
   const clear = view.querySelector<HTMLButtonElement>('[data-clear]')!;
+  const swap = view.querySelector<HTMLButtonElement>('[data-swap]')!;
+  const inputCount = view.querySelector<HTMLElement>('#width-input-count')!;
+  const outputCount = view.querySelector<HTMLElement>('#width-output-count')!;
   clear.prepend(createIcon(Trash2));
   copy.prepend(createIcon(Copy));
+  swap.prepend(createIcon(ArrowLeftRight));
   const status = view.querySelector<HTMLElement>('[role="status"]')!;
   const listeners = new AbortController();
   const eventOptions = { signal: listeners.signal };
@@ -78,10 +83,15 @@ export function mount(container: HTMLElement): () => void {
       ? '例：ＡＢＣ　１２３'
       : '例：ABC 123';
     output.value = convertWidth(input.value, toHalf ? 'to-half' : 'to-full', categories);
+    const inputMetrics = measureText(input.value);
+    const outputMetrics = measureText(output.value);
+    inputCount.textContent = `${inputMetrics.characters}文字 / ${inputMetrics.lines}行`;
+    outputCount.textContent = `${outputMetrics.characters}文字 / ${outputMetrics.lines}行`;
+    swap.disabled = input.value.length === 0;
     revision++;
     status.textContent = '';
   };
-  input.addEventListener('compositionstart', () => { composing = true; revision++; status.textContent = ''; }, eventOptions);
+  input.addEventListener('compositionstart', () => { composing = true; swap.disabled = true; revision++; status.textContent = ''; }, eventOptions);
   input.addEventListener('compositionend', () => { composing = false; update(); }, eventOptions);
   input.addEventListener('input', (event) => {
     // 確定直前のinputと、compositionend後の最終inputのどちらの順序にも対応する。
@@ -91,6 +101,12 @@ export function mount(container: HTMLElement): () => void {
   clear.addEventListener('click', () => {
     input.value = '';
     composing = false;
+    update();
+    input.focus();
+  }, eventOptions);
+  swap.addEventListener('click', () => {
+    if (disposed || composing || input.value.length === 0) return;
+    input.value = output.value;
     update();
     input.focus();
   }, eventOptions);
