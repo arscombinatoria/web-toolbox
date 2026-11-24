@@ -4,7 +4,6 @@
 .width-options label { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 2.75rem; padding: var(--space-1); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
 .width-options label:has(:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .width-options input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
-.width-editor-actions { display: flex; justify-content: flex-end; margin-block: var(--space-2); }
 .width-field-label { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0 var(--space-2); }
 .width-field-label label { font-weight: 600; }
 .width-count { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
