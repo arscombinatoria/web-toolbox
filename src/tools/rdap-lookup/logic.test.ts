@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { httpsUrl, isIp, parseRdap, rdapUrl } from './logic';
+import { createRdapDisplay, httpsUrl, isIp, parseRdap, rdapSummary, rdapUrl } from './logic';
 
 import { network } from './__tests__/fixture';
 it('ネットワーク、CIDR、roles、jCard、ネストentity、イベントを抽出しAbuseのみのentityを管理組織にしない', () => {
@@ -72,6 +72,28 @@ it('registrantとabuseの兼任でもORG欠損時のfnを管理組織名に使�
   }] });
   expect(info.organizations).toEqual(['Owner']);
   expect(info.abuseEmails).toEqual(['abuse@example.test']);
+});
+
+it('表示とコピーで同じセクション順・ラベル・公開連絡先・注意・検証済みサーバーを使う', () => {
+  const display = createRdapDisplay('2001:db8::1', parseRdap(network), 'https://rdap.example.test/ip/2001%3Adb8%3A%3A1');
+  expect(display.sections.map(({ title }) => title)).toEqual([
+    'ネットワーク情報', '組織・連絡先', '公開連絡先（registrant）', '公開連絡先（abuse）',
+    '公開連絡先（technical, administrative）', '登録情報',
+  ]);
+  const summary = rdapSummary(display);
+  expect(summary.startsWith('IP登録情報検索（RDAP）\n検索対象: 2001:db8::1\n\n■ ネットワーク情報')).toBe(true);
+  expect(summary).toContain('登録国は実際の所在地とは限りません。欠損項目は省略しています。');
+  expect(summary).toContain('管理組織名: Example Inc');
+  expect(summary).toContain('Abuse窓口のメールアドレス: abuse@example.test');
+  expect(summary).toContain('メール: tech@example.test');
+  expect(summary).toContain('RDAPサーバー\nhttps://rdap.example.test/ip/2001%3Adb8%3A%3A1');
+  expect(createRdapDisplay('8.8.8.8', parseRdap({ objectClassName: 'ip network' }), 'http://bad.test').servers).toEqual([]);
+});
+
+it('結果テキストの複数行の値は継続行として読みやすく整形する', () => {
+  const info = { ...parseRdap({ objectClassName: 'ip network' }), organizations: ['First\nSecond\r\nThird'] };
+  expect(rdapSummary(createRdapDisplay('8.8.8.8', info, 'https://rdap.example.test')))
+    .toContain('管理組織名: First\n  Second\n  Third');
 });
 it('ネストした兼任entityからも抽出し、組織名とAbuseメールの重複を除く', () => {
   const info = parseRdap({ ...network, entities: [...network.entities, {
