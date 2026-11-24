@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Copy, RefreshCw, Search } from 'lucide';
+import { Check, CircleAlert, Copy, Info, RefreshCw, Search } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { setNavigationInput, toolUrl } from '../../router';
 import { findTool } from '../../registry';
@@ -18,7 +18,10 @@ export function mount(container: HTMLElement): () => void {
   view.className = 'ip-tool';
   // 固定の画面構造のみ。APIの値はvalue/textContentへ設定する。
   view.innerHTML = `
-    <h1 tabindex="-1"></h1>
+    <div class="ip-heading">
+      <h1 tabindex="-1"></h1>
+      <button type="button" data-refresh>再取得</button>
+    </div>
     <p class="tool-description"></p>
     ${(['IPv4', 'IPv6'] as const).map((version) => `
       <section data-version="${version}" aria-labelledby="${version}-label">
@@ -33,7 +36,6 @@ export function mount(container: HTMLElement): () => void {
         <p class="ip-status" role="status" aria-atomic="true"></p>
         <p class="ip-copy-status" role="status" aria-atomic="true"></p>
       </section>`).join('')}
-    <div class="ip-actions"><button type="button" data-refresh>再取得</button></div>
     <p class="ip-privacy">IPアドレスの取得には外部サービス（ipify）を使用します。取得時には接続元のIPアドレスがサービス提供元に伝わります。</p>
     <p class="ip-privacy">取得結果は各接続環境、DNS、外部サービスの稼働状況・CORS設定に依存します。IPv6の取得失敗だけではIPv6非対応とは判断できません。取得したIPアドレスは保存しません。</p>`;
   const tool = findTool('ip-address')!;
@@ -73,6 +75,7 @@ export function mount(container: HTMLElement): () => void {
       copy.disabled = true;
       copyStatus.textContent = '';
       status.textContent = '取得中…';
+      status.classList.remove('ip-status--info');
       try {
         const ip = await fetchAddress(current.signal);
         if (disposed || request !== current) return;
@@ -81,11 +84,17 @@ export function mount(container: HTMLElement): () => void {
         rdap.hidden = false;
         if (version === 'IPv6') resizeIpv6();
         copy.disabled = copying;
+        status.classList.remove('ip-status--info');
         setIconMessage(status, Check, '取得成功');
       } catch (error) {
         if (disposed || request !== current || current.signal.aborted) return;
         const kind = error instanceof Error && 'kind' in error ? error.kind : 'network';
-        setIconMessage(status, CircleAlert, errors[kind as keyof typeof errors] ?? errors.network);
+        const message = version === 'IPv6' && (kind === 'network' || kind === 'timeout')
+          ? 'IPv6を利用できない環境、または一時的に取得できない状態です。'
+          : errors[kind as keyof typeof errors] ?? errors.network;
+        const informational = version === 'IPv6' && (kind === 'network' || kind === 'timeout');
+        status.classList.toggle('ip-status--info', informational);
+        setIconMessage(status, informational ? Info : CircleAlert, message);
       } finally {
         if (!disposed && request === current) output.removeAttribute('aria-busy');
       }
