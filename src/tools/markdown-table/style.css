@@ -16,7 +16,10 @@
 .table-alignments { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--space-2); }
 .table-alignment-control { display: grid !important; gap: var(--space-1); min-width: 0; }
 .table-alignment-control span { overflow-wrap: anywhere; }
+.table-alignment-control span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-alignment-control select { width: 100%; min-height: 2.75rem; }
+.table-alignment-pagination { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+.table-alignment-pagination button { min-height: 2.75rem; }
 .table-padding-option { display: inline-flex !important; align-items: center; gap: var(--space-1); margin-top: var(--space-2); min-height: 2.75rem; cursor: pointer; }
 .table-padding-option input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
 .table-preview-section { min-width: 0; margin: var(--space-4) 0; }
