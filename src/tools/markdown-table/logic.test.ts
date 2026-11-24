@@ -1,9 +1,18 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest';
-import { parseMarkdown, parseTsv, toMarkdown, toTsv, type TableData } from './logic';
+import { parseMarkdown, parseMarkdownWithAlignments, parseTsv, toMarkdown, toTsv, type TableData } from './logic';
 
 describe('Markdown', () => {
+  it('区切り行から列配置を取得し、既存解析の値は維持する', () => {
+    const input = '| a | b | c | d |\n| --- | :--- | :---: | ---: |\n| 1 | 2 | 3 | 4 |';
+    expect(parseMarkdownWithAlignments(input)).toEqual({
+      table: { rows: [['a', 'b', 'c', 'd'], ['1', '2', '3', '4']] },
+      alignments: ['none', 'left', 'center', 'right'],
+    });
+    expect(parseMarkdown(input)).toEqual(parseMarkdownWithAlignments(input).table);
+    expect(parseMarkdownWithAlignments('')).toEqual({ table: { rows: [] }, alignments: [] });
+  });
   it.each(['---', ':---', '---:', ':---:'])('区切り %s と任意の外側パイプ', separator => {
     expect(parseMarkdown(`a | b\n${separator} | ${separator}\n1 | 2`)).toEqual({ rows: [['a', 'b'], ['1', '2']] });
     expect(parseMarkdown(`| a | b |\n| ${separator} | ${separator} |`)).toEqual({ rows: [['a', 'b']] });

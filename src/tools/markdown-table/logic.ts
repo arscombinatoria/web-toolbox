@@ -1,4 +1,11 @@
 export type TableData = { rows: string[][] };
+export type ColumnAlignment = 'none' | 'left' | 'center' | 'right';
+export type MarkdownOptions = {
+  alignments?: readonly ColumnAlignment[];
+  padding?: boolean;
+};
+
+import { formatMarkdown } from './format';
 
 export function validateTable(table: TableData): void {
   const width = table.rows[0]?.length;
@@ -55,7 +62,11 @@ function decodeCell(cell: string): string {
 }
 
 export function parseMarkdown(input: string): TableData {
-  if (!input.trim()) return { rows: [] };
+  return parseMarkdownWithAlignments(input).table;
+}
+
+export function parseMarkdownWithAlignments(input: string): { table: TableData; alignments: ColumnAlignment[] } {
+  if (!input.trim()) return { table: { rows: [] }, alignments: [] };
   const lines = input.replace(/\r\n?/g, '\n').split('\n');
   while (lines[0]?.trim() === '') lines.shift();
   while (lines.at(-1)?.trim() === '') lines.pop();
@@ -63,10 +74,17 @@ export function parseMarkdown(input: string): TableData {
   if (lines.some(line => !line.trim())) throw new Error('表の途中に空行は使用できません。単一の表を入力してください。');
   const raw = lines.map(splitMarkdownRow);
   validateTable({ rows: raw });
-  if (!raw[1]!.every(cell => /^:?-{3,}:?$/.test(cell.trim()))) {
+  const separator = raw[1]!.map(cell => cell.trim());
+  if (!separator.every(cell => /^:?-{3,}:?$/.test(cell))) {
     throw new Error('2行目には ---、:---、---:、:---: の区切りを指定してください。');
   }
-  return { rows: raw.filter((_, i) => i !== 1).map(row => row.map(decodeCell)) };
+  const alignments = separator.map(cell => cell.startsWith(':')
+    ? cell.endsWith(':') ? 'center' : 'left'
+    : cell.endsWith(':') ? 'right' : 'none');
+  return {
+    table: { rows: raw.filter((_, i) => i !== 1).map(row => row.map(decodeCell)) },
+    alignments,
+  };
 }
 
 export function parseTsv(input: string): TableData {
@@ -112,14 +130,7 @@ export function toTsv(table: TableData): string {
     ? `"${cell.replace(/"/g, '""')}"` : cell).join('\t')).join('\r\n');
 }
 
-export function toMarkdown(table: TableData): string {
+export function toMarkdown(table: TableData, options?: MarkdownOptions): string {
   validateTable(table);
-  if (!table.rows.length) return '';
-  const rows = table.rows.map(row => `| ${row.map(cell => cell
-    .replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
-    // リテラルのタグとバッククォートを保護し、実際の改行だけをタグにする。
-    .replace(/`/g, '\\`').replace(/<(?=br(?:>|\/>| \/>))/gi, '\\<')
-    .replace(/\r\n|\r|\n/g, '<br>')).join(' | ')} |`);
-  rows.splice(1, 0, `| ${table.rows[0]!.map(() => '---').join(' | ')} |`);
-  return rows.join('\n');
+  return formatMarkdown(table, options);
 }
