@@ -177,3 +177,67 @@ it('ダウンロード用Object URLをタイマーで一度だけ解放する', 
     dispose();
   }
 });
+
+it.each(['settings', 'direction', 'input'] as const)('コピー保留中の%s変更後は最新の生成文字列だけを通知・コピーする', async change => {
+  let resolve!: () => void;
+  const pending = new Promise<void>(done => { resolve = done; });
+  const write = vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText: write } });
+  const dispose = mount(document.body);
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  const output = document.querySelector<HTMLTextAreaElement>('#table-output')!;
+  const copy = document.querySelector<HTMLButtonElement>('[data-copy]')!;
+  const status = document.querySelector<HTMLElement>('[role="status"]')!;
+  try {
+    if (change === 'settings') {
+      const direction = document.querySelector<HTMLInputElement>('[value="markdown"]')!;
+      direction.checked = true; direction.dispatchEvent(new Event('change'));
+      const alignment = document.querySelector<HTMLSelectElement>('[data-column="0"]')!;
+      alignment.focus();
+      copy.click();
+      alignment.value = 'right'; alignment.dispatchEvent(new Event('change', { bubbles: true }));
+      expect(alignment.isConnected).toBe(true);
+      expect(document.activeElement).toBe(alignment);
+    } else {
+      copy.click();
+      if (change === 'direction') {
+        const direction = document.querySelector<HTMLInputElement>('[value="markdown"]')!;
+        direction.checked = true; direction.dispatchEvent(new Event('change'));
+      } else {
+        input.value = 'h\n---\ny'; input.dispatchEvent(new Event('input'));
+      }
+    }
+    expect(write).toHaveBeenCalledTimes(1);
+    resolve();
+    await pending;
+    await vi.waitFor(() => expect(copy.disabled).toBe(false));
+    expect(status.textContent).toBe('');
+    const expected = document.querySelector<HTMLInputElement>('[value="excel"]')!.checked ? 'h\r\ny' : output.value;
+    copy.click();
+    await vi.waitFor(() => expect(status.textContent).toBe('コピーしました。'));
+    expect(write).toHaveBeenLastCalledWith(expected);
+  } finally {
+    dispose();
+  }
+});
+
+it('クリアでは配置だけ初期化し、パディングは維持し、離脱後は全設定を破棄する', () => {
+  const dispose = mount(document.body);
+  const direction = document.querySelector<HTMLInputElement>('[value="markdown"]')!;
+  direction.checked = true; direction.dispatchEvent(new Event('change'));
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  input.value = 'h\tx\na\tb'; input.dispatchEvent(new Event('input'));
+  const alignment = document.querySelector<HTMLSelectElement>('[data-column="0"]')!;
+  alignment.value = 'center'; alignment.dispatchEvent(new Event('change', { bubbles: true }));
+  const padding = document.querySelector<HTMLInputElement>('[data-padding]')!;
+  padding.checked = true; padding.dispatchEvent(new Event('change'));
+  document.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(0);
+  expect(padding.checked).toBe(true);
+  dispose();
+
+  const nextDispose = mount(document.body);
+  expect(document.querySelector<HTMLInputElement>('[data-padding]')!.checked).toBe(false);
+  expect(document.querySelector<HTMLInputElement>('[value="excel"]')!.checked).toBe(true);
+  nextDispose();
+});
