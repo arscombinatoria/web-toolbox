@@ -6,7 +6,7 @@ const pages = [
   { id: 'rdap-lookup', name: 'IP登録情報検索' },
   { id: 'width-converter', name: '全角・半角変換' },
   { id: 'markdown-table', name: 'Markdown表変換' },
-  { id: 'regex-visualizer', name: 'JavaScript正規表現ビジュアライザー' },
+  { id: 'regex-visualizer', name: '正規表現ビジュアライザー' },
   { id: 'jwt-debugger', name: 'JWTデバッガー' },
   { id: 'datetime', name: '日時・UTC変換' },
   { id: 'image-converter', name: '画像変換' },
@@ -48,10 +48,9 @@ test('全ページが各幅・テーマで横にはみ出さず、サイドバ�
           expect(geometry.mainWidth, `${theme} ${entry.name} wider than previous 75rem cap`).toBeGreaterThan(1200);
         }
         if (entry.id === 'regex-visualizer' && width > 759) {
-          const link = page.getByRole('navigation').getByRole('link', {
-            name: `正規表現の可視化（${entry.name}）`, exact: true,
-          });
-          await expect(link.locator('.sidebar-label')).toHaveText('正規表現の可視化');
+          const link = page.getByRole('navigation').getByRole('link', { name: entry.name, exact: true });
+          await expect(link.locator('.sidebar-label')).toHaveText(entry.name);
+          await expect(link).not.toHaveAttribute('aria-label');
         }
       }
     }

@@ -46,10 +46,9 @@ export function createLayout(root: HTMLElement) {
       const link = document.createElement('a');
       link.href = toolUrl(tool.id).href;
       link.dataset.toolId = tool.id;
-      if (tool.sidebarName) link.setAttribute('aria-label', `${tool.sidebarName}（${tool.name}）`);
       const label = document.createElement('span');
       label.className = 'sidebar-label';
-      label.textContent = tool.sidebarName ?? tool.name;
+      label.textContent = tool.name;
       link.append(createIcon(tool.icon), label);
       item.append(link);
       list.append(item);
