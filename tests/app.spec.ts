@@ -17,17 +17,14 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
   const initialHistory = await page.evaluate(() => history.length);
   await home.click();
   expect(await page.evaluate(() => history.length)).toBe(initialHistory);
-  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', 'JavaScript正規表現ビジュアライザー', 'JWTデバッガー', '画像変換', '日時・UTC変換']) {
+  for (const name of ['IPアドレス確認', 'IP登録情報検索', '全角・半角変換', 'Markdown表変換', '正規表現ビジュアライザー', 'JWTデバッガー', '画像変換', '日時・UTC変換']) {
     const card = page.locator('.tool-card').filter({ has: page.getByRole('heading', { name, exact: true }) });
     await card.focus();
     await page.keyboard.press('Enter');
     await expect(heading).toHaveText(name);
     await expect(heading).toBeFocused();
     await expect(page).toHaveTitle(`${name} | Web Toolbox`);
-    const navigationName = name === 'JavaScript正規表現ビジュアライザー'
-      ? `正規表現の可視化（${name}）`
-      : name;
-    const selected = page.getByRole('navigation').getByRole('link', { name: navigationName, exact: true });
+    const selected = page.getByRole('navigation').getByRole('link', { name, exact: true });
     await expect(selected).toHaveAttribute('aria-current', 'page');
     await expect(selected.locator('svg')).toBeVisible();
     await expect(home).not.toHaveAttribute('aria-current');
@@ -56,15 +53,17 @@ test('ホームのカード・選択状態・URL・履歴・再読み込みが�
   await expect(heading).toHaveText('Web Toolbox');
 });
 
-for (const id of ['ip-address', 'rdap-lookup', 'width-converter', 'markdown-table', 'datetime']) {
+for (const id of ['ip-address', 'rdap-lookup', 'width-converter', 'markdown-table', 'regex-visualizer', 'datetime']) {
   test(`直接URLと再読み込み: ${id}`, async ({ page }) => {
     await page.goto(`./?tool=${id}`);
     const link = page.getByRole('navigation').locator(`[data-tool-id="${id}"]`);
     await expect(link).toHaveAttribute('aria-current', 'page');
     const name = await link.textContent();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(name!);
+    if (id === 'regex-visualizer') await expect(page).toHaveTitle('正規表現ビジュアライザー | Web Toolbox');
     await page.reload();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(name!);
+    if (id === 'regex-visualizer') await expect(page).toHaveTitle('正規表現ビジュアライザー | Web Toolbox');
   });
 }
 
@@ -120,7 +119,11 @@ test('モバイルメニューの開閉・フォーカス・選択・デスク�
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('link', { name: 'ホーム', exact: true })).toBeFocused();
   await expect(dialog.locator('nav a > svg')).toHaveCount(9);
-  await expect(dialog.getByRole('link', { name: '正規表現の可視化（JavaScript正規表現ビジュアライザー）', exact: true }).locator('svg')).toBeVisible();
+  const regexLink = dialog.getByRole('link', { name: '正規表現ビジュアライザー', exact: true });
+  await expect(regexLink.locator('.sidebar-label')).toHaveText('正規表現ビジュアライザー');
+  await expect(regexLink).not.toHaveAttribute('aria-label');
+  await expect(regexLink).not.toHaveAttribute('aria-current');
+  await expect(regexLink.locator('svg')).toBeVisible();
   // 最後のリンクからTabを押すとダイアログ内に戻る。
   await dialog.getByRole('link', { name: '画像変換', exact: true }).focus();
   await page.keyboard.press('Tab');
