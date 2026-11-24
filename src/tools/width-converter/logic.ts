@@ -9,6 +9,22 @@ export const defaultCategories: Readonly<Categories> = {
   alphanumeric: true, symbols: false, katakana: false, spaces: true,
 };
 
+export interface TextMetrics {
+  characters: number;
+  lines: number;
+}
+
+export function measureText(text: string): TextMetrics {
+  if (text.length === 0) return { characters: 0, lines: 0 };
+  let characters = 0;
+  let lines = 1;
+  for (const character of text) {
+    characters++;
+    if (character === '\n') lines++;
+  }
+  return { characters, lines };
+}
+
 // 正規化するのは既知の半角カナ1文字、または濁点との組のみ。
 const fullToHalf = new Map<string, string>();
 for (let code = 0xff61; code <= 0xff9f; code++) {
