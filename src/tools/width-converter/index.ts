@@ -79,6 +79,9 @@ export function mount(container: HTMLElement): () => void {
       categories[category] = view.querySelector<HTMLInputElement>(`[name="${category}"]`)!.checked;
     }
     const toHalf = view.querySelector<HTMLInputElement>('[value="to-half"]')!.checked;
+    input.placeholder = toHalf
+      ? '例：ＡＢＣ　１２３'
+      : '例：ABC 123';
     output.value = convertWidth(input.value, toHalf ? 'to-half' : 'to-full', categories);
     const inputMetrics = measureText(input.value);
     const outputMetrics = measureText(output.value);

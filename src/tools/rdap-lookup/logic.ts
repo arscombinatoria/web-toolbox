@@ -34,6 +34,65 @@ export interface RdapInfo {
   links: string[];
 }
 
+export interface RdapDisplaySection {
+  title: string;
+  rows: [string, string][];
+  notice?: string;
+}
+export interface RdapDisplayData {
+  heading: string;
+  ip: string;
+  sections: RdapDisplaySection[];
+  servers: string[];
+}
+
+/** 表示とコピー用テキストが同じ整形済みデータを使う。 */
+export function createRdapDisplay(ip: string, info: RdapInfo, url: string): RdapDisplayData {
+  const sections: RdapDisplaySection[] = [
+    { title: 'ネットワーク情報', rows: [['検索したIPアドレス', ip], ...info.network], notice: '登録国は実際の所在地とは限りません。欠損項目は省略しています。' },
+    { title: '組織・連絡先', rows: [
+      ['管理組織名', info.organizations.join('\n') || '情報なし'],
+      ['Abuse窓口のメールアドレス', info.abuseEmails.join('\n') || '情報なし'],
+    ] },
+    ...info.contacts.map((contact) => ({
+      title: `公開連絡先（${contact.roles.join(', ') || '役割情報なし'}）`,
+      rows: [
+        ['名称', contact.name], ['組織', contact.organizations.join('\n')], ['ハンドル', contact.handle],
+        ['メール', contact.emails.join('\n')], ['電話', contact.phones.join('\n')], ['住所', contact.addresses.join('\n')],
+      ].filter((row): row is [string, string] => !!row[1]),
+    })),
+    { title: '登録情報', rows: info.events.length ? info.events : [['登録・更新日時', '情報なし']] },
+  ];
+  const servers = [...new Set([url, ...info.links].flatMap((value) => {
+    const safe = httpsUrl(value);
+    return safe ? [safe] : [];
+  }))];
+  return {
+    heading: 'IP登録情報検索（RDAP）', ip, sections, servers,
+  };
+}
+
+export function rdapSummary(data: RdapDisplayData): string {
+  const lines = [data.heading, `検索対象: ${data.ip}`, ''];
+  for (const section of data.sections) {
+    lines.push(`■ ${section.title}`);
+    for (const [label, value] of section.rows) {
+      const [first, ...rest] = value.split(/\r\n|\r|\n/);
+      lines.push(`${label}: ${first ?? ''}`);
+      for (const line of rest) lines.push(`  ${line}`);
+    }
+    lines.push('');
+    if (section.notice) {
+      lines.push(section.notice, '');
+    }
+  }
+  if (data.servers.length) {
+    lines.push('■ RDAPサーバー');
+    for (const server of data.servers) lines.push(server);
+  }
+  return lines.join('\n').trimEnd();
+}
+
 export function parseRdap(data: unknown): RdapInfo {
   if (!record(data) || data.objectClassName !== 'ip network') throw new Error('RDAP IP Network required');
   const network: [string, string][] = [];

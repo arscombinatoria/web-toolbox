@@ -178,15 +178,15 @@ entityを反復処理でネスト内まで走査し、roles・jCardのfn／org�
 
 通常表示・直接アクセス・再読み込み・戻る／進むでは自動検索せず、検索ボタン／Enterで検索します。IP確認の成功したパネルだけにRDAPリンクを表示し、再取得時に非表示にします。routerの`setNavigationInput`はリンクをキーとするWeakMapに一時入力を保持します。通常の同一SPAリンク操作時だけcallback→main→tool-host→mountの任意引数に渡し、リンク破棄時にも解除します。URL・History state・永続ストレージへは記録しません。遅い動的importは既存のホスト世代管理に従い、別画面に入力を持ち越しません。修飾キーや別タブ操作は通常リンクのままで、入力を引き継ぎません。
 
-検索中はstatusで通知し、新規検索と入力変更は以前の通信を中止して結果を消去します。世代番号と破棄フラグで中止を無視する古い応答・コピー完了も反映しません。破棄時は通信とイベントリスナーを解除します。
+検索中はstatusで通知し、新規検索と入力変更は以前のRDAP・ipify通信を中止して結果を消去します。「クリア」は入力・結果・エラー・通知を消去して入力へフォーカスします。「自分のIPv4／IPv6」は明示操作時だけ既存ipify APIを呼び、成功時に入力へ設定して古いRDAP結果を消しますが、自動検索はしません。失敗時は入力と結果を保って通知します。IP確認とRDAPは独立したAbortControllerと世代番号を使い、中止を無視する非同期結果や古いコピー・保存完了通知を反映しません。破棄時は通信・イベントリスナー・タイマー・Object URLを解放します。
 
-ネットワーク情報、管理組織とAbuse、役割別連絡先、登録情報、RDAPサーバーリンク、生JSONのdetails／コピーを表示します。欠損は省略または「情報なし」とし、国コードが実際の所在地を保証しないことを明示します。外部値はtextContentだけで描画し、リンクは認証情報を含まない絶対HTTPS URLだけを許可し、noopener／noreferrerを付けます。
+ネットワーク情報、管理組織とAbuse、役割別連絡先、登録情報、RDAPサーバーリンク、生JSONのdetailsを表示します。成功時には、ネットワーク情報の前に結果テキスト・JSONのコピーとJSON保存を出します。`createRdapDisplay`がUIとコピー文の共通データを作り、JSON表示・コピー・ダウンロードには同じ`JSON.stringify(data, null, 2)`文字列を使います。保存はUTF-8の`application/json;charset=utf-8` Blobを作り、IPをファイル名に含め、Object URLを1秒後または破棄時に解放します。欠損は省略または「情報なし」とし、国コードが実際の所在地を保証しないことを明示します。外部値はtextContentだけで描画し、リンクは認証情報を含まない絶対HTTPS URLだけを許可し、noopener／noreferrerを付けます。
 
 404・429・その他HTTP・通信障害・timeout・不正JSON・非IP Network応答を区別します。ブラウザで区別できない通信障害をCORSと断定しません。失敗時は検証済み入力IPから生成したRDAP.org外部確認リンクを表示します。検索対象IPと接続元IPがRDAP.orgと転送先へ伝わることを画面に明記します。
 
 #### 検証範囲
 
-`logic.test.ts`はネットワーク・CIDR・roles・jCard・深いentity・欠損・未知拡張・安全なURLを、`api.test.ts`はIPv4／IPv6・fetch設定・HTTP・JSON・通信・本文読み込み中を含むtimeout・Abort・タイマー解放を検証します。`index.test.ts`は明示検索・エラー・再検索競合・入力変更・破棄後の更新抑止・安全なJSON表示とコピーを確認します。router／hostも一時入力の受け渡しを検証します。`tests/rdap-lookup.spec.ts`は検索・JSONコピー・非保存・IP確認からの遷移・履歴・エラー復帰・320px両テーマ・キーボード操作をモックAPIで検証します。
+`logic.test.ts`はネットワーク・CIDR・roles・jCard・深いentity・欠損・未知拡張・安全なURL・共有表示データと結果テキストを、`api.test.ts`はIPv4／IPv6・fetch設定・HTTP・JSON・通信・本文読み込み中を含むtimeout・Abort・タイマー解放を検証します。`index.test.ts`は明示検索・エラー・再検索競合・IP確認の競合／失敗／破棄・コピー・JSON保存内容／ファイル名／Object URL解放を確認します。router／hostも一時入力の受け渡しを検証します。`tests/rdap-lookup.spec.ts`は検索・コピー・実ダウンロード・非保存・明示的なIP確認・IP確認からの遷移・履歴・エラー復帰・320／768／1280／1920px両テーマ・キーボード操作をモックAPIで検証します。
 
 実サービスへのブラウザ接続・CORSはモックテストでは保証しません。RIRごとの接続確認は自動テストと分けて実施し、確認したOrigin・ブラウザと未確認事項を報告します。
 

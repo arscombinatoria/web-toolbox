@@ -39,6 +39,8 @@ test('スモーク: 文字種を選択して全角・半角を双方向に変換
   await page.goto('./?tool=width-converter');
   const input = page.getByRole('textbox', { name: '入力', exact: true });
   const output = page.getByRole('textbox', { name: '変換結果', exact: true });
+  await expect(input).toHaveAttribute('placeholder', '例：ＡＢＣ　１２３');
+  await expect(output).not.toHaveAttribute('placeholder');
   await input.fill('Ａ１！　ガ🙂');
   await expect(output).toHaveValue('A1！ ガ🙂');
   await page.getByRole('checkbox', { name: '記号' }).check();
@@ -46,8 +48,28 @@ test('スモーク: 文字種を選択して全角・半角を双方向に変換
   await page.getByRole('checkbox', { name: 'カタカナ' }).check();
   await expect(output).toHaveValue('A1! ｶﾞ🙂');
   await page.getByRole('radio', { name: '半角 → 全角' }).check();
+  await expect(input).toHaveAttribute('placeholder', '例：ABC 123');
+  await expect(input).toHaveValue('Ａ１！　ガ🙂');
   await input.fill('A1! ｶﾞ🙂');
   await expect(output).toHaveValue('Ａ１！　ガ🙂');
+  await page.getByRole('radio', { name: '全角 → 半角' }).check();
+  await expect(input).toHaveAttribute('placeholder', '例：ＡＢＣ　１２３');
+  await expect(input).toHaveValue('A1! ｶﾞ🙂');
+  await page.getByRole('checkbox', { name: '記号' }).uncheck();
+  await expect(input).toHaveAttribute('placeholder', '例：ＡＢＣ　１２３');
+  await page.getByRole('button', { name: '入力をクリア', exact: true }).click();
+  for (const width of [1280, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ['light', 'dark']) {
+      await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+      await expect(input).toHaveAttribute('placeholder', '例：ＡＢＣ　１２３');
+      await expect(input).toBeVisible();
+      const box = await input.boundingBox();
+      expect(box?.width).toBeGreaterThan(0);
+      expect(box?.height).toBeGreaterThan(0);
+      await expect(output).toHaveValue('');
+    }
+  }
 });
 
 test('スモーク: MarkdownとTSVの変換・不正入力からの復帰', async ({ page }) => {

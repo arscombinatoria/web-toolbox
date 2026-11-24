@@ -4,6 +4,10 @@ test('初期設定・リアルタイム変換・方向と文字種の独立選�
   await page.goto('./?tool=width-converter');
   const input = page.getByRole('textbox', { name: '入力', exact: true });
   const output = page.getByRole('textbox', { name: '変換結果', exact: true });
+  await expect(input).toHaveAttribute('placeholder', '例：ＡＢＣ　１２３');
+  await expect(input).toHaveValue('');
+  await expect(output).toHaveValue('');
+  await expect(output).not.toHaveAttribute('placeholder');
   await expect(page.getByRole('group', { name: '変換方向' })).toBeVisible();
   await expect(page.getByRole('group', { name: '変換対象' })).toBeVisible();
   await expect(page.getByRole('radio', { name: '全角 → 半角' })).toBeChecked();
@@ -24,6 +28,7 @@ test('初期設定・リアルタイム変換・方向と文字種の独立選�
   await expect(output).toHaveValue('ABC123!@# ｶﾞｷﾞｸﾞ');
   await input.fill('ABC123! ｶﾞ①Ⅳ\n');
   await page.getByRole('radio', { name: '半角 → 全角' }).check();
+  await expect(input).toHaveAttribute('placeholder', '例：ABC 123');
   await expect(output).toHaveValue('ＡＢＣ１２３！　ガ①Ⅳ\n');
   await expect(input).toHaveValue('ABC123! ｶﾞ①Ⅳ\n');
   await page.getByRole('checkbox', { name: '記号' }).uncheck();
@@ -35,6 +40,7 @@ test('初期設定・リアルタイム変換・方向と文字種の独立選�
   await expect(clear.locator('svg')).toBeVisible();
   await clear.press('Enter');
   await expect(input).toHaveValue('');
+  await expect(input).toHaveAttribute('placeholder', '例：ABC 123');
   await expect(output).toHaveValue('');
   await expect(page.locator('#width-input-count')).toHaveText('0文字 / 0行');
   await expect(page.locator('#width-output-count')).toHaveText('0文字 / 0行');
