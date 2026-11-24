@@ -51,8 +51,8 @@ describe('レイアウトの状態とライフサイクル', () => {
       expect(link.querySelectorAll('svg')).toHaveLength(1);
       expect(link.querySelector('svg')?.innerHTML).toBe(createElement(tool.icon).innerHTML);
       expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-      expect(link.querySelector('.sidebar-label')?.textContent).toBe(tool.sidebarName ?? tool.name);
-      if (tool.sidebarName) expect(link.getAttribute('aria-label')).toBe(`${tool.sidebarName}（${tool.name}）`);
+      expect(link.querySelector('.sidebar-label')?.textContent).toBe(tool.name);
+      expect(link.getAttribute('aria-label')).toBeNull();
     }
   });
 
