@@ -8,15 +8,31 @@ test('IPの表示・再取得・実Clipboard APIによるコピー', async ({ pa
     return route.fulfill({ json: { ip: requests === 1 ? '203.0.113.42' : '198.51.100.7' } });
   });
   await page.goto('./?tool=ip-address');
+  const heading = page.getByRole('heading', { name: 'IPアドレス確認' });
+  const refresh = page.getByRole('button', { name: '再取得', exact: true });
+  const desktopLayout = await page.evaluate(() => {
+    const title = document.querySelector('.ip-heading h1')!.getBoundingClientRect();
+    const button = document.querySelector<HTMLButtonElement>('[data-refresh]')!.getBoundingClientRect();
+    return { titleTop: title.top, buttonTop: button.top, titleLeft: title.left, buttonLeft: button.left };
+  });
+  expect(Math.abs(desktopLayout.titleTop - desktopLayout.buttonTop)).toBeLessThanOrEqual(1);
+  expect(desktopLayout.titleLeft).toBeLessThan(desktopLayout.buttonLeft);
+  expect(await heading.evaluate((title) =>
+    Boolean(title.compareDocumentPosition(document.querySelector('[data-refresh]')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
   const output = page.getByRole('textbox', { name: 'グローバルIPv4アドレス' });
   await expect(output).toHaveValue('203.0.113.42');
   await expect(page.getByRole('textbox', { name: 'グローバルIPv6アドレス' })).toHaveValue('2001:db8::1');
-  await page.getByRole('button', { name: '再取得', exact: true }).click();
+  await refresh.click();
   await expect(output).toHaveValue('198.51.100.7');
+  await expect(refresh).toBeEnabled();
+  await refresh.focus();
+  await expect(refresh).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => requests).toBe(3);
   await page.getByRole('button', { name: 'IPv4をコピーする' }).click();
   await expect(page.getByText('コピーしました。', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('198.51.100.7');
-  expect(requests).toBe(2);
+  expect(requests).toBe(3);
   await page.getByRole('button', { name: 'IPv6をコピーする' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('2001:db8::1');
 });
@@ -76,6 +92,33 @@ for (const theme of ['light', 'dark']) {
     await page.setViewportSize({ width: 320, height: 740 });
     await page.goto('./?tool=ip-address');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
+    const heading = page.getByRole('heading', { name: 'IPアドレス確認' });
+    const refresh = page.getByRole('button', { name: '再取得', exact: true });
+    const headingLayout = await page.evaluate(() => {
+      const container = document.querySelector('.ip-heading')!.getBoundingClientRect();
+      const title = document.querySelector('.ip-heading h1')!.getBoundingClientRect();
+      const button = document.querySelector<HTMLButtonElement>('[data-refresh]')!.getBoundingClientRect();
+      return {
+        containerRight: container.right,
+        titleRight: title.right,
+        buttonLeft: button.left,
+        buttonRight: button.right,
+        buttonBottom: button.bottom,
+        buttonTop: button.top,
+        titleTop: title.top,
+        titleBottom: title.bottom,
+        titleLeft: title.left,
+      };
+    });
+    expect(headingLayout.buttonRight).toBeLessThanOrEqual(headingLayout.containerRight + 1);
+    expect(
+      headingLayout.titleBottom <= headingLayout.buttonTop
+        || headingLayout.buttonBottom <= headingLayout.titleTop
+        || headingLayout.titleRight <= headingLayout.buttonLeft
+        || headingLayout.buttonRight <= headingLayout.titleLeft,
+    ).toBe(true);
+    await expect(heading).toBeVisible();
+    await expect(refresh).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
     await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeVisible();
     const output6 = page.getByRole('textbox', { name: 'グローバルIPv6アドレス' });
