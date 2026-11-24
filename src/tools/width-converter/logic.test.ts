@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { convertWidth, defaultCategories, type Categories, type Direction } from './logic';
+import { convertWidth, defaultCategories, measureText, type Categories, type Direction } from './logic';
 
 const none: Categories = { alphanumeric: false, symbols: false, katakana: false, spaces: false };
 const all: Categories = { alphanumeric: true, symbols: true, katakana: true, spaces: true };
 const only = (category: keyof Categories): Categories => ({ ...none, [category]: true });
+
+describe('measureText', () => {
+  it.each([
+    ['', 0, 0],
+    ['ＡＢＣ', 3, 1],
+    ['ABC', 3, 1],
+    ['ガギグ', 3, 1],
+    ['ｶﾞｷﾞｸﾞ', 6, 1],
+    ['😀', 1, 1],
+    ['か\u3099', 2, 1],
+    [' \t', 2, 1],
+    ['ABC\nDEF', 7, 2],
+    ['ABC\n', 4, 2],
+    ['\n', 1, 2],
+    ['A\n\nB', 4, 3],
+  ])('文字数・LF行数をコードポイント単位で計測する: %j', (text, characters, lines) => {
+    expect(measureText(text)).toEqual({ characters, lines });
+  });
+});
 
 describe('convertWidth', () => {
   it('指定の初期設定', () => {
