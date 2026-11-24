@@ -9,7 +9,10 @@ test('IPの表示・再取得・実Clipboard APIによるコピー', async ({ pa
   });
   await page.goto('./?tool=ip-address');
   const heading = page.getByRole('heading', { name: 'IPアドレス確認' });
+  const titleElement = page.locator('.ip-heading h1');
   const refresh = page.getByRole('button', { name: '再取得', exact: true });
+  await expect(titleElement).toBeVisible();
+  await expect(refresh).toBeVisible();
   const desktopLayout = await page.evaluate(() => {
     const title = document.querySelector('.ip-heading h1')!.getBoundingClientRect();
     const button = document.querySelector<HTMLButtonElement>('[data-refresh]')!.getBoundingClientRect();
@@ -93,7 +96,10 @@ for (const theme of ['light', 'dark']) {
     await page.goto('./?tool=ip-address');
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
     const heading = page.getByRole('heading', { name: 'IPアドレス確認' });
+    const titleElement = page.locator('.ip-heading h1');
     const refresh = page.getByRole('button', { name: '再取得', exact: true });
+    await expect(titleElement).toBeVisible();
+    await expect(refresh).toBeVisible();
     const headingLayout = await page.evaluate(() => {
       const container = document.querySelector('.ip-heading')!.getBoundingClientRect();
       const title = document.querySelector('.ip-heading h1')!.getBoundingClientRect();
