@@ -135,7 +135,8 @@ test('IPv6失敗時もIPv4を保持し、再取得でIPv6が復帰する', async
     ? route.abort('failed') : route.fulfill({ json: { ip: '2001:db8::2' } }));
   await page.goto('./?tool=ip-address');
   await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
-  await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' }).getByText(/通信エラー：/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' })
+    .getByText('IPv6を利用できない環境、または一時的に取得できない状態です。')).toBeVisible();
   await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'IPv6をコピーする' })).toBeDisabled();
   await page.getByRole('button', { name: '再取得', exact: true }).click();
@@ -177,7 +178,8 @@ test('再取得中は片方が成功しても再取得を無効にし、残り�
   // 実ブラウザでdisabledボタンへのclick()がリクエストを増やさないことを確認。
   await refresh.evaluate((button: HTMLButtonElement) => { button.click(); button.click(); button.click(); });
   release();
-  await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' }).getByText(/通信エラー：/)).toBeVisible();
+  await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' })
+    .getByText('IPv6を利用できない環境、または一時的に取得できない状態です。')).toBeVisible();
   await expect(refresh).toBeEnabled();
   await expect(output4).toHaveValue('198.51.100.7');
   await expect(output6).not.toHaveAttribute('aria-busy');

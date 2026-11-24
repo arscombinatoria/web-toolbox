@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Copy, RefreshCw, Search } from 'lucide';
+import { Check, CircleAlert, Copy, Info, RefreshCw, Search } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { setNavigationInput, toolUrl } from '../../router';
 import { findTool } from '../../registry';
@@ -75,6 +75,7 @@ export function mount(container: HTMLElement): () => void {
       copy.disabled = true;
       copyStatus.textContent = '';
       status.textContent = '取得中…';
+      status.classList.remove('ip-status--info');
       try {
         const ip = await fetchAddress(current.signal);
         if (disposed || request !== current) return;
@@ -83,11 +84,17 @@ export function mount(container: HTMLElement): () => void {
         rdap.hidden = false;
         if (version === 'IPv6') resizeIpv6();
         copy.disabled = copying;
+        status.classList.remove('ip-status--info');
         setIconMessage(status, Check, '取得成功');
       } catch (error) {
         if (disposed || request !== current || current.signal.aborted) return;
         const kind = error instanceof Error && 'kind' in error ? error.kind : 'network';
-        setIconMessage(status, CircleAlert, errors[kind as keyof typeof errors] ?? errors.network);
+        const message = version === 'IPv6' && (kind === 'network' || kind === 'timeout')
+          ? 'IPv6を利用できない環境、または一時的に取得できない状態です。'
+          : errors[kind as keyof typeof errors] ?? errors.network;
+        const informational = version === 'IPv6' && (kind === 'network' || kind === 'timeout');
+        status.classList.toggle('ip-status--info', informational);
+        setIconMessage(status, informational ? Info : CircleAlert, message);
       } finally {
         if (!disposed && request === current) output.removeAttribute('aria-busy');
       }

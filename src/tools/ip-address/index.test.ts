@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { Check, CircleAlert, Info } from 'lucide';
 import { mount } from './index';
 import { fetchIpv4, fetchIpv6 } from './api';
+import { createIcon } from '../../components/icon';
 vi.mock('./api', () => ({ fetchIpv4: vi.fn(), fetchIpv6: vi.fn() }));
 const api = vi.mocked(fetchIpv4);
 const api6 = vi.mocked(fetchIpv6);
@@ -75,6 +77,50 @@ it.each(['network', 'http', 'timeout', 'format'])('%sの表示後に再取得で
   ui.refresh.click();
   await vi.waitFor(() => expect(ui.output.value).toBe('1.2.3.4'));
 });
+it.each(['network', 'timeout'] as const)('IPv6の%sは情報表示になり、再取得成功で解除する', async (kind) => {
+  api.mockResolvedValue('203.0.113.42');
+  api6.mockRejectedValueOnce(Object.assign(new Error(), { kind })).mockResolvedValueOnce('2001:db8::2');
+  const ui = setup();
+  const status4 = ui.view.querySelector<HTMLElement>('[data-version=IPv4] .ip-status')!;
+  const status6 = ui.view.querySelector<HTMLElement>('[data-version=IPv6] .ip-status')!;
+  await vi.waitFor(() => expect(ui.refresh.disabled).toBe(false));
+  expect(status6.textContent).toBe('IPv6を利用できない環境、または一時的に取得できない状態です。');
+  expect(status6.querySelector('svg')?.outerHTML).toBe(createIcon(Info).outerHTML);
+  expect(status6.classList.contains('ip-status--info')).toBe(true);
+  expect(status4.textContent).toBe('取得成功');
+  expect(ui.copy.disabled).toBe(false);
+  expect(ui.copy6.disabled).toBe(true);
+  ui.refresh.click();
+  await vi.waitFor(() => expect(ui.output6.value).toBe('2001:db8::2'));
+  expect(status6.classList.contains('ip-status--info')).toBe(false);
+  expect(status6.textContent).toBe('取得成功');
+  expect(status6.querySelector('svg')?.outerHTML).toBe(createIcon(Check).outerHTML);
+});
+it.each(['http', 'format'] as const)('IPv6の%sエラーは従来のエラー表示を維持する', async (kind) => {
+  api6.mockRejectedValue(Object.assign(new Error(), { kind }));
+  const ui = setup();
+  const status = ui.view.querySelector<HTMLElement>('[data-version=IPv6] .ip-status')!;
+  await vi.waitFor(() => expect(ui.refresh.disabled).toBe(false));
+  expect(status.textContent).toBe(kind === 'http'
+    ? 'HTTPエラー：外部サービスが正常に応答しませんでした。時間をおいて再取得してください。'
+    : 'レスポンス形式エラー：有効なIPアドレスを取得できませんでした。時間をおいて再取得してください。');
+  expect(status.querySelector('svg')?.outerHTML).toBe(createIcon(CircleAlert).outerHTML);
+  expect(status.classList.contains('ip-status--info')).toBe(false);
+});
+it.each([
+  ['network', '通信エラー：接続を確認して、再取得してください。'],
+  ['http', 'HTTPエラー：外部サービスが正常に応答しませんでした。時間をおいて再取得してください。'],
+  ['timeout', 'タイムアウト：10秒以内に取得できませんでした。再取得してください。'],
+  ['format', 'レスポンス形式エラー：有効なIPアドレスを取得できませんでした。時間をおいて再取得してください。'],
+] as const)('IPv4の%sエラー表示は変わらない', async (kind, message) => {
+  api.mockRejectedValue(Object.assign(new Error(), { kind }));
+  const ui = setup();
+  const status = ui.view.querySelector<HTMLElement>('[data-version=IPv4] .ip-status')!;
+  await vi.waitFor(() => expect(ui.refresh.disabled).toBe(false));
+  expect(status.textContent).toBe(message);
+  expect(status.querySelector('svg')?.outerHTML).toBe(createIcon(CircleAlert).outerHTML);
+  expect(status.classList.contains('ip-status--info')).toBe(false);
+});
 it.each(['success', 'denied', 'unavailable'])('コピー: %s', async (mode) => {
   api.mockResolvedValue('1.2.3.4');
   const writeText = mode === 'success' ? vi.fn().mockResolvedValue(undefined) : vi.fn().mockRejectedValue(new Error());
@@ -136,7 +182,9 @@ it.each([[true, true], [true, false], [false, true], [false, false]])(
     expect(ui.copy6.disabled).toBe(!v6);
     for (const [version, success] of [['IPv4', v4], ['IPv6', v6]]) {
       expect(ui.view.querySelector(`[data-version=${version}] .ip-status`)!.textContent)
-        .toContain(success ? '取得成功' : '通信エラー');
+        .toContain(success ? '取得成功' : version === 'IPv6'
+          ? 'IPv6を利用できない環境、または一時的に取得できない状態です。'
+          : '通信エラー');
     }
   },
 );
@@ -264,7 +312,8 @@ it.each(['IPv4', 'IPv6'] as const)('再取得中に%sだけ完了しても連打
   expect(output.value).toBe(address);
   expect(pendingOutput.value).toBe('');
   expect(ui.view.querySelector('[aria-busy]')).toBeNull();
-  expect(ui.view.querySelectorAll('.ip-status')[first === 'IPv4' ? 1 : 0]!.textContent).toContain('通信エラー');
+  expect(ui.view.querySelectorAll('.ip-status')[first === 'IPv4' ? 1 : 0]!.textContent)
+    .toContain(first === 'IPv4' ? 'IPv6を利用できない環境、または一時的に取得できない状態です。' : '通信エラー');
 });
 
 it('RDAPリンクは成功したIPだけで利用でき、再取得時に隠れる', async () => {
