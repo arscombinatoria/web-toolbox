@@ -1,7 +1,7 @@
 import { Check, CircleAlert, Copy, Download, Trash2 } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
-import { parseMarkdown, parseTsv, toMarkdown, toTsv, type TableData } from './logic';
+import { parseMarkdownWithAlignments, parseTsv, toMarkdown, toTsv, type ColumnAlignment, type TableData } from './logic';
 import './style.css';
 
 const INITIAL_SAMPLE = '| 品名 | 数量 | 備考 |\n| --- | --- | --- |\n| りんご | 3 | 青森県産 |\n| みかん | 5 | 愛媛県産 |';
@@ -16,6 +16,11 @@ export function mount(container: HTMLElement): () => void {
       <label><input type="radio" name="table-direction" value="excel" checked> Markdown → Excel</label>
       <label><input type="radio" name="table-direction" value="markdown"> Excel → Markdown</label>
     </div></fieldset>
+    <fieldset class="table-format-options" data-format-options hidden><legend>Markdownの配置と列幅</legend>
+      <div data-alignments class="table-alignments"></div>
+      <label class="table-padding-option"><input type="checkbox" data-padding> 列幅を揃える</label>
+      <p data-padding-warning hidden>列幅調整用の空白が追加されます。Excelへ再変換する際に、追加された空白がセルの内容として残る場合があります。</p>
+    </fieldset>
     <div class="table-editors">
       <div><label for="table-input">入力</label>
         <p id="table-input-help"></p>
@@ -29,6 +34,12 @@ export function mount(container: HTMLElement): () => void {
         <button type="button" data-download>Excelをダウンロード</button>
       </div>
     </div>
+    <section class="table-preview-section" aria-labelledby="table-preview-heading" hidden>
+      <h2 id="table-preview-heading">Markdown表プレビュー</h2>
+      <p data-preview-source></p>
+      <div data-preview></div>
+      <p data-preview-reason aria-live="polite" aria-atomic="true"></p>
+    </section>
     <p id="table-error" role="alert" aria-atomic="true"></p>
     <p class="table-status" role="status" aria-atomic="true"></p>
     <p>入力・結果は外部送信せず、保存もしません。結果は選択して手動でもコピーできます。</p>
@@ -56,6 +67,14 @@ export function mount(container: HTMLElement): () => void {
   download.prepend(createIcon(Download));
   const status = view.querySelector<HTMLElement>('[role="status"]')!;
   const error = view.querySelector<HTMLElement>('[role="alert"]')!;
+  const formatOptions = view.querySelector<HTMLElement>('[data-format-options]')!;
+  const alignmentControls = view.querySelector<HTMLElement>('[data-alignments]')!;
+  const paddingControl = view.querySelector<HTMLInputElement>('[data-padding]')!;
+  const paddingWarning = view.querySelector<HTMLElement>('[data-padding-warning]')!;
+  const preview = view.querySelector<HTMLElement>('[data-preview]')!;
+  const previewSection = view.querySelector<HTMLElement>('.table-preview-section')!;
+  const previewSource = view.querySelector<HTMLElement>('[data-preview-source]')!;
+  const previewReason = view.querySelector<HTMLElement>('[data-preview-reason]')!;
   const listeners = new AbortController();
   const options = { signal: listeners.signal };
   const urls = new Map<string, ReturnType<typeof setTimeout>>();
@@ -64,23 +83,103 @@ export function mount(container: HTMLElement): () => void {
   let copying = false;
   let downloading = false;
   let table: TableData = { rows: [] };
+  let alignments: ColumnAlignment[] = [];
+  let hasOutput = false;
+  let copyText = '';
+  let currentTableValid = false;
   const toExcel = () => view.querySelector<HTMLInputElement>('[value="excel"]')!.checked;
   const buttons = () => {
-    copy.disabled = copying || !table.rows.length;
+    copy.disabled = copying || !hasOutput || !table.rows.length;
     download.disabled = downloading || !table.rows.length;
     download.hidden = !toExcel();
   };
+  const resizeAlignments = (columns: number) => Array.from({ length: columns }, (_, index) => alignments[index] ?? 'none');
+  const renderAlignmentControls = (headers: readonly string[]) => {
+    alignmentControls.replaceChildren();
+    formatOptions.hidden = toExcel();
+    if (toExcel()) return;
+    headers.forEach((header, index) => {
+      const label = document.createElement('label');
+      label.className = 'table-alignment-control';
+      const heading = document.createElement('span');
+      heading.textContent = `列${index + 1}（${header || '空のヘッダー'}）`;
+      const select = document.createElement('select');
+      select.dataset.column = String(index);
+      select.setAttribute('aria-label', `列${index + 1}（${header || '空のヘッダー'}）の配置`);
+      for (const [value, text] of [
+        ['none', '指定なし'], ['left', '左寄せ'], ['center', '中央揃え'], ['right', '右寄せ'],
+      ] as const) {
+        const option = document.createElement('option');
+        option.value = value; option.textContent = text;
+        select.append(option);
+      }
+      select.value = alignments[index] ?? 'none';
+      label.append(heading, select);
+      alignmentControls.append(label);
+    });
+  };
+  const renderPreview = (markdown: string, expected: TableData, current: number) => {
+    preview.replaceChildren(); previewReason.textContent = '';
+    previewSource.textContent = toExcel() ? '入力Markdownのプレビュー' : '変換結果Markdownのプレビュー';
+    if (!markdown || !expected.rows.length) { previewSource.textContent = ''; previewSection.hidden = true; return; }
+    previewSection.hidden = false;
+    void import('./preview').then(({ buildMarkdownPreview }) => {
+      if (disposed || current !== revision) return;
+      const result = buildMarkdownPreview(markdown, expected);
+      if (result.element) preview.append(result.element);
+      else previewReason.textContent = result.reason ?? 'プレビューを表示できません。変換結果とコピーは利用できます。';
+    }).catch(() => {
+      if (!disposed && current === revision) previewReason.textContent = 'プレビューを読み込めませんでした。変換結果とコピーは利用できます。';
+    });
+  };
+  const clearPreview = () => {
+    preview.replaceChildren(); previewSource.textContent = ''; previewReason.textContent = '';
+    previewSection.hidden = true;
+  };
+  const renderOutput = (current: number) => {
+    output.value = ''; copyText = ''; hasOutput = false; clearPreview(); error.textContent = '';
+    try {
+      copyText = toExcel() ? toTsv(table) : toMarkdown(table, { alignments, padding: paddingControl.checked });
+      output.value = copyText;
+      hasOutput = true;
+      renderPreview(toExcel() ? input.value : copyText, table, current);
+    } catch (cause) {
+      setIconMessage(error, CircleAlert, cause instanceof Error ? cause.message : '変換できませんでした。');
+    }
+    input.setAttribute('aria-invalid', String(Boolean(error.textContent)));
+    buttons();
+  };
+  const updateSettings = () => {
+    revision++;
+    status.textContent = '';
+    if (!currentTableValid) return;
+    renderOutput(revision);
+  };
   const updateInput = () => {
     revision++;
+    const current = revision;
     status.textContent = '';
     error.textContent = '';
     view.querySelector('#table-input-help')!.textContent = toExcel() ? 'Markdown表を貼り付けてください。' : 'Excelでコピーしたセル範囲を貼り付けてください。';
     view.querySelector('#table-output-help')!.textContent = toExcel() ? 'Excel貼り付け用TSV' : 'Markdown表';
     table = { rows: [] };
-    output.value = '';
+    currentTableValid = false;
+    hasOutput = false;
+    output.value = ''; copyText = '';
+    clearPreview();
+    formatOptions.hidden = toExcel();
     try {
-      table = toExcel() ? parseMarkdown(input.value) : parseTsv(input.value);
-      output.value = toExcel() ? toTsv(table) : toMarkdown(table);
+      if (toExcel()) {
+        const parsed = parseMarkdownWithAlignments(input.value);
+        table = parsed.table;
+        alignments = parsed.alignments;
+      } else {
+        table = parseTsv(input.value);
+        alignments = resizeAlignments(table.rows[0]?.length ?? 0);
+      }
+      currentTableValid = true;
+      renderAlignmentControls(table.rows[0] ?? []);
+      renderOutput(current);
     } catch (cause) {
       setIconMessage(error, CircleAlert, cause instanceof Error ? cause.message : '変換できませんでした。');
     }
@@ -95,6 +194,16 @@ export function mount(container: HTMLElement): () => void {
   };
   input.value = INITIAL_SAMPLE;
   input.addEventListener('input', updateInput, options);
+  alignmentControls.addEventListener('change', event => {
+    const select = (event.target as HTMLElement).closest<HTMLSelectElement>('select[data-column]');
+    if (!select) return;
+    alignments[Number(select.dataset.column)] = select.value as ColumnAlignment;
+    updateSettings();
+  }, options);
+  paddingControl.addEventListener('change', () => {
+    paddingWarning.hidden = !paddingControl.checked;
+    updateSettings();
+  }, options);
   view.querySelectorAll<HTMLInputElement>('input[name="table-direction"]').forEach(radio => {
     radio.addEventListener('change', updateDirection, options);
   });
@@ -102,12 +211,12 @@ export function mount(container: HTMLElement): () => void {
     input.value = ''; updateInput(); input.focus();
   }, options);
   copy.addEventListener('click', async () => {
-    if (copying || !table.rows.length) return;
+    if (copying || !hasOutput || !table.rows.length) return;
     const current = revision;
     copying = true; buttons();
     try {
       // textareaはCRLFをLFへ正規化するため、共通データからコピー用に生成する。
-      await navigator.clipboard.writeText(toExcel() ? toTsv(table) : toMarkdown(table));
+      await navigator.clipboard.writeText(copyText);
       if (!disposed && current === revision) setIconMessage(status, Check, 'コピーしました。');
     } catch {
       if (!disposed && current === revision) setIconMessage(status, CircleAlert, 'コピーできませんでした。変換結果を選択して手動でコピーしてください。');
