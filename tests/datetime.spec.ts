@@ -5,14 +5,14 @@ test.beforeEach(async ({ page }) => {
   await page.goto('./?tool=datetime');
 });
 test('24時間表・今日・選択・秒精度・UTC入力・不正入力・切り替え', async ({ page }) => {
-  await expect(page.locator('tbody tr')).toHaveCount(24);
+  await expect(page.locator('.datetime-tables tbody tr')).toHaveCount(24);
   await expect(page.locator('[data-now-jst]')).toHaveText('2026-10-17 14:35');
   await expect(page.locator('.is-current')).toContainText('14:00');
   await page.getByLabel('対応表の日付（JST）').fill('2026-10-16');
   await expect(page.locator('.is-current')).toHaveCount(0);
   await page.getByLabel('対応表の日付（JST）').fill('');
   await expect(page.locator('#datetime-table-error')).toContainText('有効な年月日');
-  await expect(page.locator('tbody tr')).toHaveCount(0);
+  await expect(page.locator('.datetime-tables tbody tr')).toHaveCount(0);
   await page.getByRole('button', { name: '今日へ戻る' }).click();
   await expect(page.locator('.is-current')).toHaveCount(1);
   await page.getByRole('button', { name: 'JST 18:00を選択' }).focus();
@@ -57,7 +57,8 @@ test('モバイル・両テーマ・時間帯更新', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const theme of ['light', 'dark']) {
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme);
-    await expect(page.locator('table')).toBeVisible();
+    await expect(page.locator('.datetime-tables table')).toHaveCount(2);
+    await expect(page.locator('.datetime-tables table').first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(await page.locator('.is-current').evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
   }

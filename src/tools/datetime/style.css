@@ -1,12 +1,13 @@
 .datetime-tool h2 { font-size: 1.15rem; margin-top: var(--space-4); }
 .datetime-clocks { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .datetime-clocks p { margin: 0; padding: var(--space-2); background: var(--page); border-radius: var(--radius); }
-.datetime-tool time, .datetime-tool table, .datetime-results input { font-variant-numeric: tabular-nums; }
+.datetime-tool time, .datetime-tool table, .datetime-tool input { font-variant-numeric: tabular-nums; }
 .datetime-clocks time { display: block; font-weight: 600; }
 .datetime-controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); margin-bottom: var(--space-2); }
 .datetime-tool label { display: block; font-size: 0.875rem; }
 .datetime-tool input, .datetime-controls select { display: block; width: 100%; min-width: 0; font: inherit; padding: var(--space-1); color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: var(--radius); }
 .datetime-tool table { width: 100%; border-collapse: collapse; }
+.datetime-tables { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); margin-bottom: var(--space-2); }
 .datetime-tool caption { text-align: left; color: var(--muted); font-size: 0.875rem; margin-bottom: var(--space-1); }
 .datetime-tool th, .datetime-tool td { text-align: left; padding: var(--space-1); border-bottom: 1px solid var(--border); }
 .datetime-tool td:first-child { width: 50%; }
@@ -21,4 +22,5 @@
 .datetime-help { color: var(--muted); font-size: 0.875rem; }
 .datetime-tool [role="status"] { min-height: 1.7em; }
 .datetime-tool button:disabled { opacity: 0.55; cursor: default; }
+@media (min-width: 1100px) { .datetime-tables { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); } }
 @media (max-width: 400px) { .datetime-tool th, .datetime-tool td { padding: 0.25rem; } .datetime-tool td small { display: block; margin-left: 0; } }

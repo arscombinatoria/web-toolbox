@@ -13,22 +13,30 @@ export function mount(container: HTMLElement): () => void {
     <section aria-labelledby="datetime-now-title"><h2 id="datetime-now-title">現在の日時</h2>
       <div class="datetime-clocks"><p>JST <time data-now-jst></time></p><p>UTC <time data-now-utc></time></p></div>
       <p class="datetime-help">約1分ごとに更新します。JSTはUTCより9時間進んでいます。</p></section>
-    <section aria-labelledby="datetime-table-title"><h2 id="datetime-table-title">JST ↔ UTC 24時間対応表</h2>
-      <div class="datetime-controls"><label for="datetime-table-date">対応表の日付（JST）<input id="datetime-table-date" type="date" min="0001-01-01" max="9999-12-31" aria-describedby="datetime-table-error"></label><button type="button" data-today>今日へ戻る</button></div>
-      <p id="datetime-table-error" role="alert"></p>
-      <table><caption>JST基準・時刻を選ぶと下の詳細欄に反映します</caption><thead><tr><th scope="col">JST</th><th scope="col">UTC</th><th scope="col">日付</th></tr></thead><tbody></tbody></table>
-    </section>
-    <section aria-labelledby="datetime-detail-title"><h2 id="datetime-detail-title">選択した日時の詳細</h2>
-      <p id="datetime-help" class="datetime-help">入力は0001〜9999年、秒精度。JSTはUTC+09:00固定です。うるう秒は非対応です。</p>
+    <section aria-labelledby="datetime-detail-title"><h2 id="datetime-detail-title" tabindex="-1">日時の詳細変換</h2>
+      <p id="datetime-help" class="datetime-help">日付はYYYY-MM-DD（0001〜9999年）、時刻はHH:mm:ss（24時間制）で入力してください。時刻はHH:mmも受け付け、秒を00として扱います。JSTはUTC+09:00固定です。うるう秒は非対応です。</p>
       <div class="datetime-controls">
         <label for="datetime-zone">入力タイムゾーン<select id="datetime-zone"><option>JST</option><option>UTC</option></select></label>
-        <label for="datetime-date">詳細の日付<input id="datetime-date" type="date" min="0001-01-01" max="9999-12-31" aria-describedby="datetime-help datetime-error"></label>
-        <label for="datetime-time">詳細の時刻<input id="datetime-time" type="time" step="1" aria-describedby="datetime-help datetime-error"></label>
+        <label for="datetime-date">詳細の日付<input id="datetime-date" type="text" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false" aria-describedby="datetime-help datetime-error"></label>
+        <label for="datetime-time">詳細の時刻<input id="datetime-time" type="text" placeholder="HH:mm:ss" autocomplete="off" spellcheck="false" aria-describedby="datetime-help datetime-error"></label>
       </div><button type="button" data-now>現在時刻を入力</button>
       <p id="datetime-error" role="alert"></p><div class="datetime-results"></div>
       <p role="status" aria-atomic="true"></p>
       <p class="datetime-help">ISO 8601・Unix timeは出力専用です。結果は選択して手動コピーできます。入力・結果は外部送信・保存しません。</p>
     </section>`;
+  const tableSection = document.createElement('section');
+  tableSection.setAttribute('aria-labelledby', 'datetime-table-title');
+  tableSection.innerHTML = `
+    <h2 id="datetime-table-title">JST ↔ UTC 24時間対応表</h2>
+    <div class="datetime-controls"><label for="datetime-table-date">対応表の日付（JST）<input id="datetime-table-date" type="text" placeholder="YYYY-MM-DD" autocomplete="off" spellcheck="false" aria-describedby="datetime-table-help datetime-table-error"></label><button type="button" data-today>今日へ戻る</button></div>
+    <p id="datetime-table-help" class="datetime-help">日付はYYYY-MM-DDで入力してください。時刻を選ぶと上の詳細変換欄に反映します。</p>
+    <p id="datetime-table-error" role="alert"></p>
+    <div class="datetime-tables">
+      <table><caption>JST 00:00〜11:00</caption><thead><tr><th scope="col">JST</th><th scope="col">UTC</th><th scope="col">日付</th></tr></thead><tbody></tbody></table>
+      <table><caption>JST 12:00〜23:00</caption><thead><tr><th scope="col">JST</th><th scope="col">UTC</th><th scope="col">日付</th></tr></thead><tbody></tbody></table>
+    </div>
+    <button type="button" data-back-to-detail>詳細変換欄へ戻る</button>`;
+  view.append(tableSection);
   const get = <T extends Element = HTMLElement>(selector: string) => view.querySelector<T>(selector)!;
   const tool = findTool('datetime')!;
   get('h1').textContent = tool.name;
@@ -69,7 +77,7 @@ export function mount(container: HTMLElement): () => void {
   });
   const highlight = () => {
     const now = formatDateTime(Date.now(), 'JST');
-    for (const row of get('tbody').querySelectorAll('tr')) {
+    for (const row of view.querySelectorAll<HTMLTableRowElement>('.datetime-tables tbody tr')) {
       const current = tableDate.value === now.slice(0, 10) && Number(row.dataset.hour) === Number(now.slice(11, 13));
       row.classList.toggle('is-current', current);
       row.classList.toggle('is-selected', Number(row.dataset.instant) === selected);
@@ -87,10 +95,12 @@ export function mount(container: HTMLElement): () => void {
     highlight();
   };
   const renderTable = () => {
-    const body = get('tbody'); body.replaceChildren();
+    const bodies = [...view.querySelectorAll<HTMLTableSectionElement>('.datetime-tables tbody')];
+    for (const body of bodies) body.replaceChildren();
     const tableError = get('#datetime-table-error'); tableError.textContent = '';
     try {
       for (const item of hourTable(tableDate.value)) {
+        const body = bodies[item.hour < 12 ? 0 : 1]!;
         const row = document.createElement('tr'); row.dataset.hour = String(item.hour); row.dataset.instant = String(item.instant);
         const cell = document.createElement('td');
         const button = document.createElement('button'); button.type = 'button'; button.textContent = item.jst;
@@ -105,10 +115,15 @@ export function mount(container: HTMLElement): () => void {
     tableDate.setAttribute('aria-invalid', String(Boolean(tableError.textContent)));
     highlight();
   };
-  get('tbody').addEventListener('click', event => {
+  get('.datetime-tables').addEventListener('click', event => {
     const button = (event.target as Element).closest('button');
     if (!button) return;
     zone.value = 'JST'; date.value = tableDate.value; time.value = `${button.textContent}:00`; updateDetail();
+  }, options);
+  get('[data-back-to-detail]').addEventListener('click', () => {
+    const heading = get<HTMLElement>('#datetime-detail-title');
+    heading.focus({ preventScroll: true });
+    heading.scrollIntoView({ behavior: 'auto', block: 'start' });
   }, options);
   const clock = () => {
     for (const z of ['JST', 'UTC'] as const) get(`[data-now-${z.toLowerCase()}]`).textContent = formatDateTime(Date.now(), z).slice(0, -3);

@@ -16,7 +16,7 @@ export default defineConfig({
       testMatch: [
         'smoke.spec.ts', 'ip-address-layout.spec.ts', 'image-converter.spec.ts',
         'layout-responsive.spec.ts', 'jwt-debugger-sizing.spec.ts', 'rdap-lookup-layout.spec.ts',
-        'markdown-table-preview.spec.ts', 'regex-match.spec.ts',
+        'markdown-table-preview.spec.ts', 'regex-match.spec.ts', 'datetime-layout.spec.ts',
       ],
       use: {
         ...devices['Desktop Firefox'],
