@@ -35,14 +35,32 @@ it('通常表示では通信せず、空白除去・不正入力を扱う', asyn
   expect(api).toHaveBeenCalledWith('8.8.8.8', expect.any(AbortSignal));
   expect(ui.view.textContent).toContain('abuse@example.test');
 });
-it.each(['not-found', 'rate-limit', 'http', 'network', 'timeout', 'json', 'format'])('%sのエラーと検証済みIPの安全な外部確認リンク', async (kind) => {
-  api.mockRejectedValue(Object.assign(new Error(), { kind }));
+it.each([
+  ['not-found', 'HTTP 404：登録情報が見つかりませんでした。'],
+  ['rate-limit', 'HTTP 429：問い合わせ制限に達しました。時間をおいて検索してください。'],
+  ['http', 'HTTPエラー：RDAPサービスが正常に応答しませんでした。'],
+  ['network', '通信エラー：ネットワークやサービスの稼働状況・CORS設定などにより取得できませんでした。'],
+  ['timeout', 'タイムアウト：10秒以内に取得できませんでした。'],
+  ['json', 'レスポンス形式エラー：有効なJSONではありません。'],
+  ['format', 'レスポンス形式エラー：RDAPのIP Network情報ではありません。'],
+] as const)('%sのエラー・安全な確認リンクと再検索回復', async (kind, expectedMessage) => {
+  api.mockRejectedValueOnce(Object.assign(new Error(), { kind })).mockResolvedValueOnce(response());
   const ui = setup();
   ui.search('2001:db8::1');
-  await vi.waitFor(() => expect(ui.view.querySelector('[role=alert]')!.textContent).not.toBe(''));
-  const link = ui.view.querySelector<HTMLAnchorElement>('[data-fallback] a')!;
+  const alert = ui.view.querySelector<HTMLElement>('[role=alert]')!;
+  await vi.waitFor(() => expect(alert.textContent).toContain(expectedMessage));
+  const fallback = ui.view.querySelector<HTMLElement>('[data-fallback]')!;
+  expect(fallback.hidden).toBe(false);
+  const link = fallback.querySelector<HTMLAnchorElement>('a')!;
+  expect(link.textContent).toBe('RDAP.orgで外部確認する');
   expect(link.href).toBe('https://rdap.org/ip/2001%3Adb8%3A%3A1');
   expect(link.rel).toBe('noopener noreferrer');
+  ui.search('2001:db8::1');
+  await vi.waitFor(() => expect(ui.view.textContent).toContain('検索が完了'));
+  expect(alert.textContent).toBe('');
+  expect(fallback.hidden).toBe(true);
+  expect(fallback.querySelector('a')).toBeNull();
+  expect(ui.view.querySelector('[data-result]')!.hasAttribute('hidden')).toBe(false);
 });
 it.each(['resolve', 'reject'])('再検索前の%sを無視する', async (outcome) => {
   let resolve!: (value: RdapResult) => void;

@@ -83,13 +83,13 @@ for (const version of ['IPv4', 'IPv6']) {
     expect(ipifyRequests).toEqual([]);
   });
 }
-for (const status of [404, 429, 503, 'network'] as const) {
+for (const status of [404, 'network'] as const) {
   test(`RDAPエラー ${status} と外部確認リンク、再検索で回復`, async ({ page }) => {
     await page.route('https://rdap.org/**', route => status === 'network' ? route.abort('failed') : route.fulfill({ status, body: '{}' }));
     await page.goto('./?tool=rdap-lookup');
     await page.getByRole('textbox', { name: 'IPアドレス（IPv4・IPv6）' }).fill('8.8.8.8');
     await page.getByRole('button', { name: '検索', exact: true }).click();
-    await expect(page.locator('[role=alert]')).toContainText(status === 'network' ? '通信エラー' : `HTTP${status === 503 ? 'エラー' : ` ${status}`}`);
+    await expect(page.locator('[role=alert]')).toContainText(status === 'network' ? '通信エラー' : 'HTTP 404');
     await expect(page.getByRole('link', { name: 'RDAP.orgで外部確認する' })).toHaveAttribute('href', 'https://rdap.org/ip/8.8.8.8');
     await page.route('https://rdap.org/**', route => route.fulfill({ json: network }));
     await page.getByRole('button', { name: '検索', exact: true }).click();

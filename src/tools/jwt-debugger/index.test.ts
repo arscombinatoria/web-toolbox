@@ -100,8 +100,11 @@ it('元の数値表現を表示・コピーし、精度警告を入力変更で�
   const source = '{"exp":1e-400,"n":9223372036854775807,"f":0.1234567890123456789012345,"z":-0}';
   const segment = btoa(source).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   fill('input', `${segment}.${segment}.`);
-  expect(field('header').value).toContain('9223372036854775807');
-  expect(field('payload').value).toContain('0.1234567890123456789012345');
+  for (const part of ['header', 'payload']) {
+    for (const literal of ['1e-400', '9223372036854775807', '0.1234567890123456789012345', '-0']) {
+      expect(field(part).value).toContain(literal);
+    }
+  }
   expect(document.querySelector('[data-claims]')!.textContent).toContain('数値精度');
   for (const part of ['header', 'payload']) {
     document.querySelector<HTMLButtonElement>(`[data-copy="${part}"]`)!.click();
