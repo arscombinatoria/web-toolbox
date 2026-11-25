@@ -82,13 +82,15 @@ test('cancels a heavy search responsively and recovers on the next explicit run'
   const pattern = page.getByRole('textbox', { name: '正規表現のパターン' });
   const input = page.getByRole('textbox', { name: 'テスト文字列' });
   const section = page.locator('.regex-match-section');
+  const run = page.getByRole('button', { name: 'マッチを確認' });
   await pattern.fill('^(a+)+$'); await input.fill(`${'a'.repeat(30_000)}!`);
-  await page.getByRole('button', { name: 'マッチを確認' }).click();
+  // 図の描画やフォーカス移動でボタンの座標が変わっても、Enterでボタンを操作できる。
+  await run.press('Enter');
   await expect(section.getByRole('status')).toHaveText('マッチ確認を実行しています。');
-  await page.getByRole('button', { name: 'マッチングを中止' }).click();
+  await page.getByRole('button', { name: 'マッチングを中止' }).press('Enter');
   await expect(section.getByRole('status')).toHaveText('マッチ確認を停止しました。');
   await input.fill('aaa'); await pattern.fill('a+');
-  await page.getByRole('button', { name: 'マッチを確認' }).click();
+  await run.press('Enter');
   await expect(section.getByRole('status')).toHaveText('1件を確認しました。');
   await expect(section.locator('mark')).toHaveText('aaa');
 });
