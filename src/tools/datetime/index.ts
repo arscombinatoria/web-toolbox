@@ -123,7 +123,7 @@ export function mount(container: HTMLElement): () => void {
   get('[data-back-to-detail]').addEventListener('click', () => {
     const heading = get<HTMLElement>('#datetime-detail-title');
     heading.focus({ preventScroll: true });
-    heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    heading.scrollIntoView({ behavior: 'auto', block: 'start' });
   }, options);
   const clock = () => {
     for (const z of ['JST', 'UTC'] as const) get(`[data-now-${z.toLowerCase()}]`).textContent = formatDateTime(Date.now(), z).slice(0, -3);

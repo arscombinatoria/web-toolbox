@@ -2,7 +2,7 @@ import { expect, test } from './fixtures';
 
 test('日時の表と入力はロケール・端末タイムゾーンに依存せず、両表から選択できる', async ({ browser }) => {
   for (const locale of ['ja-JP', 'en-US']) {
-    const context = await browser.newContext({ locale, timezoneId: 'Pacific/Kiritimati' });
+    const context = await browser.newContext({ locale, timezoneId: 'Pacific/Kiritimati', reducedMotion: 'reduce' });
     const page = await context.newPage();
     await page.clock.install({ time: new Date('2026-10-17T02:35:00Z') });
     await page.goto('./?tool=datetime');
@@ -37,8 +37,26 @@ test('日時の表と入力はロケール・端末タイムゾーンに依存�
     await page.getByRole('button', { name: 'JST 18:00を選択' }).click();
     await expect(page.getByLabel('詳細の日付')).toHaveValue('2026-10-17');
     await expect(page.getByLabel('詳細の時刻')).toHaveValue('18:00:00');
+    await page.evaluate(() => {
+      const native = Element.prototype.scrollIntoView;
+      Object.defineProperty(Element.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: function (this: Element, options?: boolean | ScrollIntoViewOptions) {
+          this.setAttribute('data-test-scroll-behavior', typeof options === 'object' ? options?.behavior ?? 'auto' : 'auto');
+          this.setAttribute('data-test-scroll-block', typeof options === 'object' ? options?.block ?? 'start' : 'start');
+          native.call(this, options);
+        },
+      });
+    });
+    const urlBeforeReturn = page.url();
+    const historyLengthBeforeReturn = await page.evaluate(() => history.length);
     await page.getByRole('button', { name: '詳細変換欄へ戻る' }).click();
-    await expect(page.locator('#datetime-detail-title')).toBeFocused();
+    const detailHeading = page.locator('#datetime-detail-title');
+    await expect(detailHeading).toBeFocused();
+    await expect(detailHeading).toHaveAttribute('data-test-scroll-behavior', 'auto');
+    await expect(detailHeading).toHaveAttribute('data-test-scroll-block', 'start');
+    expect(page.url()).toBe(urlBeforeReturn);
+    expect(await page.evaluate(() => history.length)).toBe(historyLengthBeforeReturn);
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption('dark');
     await expect(page.locator('.datetime-tables table')).toHaveCount(2);
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption('light');
