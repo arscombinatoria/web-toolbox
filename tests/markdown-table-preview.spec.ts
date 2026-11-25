@@ -201,9 +201,11 @@ test('320pxの両テーマで長い・横長のプレビューをスクロール
     const overflow = await scroll.evaluate(element => element.scrollWidth > element.clientWidth);
     expect(overflow).toBe(true);
     await scroll.focus();
+    await expect(scroll).toBeFocused();
+    await scroll.evaluate(element => { element.scrollLeft = 0; });
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
-    expect(await scroll.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+    await expect.poll(() => scroll.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
   }
 });
