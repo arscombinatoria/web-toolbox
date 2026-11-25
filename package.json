@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@eslint-community/regexpp": "4.12.3",
+    "@jsquash/oxipng": "2.3.0",
     "exceljs-community": "5.2.3",
     "jose": "^6.2.18",
     "lucide": "^1.77.0",

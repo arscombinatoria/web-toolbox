@@ -4,6 +4,7 @@ export const encoders = {
   original: { label: 'Original', type: null, extension: '', hasQuality: false },
   'image/jpeg': { label: 'Browser JPEG', type: 'image/jpeg', extension: '.jpg', hasQuality: true },
   'image/png': { label: 'Browser PNG', type: 'image/png', extension: '.png', hasQuality: false },
+  oxipng: { label: 'Oxipng', type: 'image/png', extension: '.png', hasQuality: false },
 } as const;
 
 export type EncoderId = keyof typeof encoders;

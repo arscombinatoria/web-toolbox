@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
 import { decode, encode } from './encoder';
+import { encodeOxipng } from './oxipng/client';
 import { mount } from './index';
 
 vi.mock('./encoder', async importOriginal => ({
   ...await importOriginal<typeof import('./encoder')>(), decode: vi.fn(), encode: vi.fn(),
 }));
+vi.mock('./oxipng/client', () => ({ encodeOxipng: vi.fn() }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -17,6 +19,7 @@ function deferred<T>() {
 const bitmap = (width = 64, height = 32) => ({ width, height, close: vi.fn() }) as unknown as ImageBitmap;
 const jpeg = new Blob(['1234'], { type: 'image/jpeg' });
 const png = new Blob(['1'], { type: 'image/png' });
+const oxipngPng = new Blob(['optimized'], { type: 'image/png' });
 let dispose: (() => void) | undefined;
 afterEach(() => {
   dispose?.();
@@ -31,6 +34,7 @@ function setup(active = bitmap()) {
   vi.useFakeTimers();
   vi.mocked(decode).mockResolvedValue(active);
   vi.mocked(encode).mockImplementation(async (_, type) => type === 'image/jpeg' ? jpeg : png);
+  vi.mocked(encodeOxipng).mockResolvedValue(oxipngPng);
   let urlNumber = 0;
   const createUrl = vi.fn((_blob: Blob) => 'blob:result-' + ++urlNumber);
   const revokeUrl = vi.fn();
@@ -70,6 +74,13 @@ function setup(active = bitmap()) {
       score: panel.querySelector('.image-score')!,
       save: panel.querySelector<HTMLButtonElement>('.image-save')!,
       qualityLabel: panel.querySelector<HTMLElement>('.image-quality')!,
+      oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
+      oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
+      oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
+      oxipngAlpha: panel.querySelector<HTMLInputElement>('.image-oxipng-alpha')!,
+      oxipngStatus: panel.querySelector<HTMLElement>('.image-oxipng-status')!,
+      oxipngCancel: panel.querySelector<HTMLButtonElement>('.image-oxipng-cancel')!,
+      oxipngRetry: panel.querySelector<HTMLButtonElement>('.image-oxipng-retry')!,
       select(value: string) {
         format.value = value;
         format.dispatchEvent(new Event('change'));
@@ -933,6 +944,7 @@ it('画像の複製待ちに設定が変更されたときは、遅れて届い�
   choose();
   await flush();
   evaluate.click();
+  await flush();
   right.quality('0.32');
   pending.resolve(duplicate);
   await flush();
@@ -1142,4 +1154,119 @@ it('前のWorkerの終了を待って起動し、待機中の中止で古い要�
   right.quality('0.25');
   await vi.advanceTimersByTimeAsync(800);
   expect(workers).toHaveLength(2);
+});
+
+it('Oxipngの設定は左右で独立し、形式を切り替えてもその側の設定を保持する', async () => {
+  const { choose, left, right } = setup();
+  choose();
+  await flush();
+  left.select('oxipng');
+  left.oxipngLevel.value = '5';
+  left.oxipngLevel.dispatchEvent(new Event('change'));
+  left.oxipngInterlace.checked = true;
+  left.oxipngInterlace.dispatchEvent(new Event('change'));
+  left.oxipngAlpha.checked = true;
+  left.oxipngAlpha.dispatchEvent(new Event('change'));
+  right.select('oxipng');
+  await flush();
+
+  expect(left.oxipngSettings.hidden).toBe(false);
+  expect(left.oxipngLevel.value).toBe('5');
+  expect(left.oxipngInterlace.checked).toBe(true);
+  expect(left.oxipngAlpha.checked).toBe(true);
+  expect(right.oxipngLevel.value).toBe('2');
+  expect(right.oxipngInterlace.checked).toBe(false);
+  expect(right.oxipngAlpha.checked).toBe(false);
+  expect(left.score.textContent).toBe('可逆圧縮（スコア評価対象外）');
+  left.select('image/png');
+  expect(left.oxipngSettings.hidden).toBe(true);
+  left.select('oxipng');
+  expect(left.oxipngLevel.value).toBe('5');
+});
+
+it('同じ入力・Oxipng設定の左右は実行中のBlobを共有する', async () => {
+  const { choose, left, right, createUrl } = setup();
+  const pending = deferred<Blob>();
+  vi.mocked(encodeOxipng).mockImplementation((_bitmap, _options, _signal, onStart) => {
+    onStart();
+    return pending.promise;
+  });
+  choose('sample.png');
+  await flush();
+  left.select('oxipng');
+  await flush();
+  right.select('oxipng');
+  await flush();
+  expect(vi.mocked(encodeOxipng)).toHaveBeenCalledOnce();
+  expect(left.oxipngStatus.textContent).toContain('変換しています');
+  expect(right.oxipngStatus.textContent).toContain('変換しています');
+
+  pending.resolve(oxipngPng);
+  await flush();
+  expect(left.save.disabled).toBe(false);
+  expect(right.save.disabled).toBe(false);
+  expect(left.oxipngStatus.textContent).toContain('完了');
+  expect(right.oxipngStatus.textContent).toContain('完了');
+  expect(createUrl.mock.calls.filter(([blob]) => blob === oxipngPng)).toHaveLength(2);
+});
+
+it('Oxipng level, interlace and alpha settings debounce for 180ms', async () => {
+  const { choose, left } = setup();
+  choose();
+  await flush();
+  left.select('oxipng');
+  await flush();
+  expect(encodeOxipng).toHaveBeenCalledOnce();
+
+  left.oxipngLevel.value = '3';
+  left.oxipngLevel.dispatchEvent(new Event('change'));
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeOxipng).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(encodeOxipng).toHaveBeenCalledTimes(2);
+
+  left.oxipngInterlace.checked = true;
+  left.oxipngInterlace.dispatchEvent(new Event('change'));
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeOxipng).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(encodeOxipng).toHaveBeenCalledTimes(3);
+
+  left.oxipngAlpha.checked = true;
+  left.oxipngAlpha.dispatchEvent(new Event('change'));
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeOxipng).toHaveBeenCalledTimes(3);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(encodeOxipng).toHaveBeenCalledTimes(4);
+});
+
+it('共有中のOxipngは最後の側が中止するまで生き、片側の中止後に再試行できる', async () => {
+  const { choose, left, right } = setup();
+  const pending = deferred<Blob>();
+  let signal!: AbortSignal;
+  vi.mocked(encodeOxipng).mockImplementation((_bitmap, _options, activeSignal) => {
+    signal = activeSignal;
+    return pending.promise;
+  });
+  choose();
+  await flush();
+  left.select('oxipng');
+  right.select('oxipng');
+  await flush();
+  right.oxipngCancel.click();
+  expect(signal.aborted).toBe(false);
+  expect(right.oxipngRetry.hidden).toBe(false);
+  expect(right.save.disabled).toBe(true);
+  left.oxipngCancel.click();
+  expect(signal.aborted).toBe(true);
+
+  vi.mocked(encodeOxipng).mockRejectedValueOnce(new Error('worker failed')).mockResolvedValueOnce(oxipngPng);
+  left.oxipngRetry.click();
+  await flush();
+  expect(left.oxipngRetry.hidden).toBe(false);
+  expect(left.save.disabled).toBe(true);
+  left.oxipngRetry.click();
+  await flush();
+  expect(left.save.disabled).toBe(false);
+  expect(left.oxipngStatus.textContent).toContain('完了');
 });

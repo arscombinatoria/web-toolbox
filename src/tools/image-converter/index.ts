@@ -2,6 +2,8 @@ import { Check, CircleAlert, Download, Image, ImageOff, ImagePlus, Minus, Plus, 
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
+import { encodeOxipng } from './oxipng/client';
+import { defaultOxipngOptions, oxipngKey, validateOxipngOptions, type OxipngOptions } from './oxipng/options';
 import { evaluateJpegs } from './quality/client';
 import { evaluationLimit, isEvaluable, MIN_EVALUATION_SIDE } from './quality/rules';
 import './style.css';
@@ -24,7 +26,7 @@ type EvaluationMode = 'auto' | 'manual';
 type Selection = { generation: number; controller: AbortController; changedAt: number };
 
 type SideResult =
-  | { status: 'idle' | 'failed' }
+  | { status: 'idle' | 'failed' | 'cancelled' }
   | { status: 'pending'; encoding?: Promise<Blob> }
   | { status: 'ready'; blob: Blob; filename: string };
 
@@ -73,6 +75,19 @@ export function mount(container: HTMLElement): () => void {
                 JPEG品質 <input type="range" aria-label="${label}のJPEG品質" min="0.01" max="1" step="0.01" value="${initialQuality}">
                 <span>${initialQuality.toFixed(2)}</span>
               </label>
+              <div class="image-oxipng-settings" hidden>
+                <label>Oxipngレベル <select aria-label="${label}のOxipngレベル">
+                  ${[1, 2, 3, 4, 5, 6].map(level => `<option value="${level}"${level === 2 ? ' selected' : ''}>${level}</option>`).join('')}
+                </select></label>
+                <label><input type="checkbox" class="image-oxipng-interlace" aria-label="${label}のインターレースを有効にする"> インターレースを有効にする</label>
+                <label><input type="checkbox" class="image-oxipng-alpha" aria-label="${label}の完全透明画素のRGB最適化を有効にする"> 完全透明画素のRGB最適化を有効にする</label>
+                <p class="image-note">レベル5・6は処理に時間がかかる場合があります。高いレベルが常に小さくなるとは限りません。有効にすると、完全透明な画素のRGB値が変わる場合があります。</p>
+                <p class="image-oxipng-status" role="status" aria-atomic="true"></p>
+                <div class="image-oxipng-actions">
+                  <button type="button" class="image-oxipng-cancel" hidden aria-label="${label}側のOxipngを中止">Oxipngを中止</button>
+                  <button type="button" class="image-oxipng-retry" hidden aria-label="${label}側のOxipngを再試行">Oxipngを再試行</button>
+                </div>
+              </div>
               <div class="image-metrics" role="group" aria-label="${label}側の変換結果">
                 <div class="image-metric">
                   <p id="image-size-label-${id}" class="image-metric-label">容量増減</p>
@@ -216,6 +231,8 @@ export function mount(container: HTMLElement): () => void {
       label,
       encoder: initialEncoder as EncoderId,
       quality: initialQuality,
+      oxipngOptions: { ...defaultOxipngOptions } as OxipngOptions,
+      oxipngKey: undefined as string | undefined,
       generation: 0,
       timer: undefined as ReturnType<typeof setTimeout> | undefined,
       result: { status: 'idle' } as SideResult,
@@ -226,6 +243,13 @@ export function mount(container: HTMLElement): () => void {
       qualityLabel: panel.querySelector<HTMLLabelElement>('.image-quality')!,
       qualityInput: panel.querySelector<HTMLInputElement>('.image-quality input')!,
       qualityValue: panel.querySelector('.image-quality span')!,
+      oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
+      oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
+      oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
+      oxipngAlpha: panel.querySelector<HTMLInputElement>('.image-oxipng-alpha')!,
+      oxipngStatus: panel.querySelector<HTMLElement>('.image-oxipng-status')!,
+      oxipngCancel: panel.querySelector<HTMLButtonElement>('.image-oxipng-cancel')!,
+      oxipngRetry: panel.querySelector<HTMLButtonElement>('.image-oxipng-retry')!,
       output: panel.querySelector<HTMLParagraphElement>('.image-result')!,
       sizeChange: panel.querySelector('.image-size-change')!,
       outputSize: panel.querySelector('.image-output-size')!,
@@ -238,6 +262,56 @@ export function mount(container: HTMLElement): () => void {
   type Side = ReturnType<typeof createSide>;
   const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
   const sides = [left, right];
+  const oxipngJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
+
+  function detachOxipng(side: Side) {
+    const key = side.oxipngKey;
+    side.oxipngKey = undefined;
+    if (!key) return;
+    const job = oxipngJobs.get(key);
+    if (!job) return;
+    job.consumers.delete(side);
+    if (!job.consumers.size) {
+      if (!job.blob) job.controller.abort();
+      oxipngJobs.delete(key);
+    }
+  }
+
+  function requestOxipng(side: Side, bitmap: ImageBitmap, generation: number): Promise<Blob> {
+    const options = validateOxipngOptions(side.oxipngOptions);
+    const key = oxipngKey(generation, options);
+    let job = oxipngJobs.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      job = { controller, consumers: new Set(), started: false };
+      oxipngJobs.set(key, job);
+      const current = job;
+      current.promise = encodeOxipng(bitmap, options, controller.signal, () => {
+        if (oxipngJobs.get(key) !== current) return;
+        current.started = true;
+        for (const consumer of current.consumers) {
+          if (consumer.oxipngKey !== key) continue;
+          consumer.oxipngStatus.textContent = 'Oxipngで変換しています…';
+        }
+      }).then(blob => {
+        if (oxipngJobs.get(key) === current && current.consumers.size) current.blob = blob;
+        return blob;
+      }, cause => {
+        if (oxipngJobs.get(key) === current) oxipngJobs.delete(key);
+        throw cause;
+      });
+      for (const pending of sides) {
+        if (pending.oxipngKey === key && pending.result.status === 'pending') current.consumers.add(pending);
+      }
+    }
+    job.consumers.add(side);
+    side.oxipngKey = key;
+    side.oxipngStatus.textContent = job.started ? 'Oxipngで変換しています…' : 'Oxipngの変換を待っています…';
+    side.oxipngCancel.hidden = false;
+    side.oxipngRetry.hidden = true;
+    return job.blob ? Promise.resolve(job.blob) : job.promise!;
+  }
+
   for (const side of sides) side.save.prepend(createIcon(Download));
 
   function evaluationBlob(side: Side): Blob | undefined {
@@ -255,6 +329,7 @@ export function mount(container: HTMLElement): () => void {
 
   function evaluationMessage(side: Side, blob: Blob | undefined, limit: string | undefined) {
     if (side.encoder === 'original') return '基準画像';
+    if (side.encoder === 'oxipng') return '可逆圧縮（スコア評価対象外）';
     if (!isEvaluable(side.encoder)) return '画質評価は未対応';
     if (limit && source) {
       const { width, height } = source.bitmap;
@@ -380,6 +455,7 @@ export function mount(container: HTMLElement): () => void {
   }
 
   function invalidate(side: Side) {
+    detachOxipng(side);
     ++side.generation;
     clearTimeout(side.timer);
     side.timer = undefined;
@@ -391,6 +467,8 @@ export function mount(container: HTMLElement): () => void {
     if (side.url) URL.revokeObjectURL(side.url);
     side.url = undefined;
     side.sizeChange.textContent = side.outputSize.textContent = side.error.textContent = '';
+    side.oxipngStatus.textContent = '';
+    side.oxipngCancel.hidden = side.oxipngRetry.hidden = true;
     delete side.output.dataset.change;
   }
 
@@ -469,6 +547,10 @@ export function mount(container: HTMLElement): () => void {
     side.caption.textContent = side.label + ' · ' + encoder.label;
     side.qualityLabel.hidden = !encoder.hasQuality;
     side.qualityValue.textContent = side.quality.toFixed(2);
+    side.oxipngSettings.hidden = side.encoder !== 'oxipng';
+    side.oxipngLevel.value = String(side.oxipngOptions.level);
+    side.oxipngInterlace.checked = side.oxipngOptions.interlace;
+    side.oxipngAlpha.checked = side.oxipngOptions.optimiseAlpha;
   }
 
   async function convert(side: Side, currentInput: number, currentSide: number) {
@@ -480,7 +562,12 @@ export function mount(container: HTMLElement): () => void {
     try {
       let blob: Blob = file;
       let filename = file.name;
-      if (type) {
+      if (side.encoder === 'oxipng') {
+        blob = await requestOxipng(side, bitmap, currentInput);
+        if (!isCurrent()) return;
+        const stem = file.name.replace(/\.[^.]*$/, '') || 'image';
+        filename = `${stem}-${side.id}-oxipng-o${side.oxipngOptions.level}.png`;
+      } else if (type) {
         let encoding: Promise<Blob> | undefined;
         // 設定が一致する間は、もう片側の変換処理か成功済みのBlobを共有する。
         if (side.encoder === other.encoder && (!hasQuality || side.quality === other.quality)) {
@@ -505,6 +592,11 @@ export function mount(container: HTMLElement): () => void {
         showOriginal(side, true);
       }
       side.result = { status: 'ready', blob, filename };
+      const restoreOxipngFocus = side.encoder === 'oxipng' && document.activeElement === side.oxipngCancel;
+      if (side.encoder === 'oxipng') {
+        side.oxipngStatus.textContent = 'Oxipngの変換が完了しました。';
+        side.oxipngCancel.hidden = side.oxipngRetry.hidden = true;
+      }
       side.output.dataset.change = blob.size < file.size ? 'reduction' : blob.size > file.size ? 'increase' : 'same';
       side.sizeChange.textContent = sizeChange(file.size, blob.size);
       const originalSize = document.createElement('span');
@@ -513,13 +605,21 @@ export function mount(container: HTMLElement): () => void {
       convertedSize.textContent = ' → 出力 ' + formatFileSize(blob.size);
       side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
+      if (restoreOxipngFocus) side.save.focus({ preventScroll: true });
       updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
+      const isOxipng = side.encoder === 'oxipng';
+      const restoreOxipngFocus = isOxipng && document.activeElement === side.oxipngCancel;
       invalidate(side);
       side.result = { status: 'failed' };
       const message = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
       setIconMessage(side.error, CircleAlert, side.label + '側：' + message);
+      if (isOxipng) {
+        side.oxipngStatus.textContent = 'Oxipngの変換に失敗しました。もう一度お試しください。';
+        side.oxipngRetry.hidden = false;
+        if (restoreOxipngFocus) side.oxipngRetry.focus({ preventScroll: true });
+      }
       updateEvaluation();
     }
   }
@@ -532,6 +632,14 @@ export function mount(container: HTMLElement): () => void {
     const currentSide = side.generation;
     side.result = { status: 'pending' };
     side.sizeChange.textContent = '変換しています…';
+    if (side.encoder === 'oxipng') {
+      side.oxipngKey = oxipngKey(inputGeneration, side.oxipngOptions);
+      const active = oxipngJobs.get(side.oxipngKey);
+      if (active) active.consumers.add(side);
+      side.oxipngStatus.textContent = 'Oxipngの変換を待っています…';
+      side.oxipngCancel.hidden = false;
+      side.oxipngRetry.hidden = true;
+    }
     updateEvaluation();
     if (delay === 0) {
       void convert(side, currentInput, currentSide);
@@ -806,6 +914,20 @@ export function mount(container: HTMLElement): () => void {
       side.encoder = encoder;
       updateSettings(side);
     }, options);
+    side.oxipngLevel.addEventListener('change', () => {
+      const updated = validateOxipngOptions({ ...side.oxipngOptions, level: Number(side.oxipngLevel.value) });
+      if (updated.level === side.oxipngOptions.level) return;
+      side.oxipngOptions = updated;
+      updateSettings(side, 180);
+    }, options);
+    side.oxipngInterlace.addEventListener('change', () => {
+      side.oxipngOptions = { ...side.oxipngOptions, interlace: side.oxipngInterlace.checked };
+      updateSettings(side, 180);
+    }, options);
+    side.oxipngAlpha.addEventListener('change', () => {
+      side.oxipngOptions = { ...side.oxipngOptions, optimiseAlpha: side.oxipngAlpha.checked };
+      updateSettings(side, 180);
+    }, options);
     side.qualityInput.addEventListener('input', () => {
       if (!encoders[side.encoder].hasQuality || side.quality === side.qualityInput.valueAsNumber) return;
       side.quality = side.qualityInput.valueAsNumber;
@@ -819,6 +941,21 @@ export function mount(container: HTMLElement): () => void {
       view.append(anchor);
       anchor.click();
       anchor.remove();
+    }, options);
+    side.oxipngCancel.addEventListener('click', () => {
+      if (side.encoder !== 'oxipng' || side.result.status !== 'pending') return;
+      invalidate(side);
+      side.result = { status: 'cancelled' };
+      side.oxipngStatus.textContent = 'Oxipngの変換を中止しました。再試行できます。';
+      side.oxipngRetry.hidden = false;
+      side.oxipngRetry.focus({ preventScroll: true });
+      updateEvaluation();
+    }, options);
+    side.oxipngRetry.addEventListener('click', () => {
+      if (side.encoder === 'oxipng' && source) {
+        convertSide(side);
+        side.oxipngCancel.focus({ preventScroll: true });
+      }
     }, options);
   }
   container.append(view);
