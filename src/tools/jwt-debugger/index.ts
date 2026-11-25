@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Copy, ShieldCheck, Trash2 } from 'lucide';
+import { Check, CircleAlert, CircleCheck, CircleDashed, CircleX, Copy, LoaderCircle, ShieldCheck, Trash2, TriangleAlert } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { analyzeClaims, decodeJwt, MAX_BYTES } from './logic';
@@ -6,6 +6,16 @@ import { algorithms, type Algorithm, verifySignature } from './verify';
 import { DEMO_SECRET, SAMPLE_JWT } from './sample';
 import { highlightJson, highlightJwt, renderHighlight } from './highlight';
 import './style.css';
+
+type VerificationState = 'idle' | 'pending' | 'match' | 'mismatch' | 'unavailable';
+
+const verificationPresentation = {
+  idle: { icon: CircleDashed, label: '未検証' },
+  pending: { icon: LoaderCircle, label: '検証中…' },
+  match: { icon: CircleCheck, label: '署名一致' },
+  mismatch: { icon: CircleX, label: '署名不一致' },
+  unavailable: { icon: TriangleAlert, label: '検証不可' },
+} satisfies Record<VerificationState, { icon: typeof CircleCheck; label: string }>;
 
 export function mount(container: HTMLElement): () => void {
   const view = document.createElement('div');
@@ -19,9 +29,14 @@ export function mount(container: HTMLElement): () => void {
       <section class="jwt-pane jwt-source" aria-labelledby="jwt-source-title">
         <h2 id="jwt-source-title">Encoded JWT</h2>
         <label for="jwt-input">JWT入力</label><textarea id="jwt-input" rows="5" spellcheck="false" autocomplete="off" aria-describedby="jwt-privacy jwt-sample"></textarea>
+        <p class="jwt-decode-state" data-decode-state="empty"><span data-decode-icon aria-hidden="true"></span><span data-decode-label>未入力</span></p>
         <button type="button" data-clear>入力をクリア</button>
         <p id="jwt-sample">初回表示には署名検証を試せるサンプルJWTとデモ用Secretを設定しています。デモ用Secretは公開された学習用キーであり、実際の認証システムでは使用できません。</p>
         <p role="alert" data-error></p>
+      </section>
+      <section class="jwt-signature" aria-labelledby="jwt-signature-title">
+        <h2 id="jwt-signature-title"><label for="jwt-signature">Signature（Base64URL）</label></h2>
+        <textarea id="jwt-signature" rows="2" readonly></textarea><p data-bytes></p>
       </section>
       <section class="jwt-pane jwt-decoded" aria-labelledby="jwt-decoded-title">
         <h2 id="jwt-decoded-title">Decoded</h2>
@@ -32,25 +47,22 @@ export function mount(container: HTMLElement): () => void {
         </div>
         <p>結果は選択して手動でもコピーできます。</p>
         <p role="status" data-copy-status></p>
+        <section class="jwt-verification" aria-labelledby="jwt-verification-title">
+          <h2 id="jwt-verification-title">署名検証</h2><p data-alg-help></p><p data-warning role="status"></p><label for="jwt-alg">検証アルゴリズム・キー種別</label>
+          <select id="jwt-alg"><option>HS256</option><option>RS256</option><option>ES256</option></select>
+          <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="text" autocomplete="off" spellcheck="false">
+            <label for="jwt-encoding">Secret形式</label><select id="jwt-encoding"><option value="utf8">UTF-8</option><option value="base64">Base64をデコード</option></select></div>
+          <div data-public-fields hidden><label for="jwt-public">公開鍵（SPKI PEM）</label><textarea id="jwt-public" rows="6" autocomplete="off" spellcheck="false"></textarea></div>
+          <div class="jwt-verification-result"><button type="button" data-verify>検証</button><div class="jwt-verification-status" data-verification-status role="status" aria-atomic="true"><p class="jwt-verification-badge" data-state="idle" data-verification><span data-verification-icon aria-hidden="true"></span><span data-verification-label>未検証</span></p><p class="jwt-verification-detail" data-verification-detail hidden></p></div></div>
+          <p>署名一致は、指定キーに対する署名のみの確認です。発行者・Audience・有効期間などを含むJWT全体の信頼性は保証しません。alg: noneはデコードのみ。jku・x5u・kidからの取得、JWKS取得は行いません。</p>
+        </section>
       </section>
     </div>
-    <section class="jwt-signature" aria-labelledby="jwt-signature-title">
-      <h2 id="jwt-signature-title"><label for="jwt-signature">Signature（Base64URL）</label></h2>
-      <textarea id="jwt-signature" rows="2" readonly></textarea><p data-bytes></p>
-    </section>
     <section class="jwt-claims" aria-labelledby="jwt-claims-title">
       <h2 id="jwt-claims-title">Claims・日時評価（署名とは独立）</h2>
       <p>現在の端末時計で評価します。期限内でもJWT全体の有効性・安全性は保証されません。</p><dl data-claims></dl>
     </section>
-    <section class="jwt-verification" aria-labelledby="jwt-verification-title">
-      <h2 id="jwt-verification-title">署名検証</h2><p data-alg-help></p><p data-warning role="status"></p><label for="jwt-alg">検証アルゴリズム・キー種別</label>
-      <select id="jwt-alg"><option>HS256</option><option>RS256</option><option>ES256</option></select>
-      <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="text" autocomplete="off" spellcheck="false">
-        <label for="jwt-encoding">Secret形式</label><select id="jwt-encoding"><option value="utf8">UTF-8</option><option value="base64">Base64をデコード</option></select></div>
-      <div data-public-fields hidden><label for="jwt-public">公開鍵（SPKI PEM）</label><textarea id="jwt-public" rows="6" autocomplete="off" spellcheck="false"></textarea></div>
-      <div class="jwt-verification-result"><button type="button" data-verify>検証</button><p role="status" data-verification>未検証</p></div>
-      <p>署名一致は、指定キーに対する署名のみの確認です。発行者・Audience・有効期間などを含むJWT全体の信頼性は保証しません。alg: noneはデコードのみ。jku・x5u・kidからの取得、JWKS取得は行いません。</p>
-    </section>`;
+    `;
   const query = <T extends HTMLElement>(selector: string) => view.querySelector<T>(selector)!;
   const tool = findTool('jwt-debugger')!;
   query('h1').textContent = tool.name;
@@ -64,7 +76,29 @@ export function mount(container: HTMLElement): () => void {
   const alg = query<HTMLSelectElement>('#jwt-alg');
   const encoding = query<HTMLSelectElement>('#jwt-encoding');
   const verify = query<HTMLButtonElement>('[data-verify]');
-  const result = query('[data-verification]');
+  const result = query<HTMLElement>('[data-verification-status]');
+  const decodeState = query<HTMLElement>('[data-decode-state]');
+  const setVerificationState = (state: VerificationState, detail = '') => {
+    const presentation = verificationPresentation[state];
+    const badge = document.createElement('p');
+    badge.className = 'jwt-verification-badge';
+    badge.dataset.state = state;
+    badge.dataset.verification = '';
+    const icon = document.createElement('span');
+    icon.dataset.verificationIcon = '';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.append(createIcon(presentation.icon));
+    const label = document.createElement('span');
+    label.dataset.verificationLabel = '';
+    label.textContent = presentation.label;
+    badge.append(icon, label);
+    const detailMessage = document.createElement('p');
+    detailMessage.className = 'jwt-verification-detail';
+    detailMessage.dataset.verificationDetail = '';
+    detailMessage.hidden = !detail;
+    detailMessage.textContent = detail;
+    result.replaceChildren(badge, detailMessage);
+  };
   const copyStatus = query('[data-copy-status]');
   const copies = [...view.querySelectorAll<HTMLButtonElement>('[data-copy]')];
   query('[data-clear]').prepend(createIcon(Trash2));
@@ -118,7 +152,7 @@ export function mount(container: HTMLElement): () => void {
         : declared !== alg.value ? `検証アルゴリズムで${declared}を選択してください。` : '';
     } else if (input.value.trim()) help = 'JWTの形式を確認してください。';
     query('[data-alg-help]').textContent = help;
-    revision++; result.textContent = '未検証'; copyStatus.textContent = ''; verify.disabled = !header.value; };
+    revision++; setVerificationState('idle'); copyStatus.textContent = ''; verify.disabled = !header.value; };
   const updateClaims = () => {
     const list = query('[data-claims]');
     list.replaceChildren();
@@ -139,9 +173,15 @@ export function mount(container: HTMLElement): () => void {
     }
     header.value = payload.value = signature.value = '';
     query('[data-error]').textContent = query('[data-meta]').textContent = query('[data-bytes]').textContent = '';
+    decodeState.dataset.decodeState = input.value.trim() ? 'error' : 'empty';
+    query('[data-decode-label]').textContent = input.value.trim() ? 'デコード失敗' : '未入力';
+    query('[data-decode-icon]').replaceChildren(...(input.value.trim() ? [createIcon(CircleAlert)] : []));
     try {
       if (input.value.trim()) {
         decoded = decodeJwt(input.value);
+        decodeState.dataset.decodeState = 'success';
+        query('[data-decode-label]').textContent = 'デコード済み';
+        query('[data-decode-icon]').replaceChildren(createIcon(Check));
         header.value = decoded.headerJson;
         payload.value = decoded.payloadJson;
         signature.value = decoded.signature;
@@ -174,10 +214,10 @@ export function mount(container: HTMLElement): () => void {
   }, options);
   verify.addEventListener('click', async () => {
     const current = ++revision;
-    verify.disabled = true; result.textContent = '検証中…';
+    verify.disabled = true; query('[data-warning]').textContent = ''; setVerificationState('pending');
     const outcome = await verifySignature(input.value, alg.value, alg.value === 'HS256' ? secret.value : publicKey.value, encoding.value);
     if (disposed || current !== revision) return;
-    setIconMessage(result, outcome.state === 'match' ? Check : CircleAlert, outcome.message); query('[data-warning]').textContent = outcome.warning ?? ''; verify.disabled = false;
+    setVerificationState(outcome.state, outcome.state === 'unavailable' ? outcome.message.replace(/^検証不可:\s*/, '') : ''); query('[data-warning]').textContent = outcome.warning ?? ''; verify.disabled = false;
   }, options);
   for (const button of copies) button.addEventListener('click', async () => {
     const current = revision;
