@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { decodeJwt } from './logic';
 import { DEMO_SECRET, SAMPLE_JWT } from './sample';
 import { expect, it } from 'vitest';

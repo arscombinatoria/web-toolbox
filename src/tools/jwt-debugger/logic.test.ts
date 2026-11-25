@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { expect, it } from 'vitest';
 import { analyzeClaims, decodeJwt, MAX_BYTES } from './logic';
 const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');

@@ -115,7 +115,7 @@ SSIMULACRA2には bytecut-ssimulacra2 0.1.0 の同梱Wasm（BSD-2-Clause）を�
 ## 技術スタック・動作環境
 
 - Vanilla TypeScript（strict）、Vite、HTML/CSS、ブラウザ標準APIを使用しています。
-- 単体テストはVitest + jsdom、E2EテストはPlaywrightを使用しています。
+- 単体テストはVitestを使用し、Nodeを既定環境としてDOMに依存しないロジックを検証します。DOMやブラウザ固有のAPIが必要なテストファイルではjsdomを指定します。E2EテストはPlaywrightを使用します。
 - 開発・CIではNode.js **26 LTS**とnpmを使用します。メジャーバージョンは`.nvmrc`と`package.json`の`engines`で指定しています。
 - モダンブラウザを対象としています。自動E2E検証はChromiumの詳細シナリオと、Chromium・Firefox共通の主要機能スモーク、画像変換、IPアドレス欄のレイアウトを対象としています。
 

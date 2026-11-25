@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
 import { homeUrl, setNavigationInput, startRouter, toolIdFromUrl, toolUrl } from './router';
 import { findTool, tools } from './registry';

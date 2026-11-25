@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { ArrowLeftRight, Clock, createElement, Globe, Image, Search, ShieldCheck, Table, Workflow } from 'lucide';
 import { expect, it, vi } from 'vitest';
 import { tools } from '../registry';

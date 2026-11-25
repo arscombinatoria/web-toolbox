@@ -19,7 +19,7 @@ web-toolbox/
   .nvmrc                           # Node.jsのメジャーバージョン
   tsconfig.json                    # strict型チェック
   vite.config.ts                   # 配信base
-  vitest.config.ts                 # jsdom・V8 Coverage
+  vitest.config.ts                 # Node既定・V8 Coverage
   playwright.config.ts             # ブラウザ・previewサーバー
   src/
     main.ts                        # 起動・選択状態・タイトル・フォーカス
@@ -449,7 +449,7 @@ Vitestで入力形式、不正な置換で現在画像を保つ処理、連続�
 
 ### 単体テストとカバレッジ
 
-[vitest.config.ts](../vitest.config.ts)は既定のjsdom環境で`src/**/*.test.ts`を実行し、モックを復元します。DOMを使わないMarkdown／TSV・日時の`logic.test.ts`はファイル単位でNode環境を指定します。純粋な変換処理の境界値・不正入力・Unicodeに加え、UIの非同期完了、通信中止、リスナー・タイマーの破棄を検証します。ツール固有の対象は前節にまとめています。
+[vitest.config.ts](../vitest.config.ts)はNode環境を既定として`src/**/*.test.ts`を実行し、モックを復元します。DOMやブラウザ固有のAPIを必要とするテストファイルだけに`// @vitest-environment jsdom`を指定し、実際の依存関係と検証対象に応じて環境を選びます。これにより、DOMに依存しない変換処理、通信、署名検証、JSON、XLSX、Worker処理では不要なjsdom初期化を避けます。純粋な変換処理の境界値・不正入力・Unicodeに加え、UIの非同期完了、通信中止、リスナー・タイマーの破棄を検証します。Playwrightは実ブラウザでのレイアウトや操作を検証し、Vitestによる単体テストと責務を分担します。ツール固有の対象は前節にまとめています。
 
 共通基盤では`router.test.ts`がURL・標準リンク操作・履歴通知、`tool-host.test.ts`が遅いimportの成功／失敗と新画面の競合、ホーム遷移、破棄契約、`components/home.test.ts`がRegistry順のカードと未ロード、`components/theme.test.ts`がOS追従・手動保存・ストレージ拒否・購読解除を検証します。
 
