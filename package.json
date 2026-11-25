@@ -33,6 +33,6 @@
     "jose": "^6.2.18",
     "lucide": "^1.77.0",
     "markdown-it": "15.0.3",
-    "string-width": "5.1.2"
+    "string-width": "9.0.0"
   }
 }
