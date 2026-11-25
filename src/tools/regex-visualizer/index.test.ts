@@ -1,17 +1,18 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { mount } from './index';
 import { DEBOUNCE_MS, WORKER_TIMEOUT_MS, type DiagramRequest, type DiagramResponse, type DiagramResult } from './protocol';
+import { type MatchRequest, type MatchResponse, type MatchResult } from './match-protocol';
 
 class FakeWorker {
   static instances: FakeWorker[] = [];
-  onmessage: ((event: MessageEvent<DiagramResponse>) => void) | null = null;
+  onmessage: ((event: MessageEvent<DiagramResponse | MatchResponse>) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   onmessageerror: (() => void) | null = null;
-  request!: DiagramRequest;
+  request!: DiagramRequest | MatchRequest;
   terminate = vi.fn();
-  postMessage(request: DiagramRequest) { this.request = request; }
+  postMessage(request: DiagramRequest | MatchRequest) { this.request = request; }
   constructor() { FakeWorker.instances.push(this); }
-  finish(result: DiagramResult = { ok: true, svg: '<svg xmlns="http://www.w3.org/2000/svg"/>', warnings: [] }) {
+  finish(result: DiagramResult | MatchResult = { ok: true, svg: '<svg xmlns="http://www.w3.org/2000/svg"/>', warnings: [] }) {
     this.onmessage?.(new MessageEvent('message', { data: { id: this.request.id, ...result } }));
   }
 }
@@ -63,7 +64,7 @@ it('入力・オプション・図の順に並び、図の読み方は閉じた�
   expect(guide.open).toBe(true);
   expect(guide.textContent).toContain('合計回数');
   expect(guide.textContent).toContain('集合の内部は原文表記です');
-  expect(tool.querySelector(':scope > p:not(.tool-description)')?.textContent).toContain('送信・保存しません');
+  expect(tool.querySelector(':scope > p:not(.tool-description)')?.textContent).toContain('ストレージへ保存しません');
   expect(tool.querySelector(':scope > details summary')?.textContent).toBe('対応範囲と制約');
   ui.dispose();
 });
@@ -201,4 +202,50 @@ it('解析中のテーマ変更はWorkerを再作成せず、完了時のテー�
   expect(ui.create).toHaveBeenCalledOnce(); expect(ui.revoke).toHaveBeenCalledExactlyOnceWith('blob:regex-1');
   expect(document.body.children).toHaveLength(0);
   delete document.documentElement.dataset.theme;
+});
+
+it('マッチ確認は独立し、テスト文字列編集・テーマ変更で図を触らず、テスト専用クリアと停止ができる', async () => {
+  const ui = setup(); expect(document.querySelector('.regex-match-status')?.textContent).toBe('未実行');
+  ui.tick(); const diagramWorker = FakeWorker.instances[0]!; diagramWorker.finish();
+  ui.fill('next pattern'); ui.tick(); const activeDiagramWorker = FakeWorker.instances[1]!;
+  const testText = document.querySelector<HTMLTextAreaElement>('#regex-test-text')!;
+  const status = document.querySelector<HTMLElement>('.regex-match-status')!;
+  const run = document.querySelector<HTMLButtonElement>('[data-match-run]')!;
+  const stop = document.querySelector<HTMLButtonElement>('[data-match-stop]')!;
+  const clear = document.querySelector<HTMLButtonElement>('[data-match-clear]')!;
+  testText.value = 'x'; testText.dispatchEvent(new Event('input'));
+  expect(FakeWorker.instances).toHaveLength(2);
+  run.click(); const matchWorker = FakeWorker.instances[2]!;
+  expect('input' in matchWorker.request && matchWorker.request.input).toBe('x');
+  document.documentElement.dataset.theme = 'dark'; await Promise.resolve();
+  expect(matchWorker.terminate).not.toHaveBeenCalled();
+  stop.click(); expect(matchWorker.terminate).toHaveBeenCalledOnce();
+  expect(activeDiagramWorker.terminate).not.toHaveBeenCalled(); expect(status.textContent).toContain('停止');
+  clear.click(); expect(testText.value).toBe(''); expect(document.activeElement).toBe(testText);
+  expect(FakeWorker.instances).toHaveLength(3);
+  ui.dispose(); delete document.documentElement.dataset.theme;
+});
+
+it('共有パターンとIME変換はマッチWorkerを中止し、変換中は実行を止める', () => {
+  const ui = setup(); ui.tick();
+  const testText = document.querySelector<HTMLTextAreaElement>('#regex-test-text')!;
+  const run = document.querySelector<HTMLButtonElement>('[data-match-run]')!;
+  testText.value = 'x'; run.click(); const matchWorker = FakeWorker.instances[1]!;
+  ui.fill('changed'); expect(matchWorker.terminate).toHaveBeenCalledOnce();
+  testText.dispatchEvent(new CompositionEvent('compositionstart'));
+  expect(run.disabled).toBe(true);
+  testText.dispatchEvent(new CompositionEvent('compositionend'));
+  expect(run.disabled).toBe(false);
+  ui.dispose();
+});
+
+it('図の停止では独立しているマッチWorkerを中止しない', () => {
+  const ui = setup(); ui.tick();
+  const testText = document.querySelector<HTMLTextAreaElement>('#regex-test-text')!;
+  testText.value = 'x'; document.querySelector<HTMLButtonElement>('[data-match-run]')!.click();
+  const matchWorker = FakeWorker.instances[1]!;
+  document.querySelector<HTMLButtonElement>('[data-cancel]')!.click();
+  expect(FakeWorker.instances[0]!.terminate).toHaveBeenCalledOnce();
+  expect(matchWorker.terminate).not.toHaveBeenCalled();
+  ui.dispose();
 });

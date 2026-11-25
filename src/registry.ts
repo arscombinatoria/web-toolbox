@@ -48,7 +48,7 @@ export const tools: readonly ToolDefinition[] = [
   },
   {
     id: 'regex-visualizer', name: '正規表現ビジュアライザー', category: 'text-data',
-    description: 'JavaScriptの正規表現をRailroad Diagramで可視化',
+    description: 'JavaScriptの正規表現を図で可視化し、テキストでマッチ確認',
     icon: Workflow,
     load: () => import('./tools/regex-visualizer/index'),
   },

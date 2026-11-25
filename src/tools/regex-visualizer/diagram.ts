@@ -245,7 +245,7 @@ export function createDiagram(pattern: string, flags: string): DiagramResult {
       height += section.rail.height + 24;
       checkSize(width, height);
     }
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>ECMAScript 正規表現の構造図</title><desc>条件は0文字。回数と優先順位はラベルで指定。マッチングは実行しません。</desc><style>
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img"><title>ECMAScript 正規表現の構造図</title><desc>条件は0文字。回数と優先順位はラベルで指定。図は構造と意味を示します。</desc><style>
 /* main.cssの既存トークン。Blob画像と保存ファイルでも単体で解決できるよう内包する。 */
 svg{--page:#f8fafc;--surface:#ffffff;--text:#172334;--muted:#526174;--border:#dce3ec;--accent:#245bc2;--accent-soft:#edf3ff;background:var(--page);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 svg[data-theme="dark"]{--page:#131922;--surface:#1b2430;--text:#edf2f9;--muted:#b3bfd0;--border:#364253;--accent:#99bcff;--accent-soft:#263a5a}

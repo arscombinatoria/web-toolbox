@@ -21,7 +21,7 @@ async function settleScroll(canvas: Locator) {
 test('DOM順・グループ・Tab順と読み方詳細のキーボード操作', async ({ page }) => {
   await page.goto('./?tool=regex-visualizer');
   await expect(page.getByRole('button', { name: 'SVGをダウンロード' })).toBeEnabled();
-  expect(await page.getByRole('alert').evaluate(node => node.getBoundingClientRect().height)).toBe(0);
+  expect(await page.locator('.regex-input-section [role="alert"]').evaluate(node => node.getBoundingClientRect().height)).toBe(0);
   const tool = page.locator('.regex-tool');
   expect(await tool.evaluate(node => [...node.children].slice(0, 5).map(child => child.className || child.tagName.toLowerCase())))
     .toEqual(['h1', 'tool-description', 'regex-input-section', 'regex-options', 'regex-diagram-section']);
@@ -58,15 +58,15 @@ test('入力・再描画・構文エラー・意味上の注意・フラグ排�
   await page.getByRole('checkbox', { name: /^u：/ }).check();
   await expect(download).toBeEnabled(); await expect(image).not.toHaveAttribute('src', old!);
   await expect(page.getByRole('complementary', { name: '意味上の注意' })).toContainText('後方参照');
-  await expect(page.getByRole('alert')).toBeEmpty();
+  await expect(page.locator('.regex-input-section [role="alert"]')).toBeEmpty();
   await input.fill('(');
   await expect(download).toBeDisabled(); await expect(image).toBeHidden();
-  await expect(page.getByRole('alert')).toContainText('構文エラー');
-  await expect(page.getByRole('alert')).toContainText('位置'); await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('.regex-input-section [role="alert"]')).toContainText('構文エラー');
+  await expect(page.locator('.regex-input-section [role="alert"]')).toContainText('位置'); await expect(input).toHaveAttribute('aria-invalid', 'true');
   await input.fill('[\\p{Letter}&&\\p{ASCII}]');
   await page.getByRole('checkbox', { name: /^v：/ }).check();
   await expect(page.getByRole('checkbox', { name: /^u：/ })).not.toBeChecked();
-  await expect(download).toBeEnabled(); await expect(page.getByRole('alert')).toBeEmpty();
+  await expect(download).toBeEnabled(); await expect(page.locator('.regex-input-section [role="alert"]')).toBeEmpty();
   await page.getByRole('button', { name: '入力をクリア' }).click();
   await expect(input).toHaveValue(''); await expect(input).toBeFocused(); await expect(download).toBeEnabled();
 });
@@ -176,8 +176,8 @@ for (const [width, theme] of [[320, 'light'], [320, 'dark'], [390, 'light'], [39
     await page.getByRole('combobox', { name: 'テーマ' }).selectOption(theme === 'light' ? 'dark' : 'light');
     await expect(page.locator('.regex-tool img')).not.toHaveAttribute('src', oldUrl!); await expect(button).toBeEnabled();
     expect(await canvas.evaluate(node => ({ x: node.scrollLeft, y: node.scrollTop, width: node.scrollWidth, height: node.scrollHeight }))).toEqual(before);
-    await input.fill('a'.repeat(4097)); await expect(page.getByRole('alert')).toContainText('安全上限'); await expect(button).toBeDisabled();
-    await input.fill('a{0}'); await expect(button).toBeEnabled(); await expect(page.getByRole('alert')).toBeEmpty();
+    await input.fill('a'.repeat(4097)); await expect(page.locator('.regex-input-section [role="alert"]')).toContainText('安全上限'); await expect(button).toBeDisabled();
+    await input.fill('a{0}'); await expect(button).toBeEnabled(); await expect(page.locator('.regex-input-section [role="alert"]')).toBeEmpty();
   });
 }
 
@@ -340,7 +340,7 @@ test('テーマ変更は再解析せず、表示と保存SVGの配色・構造�
     expect(actual).toEqual({ matches: true, condition: '5px, 3px', reference: '2px, 2px' });
     await expect(standalone.locator('svg')).toHaveAttribute('role', 'img');
     await expect(standalone.locator('title')).toHaveText('ECMAScript 正規表現の構造図');
-    await expect(standalone.locator('desc')).toContainText('マッチングは実行しません');
+    await expect(standalone.locator('desc')).toContainText('図は構造と意味を示します');
     await standalone.close();
   }
   await page.evaluate(async () => {

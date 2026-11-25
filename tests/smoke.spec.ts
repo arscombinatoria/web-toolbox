@@ -124,12 +124,12 @@ test('スモーク: 正規表現をWorkerで描画し、構文エラーから復
   const download = page.getByRole('button', { name: 'SVGをダウンロード' });
   await expect(download).toBeEnabled();
   await input.fill('(');
-  await expect(page.getByRole('alert')).toContainText('構文エラー');
+  await expect(page.locator('.regex-input-section [role="alert"]')).toContainText('構文エラー');
   await expect(page.locator('.regex-tool img')).toBeHidden();
   await input.fill('[\\p{ASCII}--[A-Z]]+?');
   await page.getByRole('checkbox', { name: /^v：/ }).check();
   await expect(download).toBeEnabled();
-  await expect(page.getByRole('status')).toHaveText('図を更新しました。');
+  await expect(page.locator('.regex-diagram-section [role="status"]')).toHaveText('図を更新しました。');
   expect(await page.locator('.regex-tool img').evaluate(node => (node as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 });
 
