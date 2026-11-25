@@ -28,6 +28,8 @@
 .jwt-verification { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); }
 .jwt-verification-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .jwt-verification-result p { margin: 0; }
+.jwt-verification-status { display: grid; gap: var(--space-2); min-width: 0; }
+.jwt-verification-detail { max-width: 100%; overflow-wrap: anywhere; }
 .jwt-decode-state, .jwt-verification-badge { display: inline-flex; align-items: center; gap: var(--space-1); width: fit-content; max-width: 100%; padding: var(--space-1) var(--space-2); border: 1px solid var(--border); border-radius: 999px; background: var(--surface, var(--page)); color: var(--muted); }
 .jwt-decode-state { margin: var(--space-2) 0; }
 .jwt-decode-state[data-decode-state="success"] { color: var(--jwt-green); border-color: currentColor; background: color-mix(in srgb, currentColor 10%, var(--surface)); }
@@ -50,11 +52,7 @@
   .jwt-verification-badge[data-state="pending"] .icon { animation: none; }
 }
 @media (forced-colors: active) {
-  .jwt-decode-state, .jwt-verification-badge { border-color: currentColor; }
-  .jwt-decode-state[data-decode-state="success"], .jwt-verification-badge[data-state="match"] { color: LinkText; }
-  .jwt-decode-state[data-decode-state="error"], .jwt-verification-badge[data-state="mismatch"] { color: Mark; }
-  .jwt-verification-badge[data-state="pending"] { color: LinkText; }
-  .jwt-verification-badge[data-state="unavailable"] { color: GrayText; }
+  .jwt-decode-state, .jwt-verification-badge { color: CanvasText; border-color: CanvasText; background: Canvas; }
 }
 
 .jwt-tool {

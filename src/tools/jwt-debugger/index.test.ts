@@ -53,8 +53,12 @@ it.each([
   expect(badge.dataset.state).toBe(state);
   expect(badge.textContent).toBe(label);
   expect(badge.querySelector('svg.icon')).toBeTruthy();
-  expect(badge.getAttribute('role')).toBe('status');
+  const status = document.querySelector('[data-verification-status]')!;
+  expect(status.getAttribute('role')).toBe('status');
+  expect(status.getAttribute('aria-atomic')).toBe('true');
+  expect(status.contains(badge)).toBe(true);
   const detail = document.querySelector<HTMLElement>('[data-verification-detail]')!;
+  expect(status.contains(detail)).toBe(true);
   expect(detail.hidden).toBe(state !== 'unavailable');
   if (state === 'unavailable') expect(detail.textContent).toBe('キー形式が不正です。');
   expect(document.querySelector('[data-warning]')!.textContent).toBe(state === 'match' ? '鍵長の警告' : '');
@@ -64,14 +68,14 @@ it('検証中はpending表示を出し、完了後に結果状態へ切り替え
   vi.mocked(verifySignature).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   dispose = mount(document.body);
   document.querySelector<HTMLButtonElement>('[data-verify]')!.click();
-  const badge = document.querySelector<HTMLElement>('[data-verification]')!;
-  expect(badge.dataset.state).toBe('pending');
-  expect(badge.textContent).toBe('検証中…');
-  expect(badge.querySelector('svg.icon')).toBeTruthy();
+  const badge = () => document.querySelector<HTMLElement>('[data-verification]')!;
+  expect(badge().dataset.state).toBe('pending');
+  expect(badge().textContent).toBe('検証中…');
+  expect(badge().querySelector('svg.icon')).toBeTruthy();
   finish({ state: 'mismatch', message: '署名不一致' });
   await Promise.resolve(); await Promise.resolve();
-  expect(badge.dataset.state).toBe('mismatch');
-  expect(badge.textContent).toBe('署名不一致');
+  expect(badge().dataset.state).toBe('mismatch');
+  expect(badge().textContent).toBe('署名不一致');
 });
 it.each(['secret', 'public', 'jwt-alg', 'jwt-encoding', 'clear'])('%s変更時に古いバッジ・詳細・警告をまとめて消去する', async action => {
   vi.mocked(verifySignature).mockResolvedValue({ state: 'unavailable', message: '検証不可: 詳細理由', warning: '警告' });
@@ -86,7 +90,7 @@ it.each(['secret', 'public', 'jwt-alg', 'jwt-encoding', 'clear'])('%s変更時�
     select.selectedIndex = 1; select.dispatchEvent(new Event('change'));
   } else fill(action, 'changed');
   expect(document.querySelector('[data-verification]')!.getAttribute('data-state')).toBe('idle');
-  expect(document.querySelector('[data-verification-detail]')!.hidden).toBe(true);
+  expect(document.querySelector<HTMLElement>('[data-verification-detail]')!.hidden).toBe(true);
   expect(document.querySelector('[data-verification-detail]')!.textContent).toBe('');
   expect(document.querySelector('[data-warning]')!.textContent).toBe('');
 });

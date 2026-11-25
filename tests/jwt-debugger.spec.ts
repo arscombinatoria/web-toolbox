@@ -65,12 +65,15 @@ test('署名バッジはforced-colorsでもアイコン・文言・状態属性�
   await expect(badge).toContainText('署名一致');
   await expect(page.locator('[data-verification-icon] svg')).toHaveCount(1);
   const matchColor = await badge.evaluate(element => getComputedStyle(element).color);
+  const matchBackground = await badge.evaluate(element => getComputedStyle(element).backgroundColor);
+  expect(matchColor).not.toBe(matchBackground);
   await page.getByLabel('共有Secret', { exact: true }).fill('wrong');
   await page.getByRole('button', { name: '検証', exact: true }).click();
   await expect(badge).toHaveAttribute('data-state', 'mismatch');
   await expect(badge).toContainText('署名不一致');
   const mismatchColor = await badge.evaluate(element => getComputedStyle(element).color);
-  expect(matchColor).not.toBe(mismatchColor);
+  expect(mismatchColor).toBe(matchColor);
+  await expect(page.locator('[data-verification-icon] svg')).toHaveCount(1);
 });
 for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1], [768, 1], [1280, 2], [1920, 2]] as const) {
   test(`JWT ${theme} ${width}px・キーボード`, async ({ page }) => {

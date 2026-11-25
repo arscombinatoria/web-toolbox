@@ -53,8 +53,7 @@ export function mount(container: HTMLElement): () => void {
           <div data-secret-fields><label for="jwt-secret">共有Secret</label><input id="jwt-secret" type="text" autocomplete="off" spellcheck="false">
             <label for="jwt-encoding">Secret形式</label><select id="jwt-encoding"><option value="utf8">UTF-8</option><option value="base64">Base64をデコード</option></select></div>
           <div data-public-fields hidden><label for="jwt-public">公開鍵（SPKI PEM）</label><textarea id="jwt-public" rows="6" autocomplete="off" spellcheck="false"></textarea></div>
-          <div class="jwt-verification-result"><button type="button" data-verify>検証</button><p class="jwt-verification-badge" data-state="idle" data-verification role="status"><span data-verification-icon aria-hidden="true"></span><span data-verification-label>未検証</span></p></div>
-          <p data-verification-detail hidden></p>
+          <div class="jwt-verification-result"><button type="button" data-verify>検証</button><div class="jwt-verification-status" data-verification-status role="status" aria-atomic="true"><p class="jwt-verification-badge" data-state="idle" data-verification><span data-verification-icon aria-hidden="true"></span><span data-verification-label>未検証</span></p><p class="jwt-verification-detail" data-verification-detail hidden></p></div></div>
           <p>署名一致は、指定キーに対する署名のみの確認です。発行者・Audience・有効期間などを含むJWT全体の信頼性は保証しません。alg: noneはデコードのみ。jku・x5u・kidからの取得、JWKS取得は行いません。</p>
         </section>
       </section>
@@ -77,18 +76,28 @@ export function mount(container: HTMLElement): () => void {
   const alg = query<HTMLSelectElement>('#jwt-alg');
   const encoding = query<HTMLSelectElement>('#jwt-encoding');
   const verify = query<HTMLButtonElement>('[data-verify]');
-  const result = query('[data-verification]');
-  const verificationDetail = query<HTMLElement>('[data-verification-detail]');
-  const verificationIcon = query<HTMLElement>('[data-verification-icon]');
-  const verificationLabel = query<HTMLElement>('[data-verification-label]');
+  const result = query<HTMLElement>('[data-verification-status]');
   const decodeState = query<HTMLElement>('[data-decode-state]');
   const setVerificationState = (state: VerificationState, detail = '') => {
     const presentation = verificationPresentation[state];
-    result.setAttribute('data-state', state);
-    verificationIcon.replaceChildren(createIcon(presentation.icon));
-    verificationLabel.textContent = presentation.label;
-    verificationDetail.textContent = detail;
-    verificationDetail.hidden = !detail;
+    const badge = document.createElement('p');
+    badge.className = 'jwt-verification-badge';
+    badge.dataset.state = state;
+    badge.dataset.verification = '';
+    const icon = document.createElement('span');
+    icon.dataset.verificationIcon = '';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.append(createIcon(presentation.icon));
+    const label = document.createElement('span');
+    label.dataset.verificationLabel = '';
+    label.textContent = presentation.label;
+    badge.append(icon, label);
+    const detailMessage = document.createElement('p');
+    detailMessage.className = 'jwt-verification-detail';
+    detailMessage.dataset.verificationDetail = '';
+    detailMessage.hidden = !detail;
+    detailMessage.textContent = detail;
+    result.replaceChildren(badge, detailMessage);
   };
   const copyStatus = query('[data-copy-status]');
   const copies = [...view.querySelectorAll<HTMLButtonElement>('[data-copy]')];
