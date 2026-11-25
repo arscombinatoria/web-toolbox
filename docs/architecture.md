@@ -473,16 +473,13 @@ Firefoxではスモークに加えて既存の`tests/ip-address-layout.spec.ts`�
 
 Node.jsは26 LTSを使用し、[.nvmrc](../.nvmrc)の`26`と[package.json](../package.json)の`engines: 26.x`でローカル・CIのメジャーバージョンを揃えます。`build`は`npm run typecheck && vite build`で、`typecheck`は`tsc --noEmit`です。
 
-[.github/workflows/ci-pages.yml](../.github/workflows/ci-pages.yml)はPRと`main`へのpushで起動します。CIジョブは次の順に実行します。
+[.github/workflows/ci-pages.yml](../.github/workflows/ci-pages.yml)はPRと`main`へのpushで起動します。`.nvmrc`に従うNode.jsとnpmキャッシュを使い、`unit`と`build`を独立して実行します。`unit`は`npm run test:coverage`と`npm run test:badge`、`build`は型チェックを含む`npm run build`を担当します。buildは一度だけ行います。
 
-1. checkout、`.nvmrc`に従ったNode.jsセットアップ、`npm ci`。
-2. `npm run test:coverage`による単体テストとカバレッジ計測。
-3. `npm run test:badge`によるNode.js標準テストランナーのバッジ生成テスト。
-4. `npm run build`による型チェックとViteビルド。
-5. Chromium・FirefoxとOS依存パッケージのインストール、`npm run test:e2e`。
-6. `main`へのpushの場合のみカバレッジSVGを生成し、`dist/`をPages成果物としてアップロード。
+`e2e`はbuild完了後に開始し、`build-dist`を展開してVite previewから配信します。PlaywrightのMatrixは`1/2`と`2/2`の2シャード、各3 workerで、`fullyParallel`による自動分割を使います。Chromiumの全対象とFirefoxの既定対象、retry・flaky test・reporter設定はPlaywright設定を維持します。2シャードの失敗は集約されます。
 
-型チェックの独立した重複ステップはありません。PRでは検証・カバレッジのログ出力まで行い、SVG生成・Pages成果物のアップロード・デプロイは行いません。
+`ci`は`unit`・`build`・`e2e`の結果を常に集約し、すべてがsuccessの場合だけ成功します。PRではこの集約判定だけを行います。`main`へのpushで全検証が成功した場合は、`build-dist`と`coverage-summary`を受け取り、Node.js標準ライブラリだけでカバレッジSVGを生成し、既存のPages Actionで成果物をアップロードします。いずれかの検証、成果物転送、バッジ生成、Pages成果物アップロードが失敗すると`ci`は成功せず、deployは実行されません。
+
+`build-dist`と、main push時だけ作る`coverage-summary`は保持期間1日の中間成果物です。再実行時に期限切れなら必要な上流ジョブも再実行し、成果物を作り直してください。PRではカバレッジ成果物、SVG生成、Pages成果物、デプロイを行いません。
 
 ### カバレッジバッジ
 
