@@ -14,6 +14,27 @@
 .regex-flags label:has(:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .regex-flags input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; }
 .regex-diagram-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); }
+.regex-match-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); }
+.regex-match-heading h2 { margin: var(--space-1) 0; font-size: 1rem; }
+.regex-match-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); }
+.regex-match-section { min-width: 0; width: 100%; margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border); }
+.regex-match-section > label { display: block; font-weight: 600; }
+.regex-match-section > #regex-test-help { margin: var(--space-1) 0; }
+.regex-match-section textarea { min-height: 6rem; }
+.regex-match-section .regex-match-status { min-height: 1.7em; margin: 0; }
+.regex-match-error { color: var(--text); }
+.regex-match-error:empty { margin-block: 0; }
+.regex-match-results { min-width: 0; }
+.regex-match-highlight { white-space: pre-wrap; overflow-wrap: anywhere; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--text); }
+.regex-match-mark { background: var(--accent-soft); color: var(--text); outline: 1px solid var(--accent); border-radius: 2px; }
+.regex-zero-width-marker { display: inline-block; position: relative; width: 0; height: 1em; vertical-align: text-bottom; }
+.regex-zero-width-marker::after { content: ''; position: absolute; left: -1px; top: 0; height: 1em; border-left: 2px solid var(--accent); }
+.regex-match-list { padding-left: 1.5rem; }
+.regex-match-item { overflow-wrap: anywhere; padding-block: var(--space-1); border-bottom: 1px solid var(--border); }
+.regex-match-item h3 { margin: 0; font-size: 0.95rem; color: var(--text); }
+.regex-match-item p { margin: var(--space-1) 0; }
+.regex-match-captures { margin-block: var(--space-1); }
+.regex-match-captures ul { margin-block: var(--space-1); padding-left: 1.5rem; }
 .regex-diagram-heading h2 { margin: var(--space-1) 0; font-size: 1rem; }
 .regex-diagram-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); }
 .regex-tool button:disabled { opacity: 0.55; cursor: default; }

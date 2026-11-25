@@ -1,7 +1,9 @@
-import { Check, CircleAlert, Download, Trash2, X } from 'lucide';
+import { Check, CircleAlert, CircleStop, Download, Play, Trash2, X } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { createRunner } from './runner';
+import { createMatchRunner } from './match-runner';
+import { renderMatchError, renderMatchResults } from './match-view';
 import { DEBOUNCE_MS, FLAGS, type DiagramResult } from './protocol';
 import './style.css';
 
@@ -36,7 +38,20 @@ export function mount(container: HTMLElement): () => void {
         <p>上の右向き経路は省略、下の左向き経路は繰り返しです。合計回数と貪欲マッチ・非貪欲マッチの優先順位は要素の上下のラベルで指定します。貪欲マッチは繰り返し回数の多い方から、非貪欲マッチは少ない方から試します。集合の内部は原文表記です。</p>
       </details>
     </section>
-    <p>入力・結果はブラウザ内だけで処理し、送信・保存しません。マッチングは実行しません。</p>
+    <section class="regex-match-section" aria-labelledby="regex-match-heading">
+      <div class="regex-match-heading"><h2 id="regex-match-heading">マッチ確認</h2><div class="regex-match-actions">
+        <button type="button" data-match-run>マッチを確認</button>
+        <button type="button" data-match-stop disabled>マッチングを中止</button>
+        <button type="button" data-match-clear>テスト文字列をクリア</button>
+      </div></div>
+      <label for="regex-test-text">テスト文字列</label>
+      <p id="regex-test-help">初期状態は空です。実行すると、選択中のパターンとフラグで検索します。</p>
+      <textarea id="regex-test-text" rows="5" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="regex-test-help"></textarea>
+      <p class="regex-match-status" role="status" aria-atomic="true"></p>
+      <div class="regex-match-error" role="alert" aria-atomic="true"></div>
+      <div class="regex-match-results"></div>
+    </section>
+    <p>入力・結果はブラウザ内だけで処理し、送信・URL・履歴・ログ・Cookie・ストレージへ保存しません。</p>
     <details><summary>対応範囲と制約</summary>
       <p>ECMAScript 2025の文字列・文字クラス・範囲・選択・量指定子・グループ・後方参照・アサーション・Unicodeプロパティ・Unicode集合演算に対応します。
         条件の内部構造は主経路とは独立して表示します。後読みの内部はソース順で表示し、評価方向は右から左です。
@@ -44,15 +59,24 @@ export function mount(container: HTMLElement): () => void {
       <p>i は大文字小文字の区別、m は行境界、s は改行を含むドット、u/v はUnicodeの解釈に影響します。
         d/g/y は検索時の動作フラグで、構造の分岐は増やしません。i の文字展開や検索開始位置、バックトラッキングの実行順は再現しません。
         図は意味解析の完全な検証ではなく、到達不能な分岐や空になるUnicode集合をすべて検出するものではありません。</p>
-      <p>安全上限は入力4,096 UTF-16コード単位、800 ASTノード、深さ48、図の各辺16,000px・面積1,200万px、SVG100万文字、処理4秒です。
+      <p>図の安全上限はパターン4,096 UTF-16コード単位、800 ASTノード、深さ48、図の各辺16,000px・面積1,200万px、SVG100万文字、処理4秒です。
         超過時は切り詰めず理由を表示します。図は選択中のテーマで表示し、同じ配色で保存します。</p>
+      <p>マッチ確認はブラウザ標準のネイティブRegExpを独立した遅延Web Workerで新規コンパイルして実行します。regexppの図解析と結果・エラーは独立しており、一方の構文対応が他方の実行可否を保証しません。検索は明示的な実行操作だけで始まり、g なしは最初の一致、g ありは左から検索します。y は各実行位置からだけ検索し、空一致後は u/v に応じてコードポイント単位、その他はUTF-16コード単位で進めます。d は捕捉範囲を表示します。位置はUTF-16の0始まり・終端を含まない形式です。</p>
+      <p>マッチ確認の上限はパターン4,096、テスト文字列32,768 UTF-16コード単位、1,000件、捕捉値4,096件、返却する文字列の合計262,144コード単位、起動を含む実行2,000msです。上限時はそれまでの完全な結果だけを表示し、未確認の残りを明記します。入力超過・時間切れは部分結果を返しません。重複する名前付き・番号付き捕捉も別項目として数えます。Workerから入力全文を返さず、画面上の元文字列を使います。ゼロ幅一致はコピーに含まれない視覚マーカーで示します。</p>
     </details>`;
   const tool = findTool('regex-visualizer')!;
   view.querySelector('h1')!.textContent = tool.name;
   view.querySelector('.tool-description')!.textContent = tool.description;
   const input = view.querySelector<HTMLTextAreaElement>('#regex-pattern')!;
-  const error = view.querySelector<HTMLElement>('[role="alert"]')!;
-  const status = view.querySelector<HTMLElement>('[role="status"]')!;
+  const error = view.querySelector<HTMLElement>('.regex-input-section [role="alert"]')!;
+  const status = view.querySelector<HTMLElement>('.regex-diagram-section [role="status"]')!;
+  const matchText = view.querySelector<HTMLTextAreaElement>('#regex-test-text')!;
+  const matchStatus = view.querySelector<HTMLElement>('.regex-match-status')!;
+  const matchError = view.querySelector<HTMLElement>('.regex-match-error')!;
+  const matchResults = view.querySelector<HTMLElement>('.regex-match-results')!;
+  const matchRunButton = view.querySelector<HTMLButtonElement>('[data-match-run]')!;
+  const matchStopButton = view.querySelector<HTMLButtonElement>('[data-match-stop]')!;
+  const matchClearButton = view.querySelector<HTMLButtonElement>('[data-match-clear]')!;
   const warnings = view.querySelector<HTMLElement>('.regex-warnings')!;
   const image = view.querySelector<HTMLImageElement>('img')!;
   const cancelButton = view.querySelector<HTMLButtonElement>('[data-cancel]')!;
@@ -60,6 +84,9 @@ export function mount(container: HTMLElement): () => void {
   view.querySelector('[data-clear]')!.prepend(createIcon(Trash2));
   cancelButton.prepend(createIcon(X));
   download.prepend(createIcon(Download));
+  matchRunButton.prepend(createIcon(Play));
+  matchStopButton.prepend(createIcon(CircleStop));
+  matchClearButton.prepend(createIcon(Trash2));
   const flagInputs = new Map<string, HTMLInputElement>();
   const meanings = ['一致位置の情報', '全体検索', '大文字小文字を区別しない', '複数行', 'ドットに改行を含む', 'Unicode', 'Unicode集合', '指定位置から検索'];
   FLAGS.forEach((flag, i) => {
@@ -83,6 +110,8 @@ export function mount(container: HTMLElement): () => void {
   let disposed = false;
   let revision = 0;
   let composing = false;
+  let matchComposing = false;
+  let resultListeners: AbortController | undefined;
   const downloads = new Map<string, ReturnType<typeof setTimeout>>();
   const clearImage = () => {
     image.onload = null; image.onerror = null;
@@ -145,6 +174,20 @@ export function mount(container: HTMLElement): () => void {
     warnings.hidden = !result.warnings.length;
   };
   const runner = createRunner(receive);
+  const clearMatchOutput = () => { resultListeners?.abort(); resultListeners = undefined; matchResults.replaceChildren(); matchError.replaceChildren(); };
+  const matchRunner = createMatchRunner(result => {
+    if (disposed) return;
+    matchStopButton.disabled = true;
+    if (!result.ok) { renderMatchError(matchError, result); matchStatus.textContent = ''; return; }
+    matchError.replaceChildren();
+    resultListeners = new AbortController();
+    renderMatchResults(matchResults, matchText.value, result, resultListeners.signal);
+    const reason = { matches: 'マッチ件数', captures: '捕捉値数', output: '返却文字列量' }[result.reason ?? 'matches'];
+    matchStatus.textContent = result.incomplete ? `安全上限（${reason}）。ここまで${result.matches.length.toLocaleString('ja-JP')}件を表示し、残りは未確認です。` : result.matches.length ? `${result.matches.length.toLocaleString('ja-JP')}件を確認しました。` : 'マッチはありません。';
+  });
+  const invalidateMatch = (message = '') => {
+    matchRunner.cancel(); matchStopButton.disabled = true; clearMatchOutput(); matchStatus.textContent = message;
+  };
   const invalidate = () => {
     revision++; runner.cancel();
     clearTimeout(timer); timer = undefined;
@@ -156,6 +199,7 @@ export function mount(container: HTMLElement): () => void {
     cancelButton.disabled = true;
   };
   const update = () => {
+    invalidateMatch('パターンまたはフラグが変わりました。マッチ確認を再実行してください。');
     invalidate();
     if (composing || disposed) return;
     cancelButton.disabled = false; status.textContent = '解析を待っています。';
@@ -167,8 +211,11 @@ export function mount(container: HTMLElement): () => void {
     }, DEBOUNCE_MS);
   };
   input.addEventListener('input', update, options);
-  input.addEventListener('compositionstart', () => { composing = true; invalidate(); }, options);
-  input.addEventListener('compositionend', () => { composing = false; update(); }, options);
+  matchText.addEventListener('input', () => invalidateMatch('テスト文字列が変わりました。マッチ確認を再実行してください。'), options);
+  matchText.addEventListener('compositionstart', () => { matchComposing = true; matchRunButton.disabled = true; invalidateMatch('日本語入力の変換中です。'); }, options);
+  matchText.addEventListener('compositionend', () => { matchComposing = false; matchRunButton.disabled = composing; invalidateMatch('未実行'); }, options);
+  input.addEventListener('compositionstart', () => { composing = true; matchRunButton.disabled = true; invalidateMatch('日本語入力の変換中です。'); invalidate(); }, options);
+  input.addEventListener('compositionend', () => { composing = false; matchRunButton.disabled = matchComposing; update(); }, options);
   view.querySelector('fieldset')!.addEventListener('change', event => {
     const target = event.target;
     if (target instanceof HTMLInputElement && target.checked && (target.value === 'u' || target.value === 'v')) {
@@ -177,6 +224,14 @@ export function mount(container: HTMLElement): () => void {
     update();
   }, options);
   view.querySelector('[data-clear]')!.addEventListener('click', () => { input.value = ''; update(); input.focus(); }, options);
+  matchRunButton.addEventListener('click', () => {
+    if (composing || matchComposing || disposed) { invalidateMatch('日本語入力の変換中は実行できません。'); return; }
+    clearMatchOutput(); matchStatus.textContent = 'マッチ確認を実行しています。'; matchStopButton.disabled = false;
+    const flags = FLAGS.filter(flag => flagInputs.get(flag)!.checked).join('');
+    matchRunner.start(input.value, flags, matchText.value);
+  }, options);
+  matchStopButton.addEventListener('click', () => invalidateMatch('マッチ確認を停止しました。'), options);
+  matchClearButton.addEventListener('click', () => { matchText.value = ''; invalidateMatch('テスト文字列をクリアしました。'); matchText.focus(); }, options);
   cancelButton.addEventListener('click', () => { invalidate(); status.textContent = '解析を中止しました。入力を変更すると再開します。'; }, options);
   download.addEventListener('click', () => {
     if (!svgBlob || download.disabled) return;
@@ -194,9 +249,10 @@ export function mount(container: HTMLElement): () => void {
   container.append(view);
   input.value = '^([A-Za-z]+)(?:-[0-9]{2,4})?$';
   update();
+  invalidateMatch('未実行');
   return () => {
     if (disposed) return;
-    disposed = true; themeObserver.disconnect(); invalidate(); runner.dispose(); listeners.abort();
+    disposed = true; themeObserver.disconnect(); invalidate(); runner.dispose(); invalidateMatch(); matchRunner.dispose(); listeners.abort();
     for (const [downloadUrl, release] of downloads) { clearTimeout(release); URL.revokeObjectURL(downloadUrl); }
     downloads.clear(); view.remove();
   };
