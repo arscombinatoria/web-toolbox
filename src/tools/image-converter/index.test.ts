@@ -253,6 +253,42 @@ it('画質を評価ボタンに装飾アイコンを表示し、ボタン名を�
   expect(evaluate.textContent).toBe('画質を評価');
 });
 
+it('サムネイルは独立した読み込み状態を持ち、load・error後も選択操作を受け付ける', () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(['sample'], { type: 'image/png' })));
+  vi.stubGlobal('fetch', fetchMock);
+  setup();
+  const frames = [...document.querySelectorAll<HTMLElement>('.image-sample-thumbnail')];
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>('.image-sample')];
+  expect(frames).toHaveLength(4);
+  expect(frames.map(frame => frame.dataset.state)).toEqual(['loading', 'loading', 'loading', 'loading']);
+  expect(frames[0]!.querySelector('svg.icon')?.getAttribute('aria-hidden')).toBe('true');
+  expect(frames[0]!.querySelector('img')?.alt).toBe('');
+  expect(frames[0]!.querySelector('img')?.decoding).toBe('async');
+
+  frames[0]!.querySelector('img')!.dispatchEvent(new Event('load'));
+  frames[1]!.querySelector('img')!.dispatchEvent(new Event('error'));
+  expect(frames.map(frame => frame.dataset.state)).toEqual(['ready', 'error', 'loading', 'loading']);
+
+  buttons[1]!.click();
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(buttons[1]!.getAttribute('aria-pressed')).toBe('false');
+  dispose?.();
+  dispose = undefined;
+  frames[2]!.querySelector('img')!.dispatchEvent(new Event('load'));
+  expect(frames[2]!.dataset.state).toBe('loading');
+});
+
+it('キャッシュ済みサムネイルはDOM構築時にすぐreadyになる', () => {
+  Object.defineProperties(HTMLImageElement.prototype, {
+    complete: { configurable: true, get: () => true },
+    currentSrc: { configurable: true, get() { return (this as HTMLImageElement).src; } },
+    naturalWidth: { configurable: true, get: () => 32 },
+  });
+  setup();
+  expect([...document.querySelectorAll<HTMLElement>('.image-sample-thumbnail')].map(frame => frame.dataset.state))
+    .toEqual(['ready', 'ready', 'ready', 'ready']);
+});
+
 it('4つのサンプルは種類・寸法・サイズを読み上げ、選択時にだけ本体を取得する', async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(['sample'], { type: 'image/png' })));
   vi.stubGlobal('fetch', fetchMock);

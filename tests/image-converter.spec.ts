@@ -525,7 +525,7 @@ test('サンプルカードは実幅に応じて列数を調整し、320〜1280p
           cardRects,
           contentRects,
           titleWidths: cards.map(card => card.querySelector('strong')!.getBoundingClientRect().width),
-          detailsVisible: getComputedStyle(cards[0]!.querySelector('span')!).display !== 'none',
+          detailsVisible: getComputedStyle(cards[0]!.querySelector(':scope > span:not(.image-sample-thumbnail)')!).display !== 'none',
           viewportWidth: window.innerWidth,
           scrollWidth: document.documentElement.scrollWidth,
         };
@@ -548,6 +548,56 @@ test('サンプルカードは実幅に応じて列数を調整し、320〜1280p
       }
     }
   }
+});
+
+test('サムネイルの待機・成功・失敗表示はカード寸法を保ち、選択を妨げない', async ({ page }) => {
+  let releaseSuccess!: () => void;
+  const successGate = new Promise<void>(resolve => { releaseSuccess = resolve; });
+  await page.route('**/samples/*-thumb.*', async route => {
+    const url = route.request().url();
+    if (url.endsWith('/outline-thumb.png')) {
+      await successGate;
+      await route.fulfill({ path: 'public/samples/outline-thumb.png' });
+    } else if (url.endsWith('/mobile-screen-thumb.png')) {
+      await route.abort();
+    } else {
+      await route.continue();
+    }
+  });
+  await page.setViewportSize({ width: 320, height: 1800 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('./?tool=image-converter');
+  const outlineButton = page.getByRole('button', { name: /輪郭イラスト/ });
+  const outlineFrame = outlineButton.locator('.image-sample-thumbnail');
+  const outlineImage = outlineFrame.locator('img');
+  await outlineImage.scrollIntoViewIfNeeded();
+  await expect(outlineFrame).toHaveAttribute('data-state', 'loading');
+  await expect(outlineFrame.locator('svg').first()).toBeVisible();
+  await expect(outlineImage).toHaveCSS('visibility', 'hidden');
+  const loadingLayout = await Promise.all([outlineButton.boundingBox(), outlineFrame.boundingBox()]);
+  expect(loadingLayout.every(Boolean)).toBe(true);
+  expect(loadingLayout[1]!.width).toBe(32);
+  expect(loadingLayout[1]!.height).toBe(32);
+
+  const mobileError = page.locator('[data-sample="mobile-screen"] .image-sample-thumbnail');
+  await expect(mobileError).toHaveAttribute('data-state', 'error');
+  await expect(mobileError.locator('svg').nth(1)).toBeVisible();
+  await expect(mobileError.locator('img')).toHaveCSS('visibility', 'hidden');
+
+  await outlineButton.click();
+  await expect(page.locator('.image-info')).toContainText('outline.png');
+  releaseSuccess();
+  await expect(outlineFrame).toHaveAttribute('data-state', 'ready');
+  await expect(outlineImage).toHaveCSS('visibility', 'visible');
+  expect(await Promise.all([outlineButton.boundingBox(), outlineFrame.boundingBox()])).toEqual(loadingLayout);
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const desktopFrame = await outlineFrame.boundingBox();
+  expect(desktopFrame!.width).toBe(64);
+  expect(desktopFrame!.height).toBe(64);
+  await expect(outlineButton).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('比較・変換カードは320・768・1280pxの両テーマで重ならず、プレビューを保つ', async ({ page }) => {
@@ -612,7 +662,7 @@ test('320pxの両テーマでドロップ後も失敗した置換から復帰で
     }));
     expect(await page.locator('.image-sample-list').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
     expect(await sampleButtons.nth(0).getAttribute('aria-label')).toContain('3840 × 2560 px、JPEG、3.87 MB');
-    expect(await sampleButtons.nth(0).locator('span').evaluate(element => getComputedStyle(element).display)).toBe('block');
+    expect(await sampleButtons.nth(0).locator(':scope > span:not(.image-sample-thumbnail)').evaluate(element => getComputedStyle(element).display)).toBe('block');
     expect(sampleBounds[0]!.y).toBe(sampleBounds[1]!.y);
     expect(sampleBounds[2]!.y).toBe(sampleBounds[3]!.y);
     expect(sampleBounds[0]!.y).toBeLessThan(sampleBounds[2]!.y);
