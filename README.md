@@ -147,6 +147,15 @@ npm run test:e2e
 
 E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。`tests/smoke.spec.ts`ではIP表示・再取得、文字幅の双方向変換、Markdown／TSV変換、日時変換、RDAP検索・JSON表示、基本ナビゲーションをChromium・Firefoxの両方で確認します。`tests/ip-address-layout.spec.ts`も両ブラウザで実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで検証します。RDAPの検索・JSON・IP確認からの遷移と履歴・エラー・狭幅両テーマは`tests/rdap-lookup.spec.ts`で確認します。コピー・ダウンロード・IME・モバイルなどの詳細シナリオはChromiumで実行します。CIの再試行でのみ成功したケースも失敗扱いです。WebKitの自動検証は今回追加していません。
 
+ローカルでE2Eを繰り返す場合は、先にビルドして別ターミナルでVite previewを起動しておくと、Playwrightがそのサーバーを再利用します。
+
+```sh
+npm run build
+npm run preview -- --host 127.0.0.1 --port 4173 --strictPort
+```
+
+previewを起動したターミナルはそのままにして、別のターミナルから`npm run test:e2e`を繰り返し実行してください。アプリケーションコードを変更した後は、再検証の前にビルドし直してください。previewを起動していない場合はPlaywrightが起動・終了を管理します。CIでは既存のpreviewを再利用しません。
+
 単体テスト・E2Eともipify・RDAP通信をモックし、実APIへはアクセスしません。実APIへの接続確認は別途必要です。各ツールの詳しい検証対象は[詳細設計書](docs/architecture.md)を参照してください。
 
 Codexの制約付きコンテナで実行する場合は、ビルド後に`npm run test:e2e:container`を使えます。この専用モードはブラウザとXDGキャッシュをコンテナの一時領域に置き、Playwright標準のインストーラーで不足分だけを準備します。通常のheadless実行にはChromium Headless Shellを使い、`--headed`を渡した場合は通常Chromiumを準備します。コンテナ内で信頼できるテストを実行する場合に限り、Firefoxのコンテンツ／RDDサンドボックスを無効化します。通常の`npm run test:e2e`とGitHub Actionsには適用しません。環境変数で保存先を指定した場合はその値を使います。
