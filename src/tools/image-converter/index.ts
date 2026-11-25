@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Download, ImagePlus, Minus, Plus, ScanEye, X } from 'lucide';
+import { Check, CircleAlert, Download, Image, ImageOff, ImagePlus, Minus, Plus, ScanEye, X } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
 import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
@@ -159,6 +159,8 @@ export function mount(container: HTMLElement): () => void {
   const inputStatus = get('.image-input-status');
   const inputError = get('.image-input-error');
   const sampleList = get('.image-sample-list');
+  const listeners = new AbortController();
+  const options = { signal: listeners.signal };
   for (const sample of sampleImages) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -166,16 +168,26 @@ export function mount(container: HTMLElement): () => void {
     button.dataset.sample = sample.id;
     button.setAttribute('aria-pressed', 'false');
     button.setAttribute('aria-label', `${sample.label}、${sample.dimensions}、${sample.type === 'image/jpeg' ? 'JPEG' : 'PNG'}、${sample.size}`);
+    const thumbnailFrame = document.createElement('span');
+    thumbnailFrame.className = 'image-sample-thumbnail';
+    thumbnailFrame.dataset.state = 'loading';
+    thumbnailFrame.append(createIcon(Image), createIcon(ImageOff));
     const thumbnail = document.createElement('img');
-    thumbnail.src = `${import.meta.env.BASE_URL}samples/${sample.id}-thumb.${sample.id === 'red-panda' ? 'jpg' : 'png'}`;
     thumbnail.alt = '';
     thumbnail.loading = 'lazy';
     thumbnail.decoding = 'async';
+    thumbnail.addEventListener('load', () => { thumbnailFrame.dataset.state = 'ready'; }, options);
+    thumbnail.addEventListener('error', () => { thumbnailFrame.dataset.state = 'error'; }, options);
+    thumbnailFrame.append(thumbnail);
+    thumbnail.src = `${import.meta.env.BASE_URL}samples/${sample.id}-thumb.${sample.id === 'red-panda' ? 'jpg' : 'png'}`;
+    if (thumbnail.complete && thumbnail.currentSrc) {
+      thumbnailFrame.dataset.state = thumbnail.naturalWidth > 0 ? 'ready' : 'error';
+    }
     const title = document.createElement('strong');
     title.textContent = sample.label;
     const detail = document.createElement('span');
     detail.textContent = `${sample.dimensions} · ${sample.type === 'image/jpeg' ? 'JPEG' : 'PNG'} · ${sample.size}`;
-    button.append(thumbnail, title, detail);
+    button.append(thumbnailFrame, title, detail);
     sampleList.append(button);
   }
   const autoEvaluation = get<HTMLInputElement>('.image-evaluation-toggle input');
@@ -187,8 +199,6 @@ export function mount(container: HTMLElement): () => void {
   cancelEvaluation.prepend(createIcon(X));
   const limitNotice = get('.image-evaluation-limit');
   const evaluationStatus = get('.image-evaluation-status');
-  const listeners = new AbortController();
-  const options = { signal: listeners.signal };
   let inputGeneration = 0;
   let selectionGeneration = 0;
   let reading: Selection | undefined;
