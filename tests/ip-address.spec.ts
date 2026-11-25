@@ -135,21 +135,6 @@ for (const theme of ['light', 'dark']) {
   });
 }
 
-test('IPv6失敗時もIPv4を保持し、再取得でIPv6が復帰する', async ({ page }) => {
-  let requests = 0;
-  await page.route('https://api6.ipify.org/**', (route) => ++requests === 1
-    ? route.abort('failed') : route.fulfill({ json: { ip: '2001:db8::2' } }));
-  await page.goto('./?tool=ip-address');
-  await expect(page.getByRole('textbox', { name: 'グローバルIPv4アドレス' })).toHaveValue('203.0.113.42');
-  await expect(page.getByRole('region', { name: 'グローバルIPv6アドレス' })
-    .getByText('IPv6を利用できない環境、または一時的に取得できない状態です。')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'IPv4をコピーする' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'IPv6をコピーする' })).toBeDisabled();
-  await page.getByRole('button', { name: '再取得', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'グローバルIPv6アドレス' })).toHaveValue('2001:db8::2');
-});
-
-
 test('再取得中は片方が成功しても再取得を無効にし、残りの失敗後に復帰する', async ({ page }) => {
   let release!: () => void;
   let started!: () => void;

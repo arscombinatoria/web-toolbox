@@ -241,3 +241,165 @@ it('クリアでは配置だけ初期化し、パディングは維持し、離�
   expect(document.querySelector<HTMLInputElement>('[value="excel"]')!.checked).toBe(true);
   nextDispose();
 });
+
+function selectDirection(direction: 'excel' | 'markdown') {
+  const radio = document.querySelector<HTMLInputElement>(`[name="table-direction"][value="${direction}"]`)!;
+  radio.checked = true;
+  radio.dispatchEvent(new Event('change'));
+}
+
+function fillTsv(headers: readonly string[]) {
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  input.value = `${headers.join('\t')}\n${headers.map(() => 'x').join('\t')}`;
+  input.dispatchEvent(new Event('input'));
+}
+
+it('配置は50列まで表示し、51列でページ移動・フォーカス・出力変更できる', () => {
+  const dispose = mount(document.body);
+  selectDirection('markdown');
+  const headers50 = Array.from({ length: 50 }, (_, index) => `h${index}`);
+  fillTsv(headers50);
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(50);
+  expect(document.querySelector('[data-alignment-pagination]')!.hasAttribute('hidden')).toBe(true);
+
+  fillTsv([...headers50, 'last']);
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(50);
+  expect(document.querySelector('[data-alignment-range]')!.textContent).toBe('列 1〜50 を表示中（全 51 列）');
+  const next = document.querySelector<HTMLButtonElement>('[data-next-page]')!;
+  expect(next.disabled).toBe(false);
+  next.focus(); next.click();
+  const last = document.querySelector<HTMLSelectElement>('[data-column="50"]')!;
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(1);
+  expect(last.getAttribute('aria-label')).toBe('列51（last）の配置');
+  last.value = 'right'; last.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(document.activeElement).toBe(last);
+  expect(document.querySelector<HTMLTextAreaElement>('#table-output')!.value).toContain('---:');
+  const previous = document.querySelector<HTMLButtonElement>('[data-previous-page]')!;
+  previous.click();
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(50);
+  expect(document.querySelector<HTMLSelectElement>('[data-column="0"]')!.getAttribute('aria-label'))
+    .toBe('列1（h0）の配置');
+  expect(document.querySelector<HTMLTextAreaElement>('#table-output')!.value).toContain('---:');
+  dispose();
+});
+
+it('最大列数でも配置DOMを50件に制限し、末尾設定・入力エラー・列数減少でページを整える', async () => {
+  const dispose = mount(document.body);
+  selectDirection('markdown');
+  const headers = Array.from({ length: 16_384 }, (_, index) => `h${index}`);
+  fillTsv(headers);
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(50);
+  expect(document.querySelectorAll('[data-alignments] label')).toHaveLength(50);
+  expect(document.querySelectorAll('[data-alignments] select')).toHaveLength(50);
+  expect(document.querySelectorAll('[data-alignments] option')).toHaveLength(200);
+  const next = document.querySelector<HTMLButtonElement>('[data-next-page]')!;
+  next.click();
+  const column51 = document.querySelector<HTMLSelectElement>('[data-column="50"]')!;
+  column51.value = 'right'; column51.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(document.querySelector<HTMLTextAreaElement>('#table-output')!.value).toContain('---:');
+  document.querySelector<HTMLButtonElement>('[data-previous-page]')!.click();
+  for (let page = 1; page < Math.ceil(headers.length / 50); page++) next.click();
+  expect(document.querySelector('[data-alignment-range]')!.textContent)
+    .toBe('列 16,351〜16,384 を表示中（全 16,384 列）');
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(34);
+  const last = document.querySelector<HTMLSelectElement>('[data-column="16383"]')!;
+  last.value = 'center'; last.dispatchEvent(new Event('change', { bubbles: true }));
+  const output = document.querySelector<HTMLTextAreaElement>('#table-output')!;
+  expect(output.value).toContain('h16383');
+  expect(output.value).toContain(':---:');
+  const copy = document.querySelector<HTMLButtonElement>('[data-copy]')!;
+  expect(copy.disabled).toBe(false);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  copy.click();
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalledExactlyOnceWith(output.value));
+
+  fillTsv(headers.slice(0, 10_001));
+  expect(document.querySelector('[data-alignment-range]')!.textContent)
+    .toBe('列 10,001〜10,001 を表示中（全 10,001 列）');
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(1);
+  expect(document.querySelector<HTMLTextAreaElement>('#table-output')!.value).not.toContain(':---:');
+  expect(document.querySelector<HTMLButtonElement>('[data-copy]')!.disabled).toBe(false);
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  input.value = 'bad\t"unterminated'; input.dispatchEvent(new Event('input'));
+  expect(document.querySelector('[role="alert"]')!.textContent).not.toBe('');
+  expect(document.querySelector('[data-alignment-range]')!.hasAttribute('hidden')).toBe(false);
+  fillTsv(headers.slice(0, 51));
+  expect(document.querySelector('[data-alignment-range]')!.textContent)
+    .toBe('列 51〜51 を表示中（全 51 列）');
+  expect(document.querySelector<HTMLSelectElement>('[data-column="50"]')!.value).toBe('right');
+  fillTsv(headers);
+  next.click();
+  document.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+  expect(document.querySelector('[data-alignment-range]')!.hasAttribute('hidden')).toBe(true);
+  selectDirection('excel');
+  selectDirection('markdown');
+  fillTsv(headers.slice(0, 51));
+  expect(document.querySelector('[data-alignment-range]')!.textContent)
+    .toBe('列 1〜50 を表示中（全 51 列）');
+  dispose();
+});
+
+it('重複・空ヘッダーの名前と配置を保ち、設定更新後も入力エラーを復帰できる', () => {
+  const dispose = mount(document.body);
+  selectDirection('markdown');
+  fillTsv(['same', '', 'same']);
+  const second = document.querySelector<HTMLSelectElement>('[data-column="1"]')!;
+  const third = document.querySelector<HTMLSelectElement>('[data-column="2"]')!;
+  expect(second.getAttribute('aria-label')).toBe('列2（空のヘッダー）の配置');
+  expect(third.getAttribute('aria-label')).toBe('列3（same）の配置');
+  second.value = 'center'; second.dispatchEvent(new Event('change', { bubbles: true }));
+  third.value = 'right'; third.dispatchEvent(new Event('change', { bubbles: true }));
+  fillTsv(['same', '', 'same', 'new']);
+  expect(document.querySelector<HTMLSelectElement>('[data-column="1"]')!.value).toBe('center');
+  expect(document.querySelector<HTMLSelectElement>('[data-column="2"]')!.value).toBe('right');
+  expect(document.querySelector<HTMLSelectElement>('[data-column="3"]')!.value).toBe('none');
+  fillTsv(['same', '', '']);
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(3);
+  expect(document.querySelector<HTMLSelectElement>('[data-column="1"]')!.value).toBe('center');
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  input.value = 'same\t"unterminated'; input.dispatchEvent(new Event('input'));
+  expect(document.querySelector('[role="alert"]')!.textContent).toContain('引用符');
+  const alignment = document.querySelector<HTMLSelectElement>('[data-column="1"]')!;
+  alignment.value = 'left'; alignment.dispatchEvent(new Event('change', { bubbles: true }));
+  expect(document.querySelector('[role="alert"]')!.textContent).toContain('引用符');
+  expect(document.querySelector<HTMLTextAreaElement>('#table-output')!.value).toBe('');
+  document.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+  expect(document.querySelectorAll('[data-column]')).toHaveLength(0);
+  expect(document.querySelector('[role="alert"]')!.textContent).toBe('');
+  expect(document.querySelector('[data-alignment-range]')!.hasAttribute('hidden')).toBe(true);
+  dispose();
+});
+
+it('列配置と幅揃えを出力へ反映し、配置変更・方向切り替え・クリア後の状態を保つ', () => {
+  const dispose = mount(document.body);
+  selectDirection('markdown');
+  const input = document.querySelector<HTMLTextAreaElement>('#table-input')!;
+  input.value = 'left\tcenter\tright\tnone\nh\tlong\tx\tz'; input.dispatchEvent(new Event('input'));
+  for (const [index, alignment] of ['left', 'center', 'right', 'none'].entries()) {
+    const select = document.querySelector<HTMLSelectElement>(`[data-column="${index}"]`)!;
+    select.value = alignment;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  const output = document.querySelector<HTMLTextAreaElement>('#table-output')!;
+  expect(output.value).toContain('| :--- | :---: | ---: | --- |');
+  const padding = document.querySelector<HTMLInputElement>('[data-padding]')!;
+  const warning = document.querySelector<HTMLElement>('[data-padding-warning]')!;
+  expect(padding.checked).toBe(false);
+  expect(warning.hasAttribute('hidden')).toBe(true);
+  padding.checked = true; padding.dispatchEvent(new Event('change'));
+  expect(warning.hasAttribute('hidden')).toBe(false);
+  expect(warning.textContent).toBe('列幅調整用の空白が追加されます。Excelへ再変換する際に、追加された空白がセルの内容として残る場合があります。');
+  expect(output.value).toBe('| left | center | right | none |\n| :--- | :----: | ----: | ---- |\n| h    |  long  |     x | z    |');
+  const padded = output.value;
+  selectDirection('excel');
+  expect(input.value).toBe(padded);
+  expect(output.value).toBe('left\tcenter\tright\tnone\nh   \t long \t    x\tz   ');
+  selectDirection('markdown');
+  expect(output.value).toBe(padded);
+  document.querySelector<HTMLButtonElement>('[data-clear]')!.click();
+  expect(padding.checked).toBe(true);
+  expect(document.querySelector('[data-format-options]')!.hasAttribute('hidden')).toBe(false);
+  expect(output.value).toBe('');
+  dispose();
+});
