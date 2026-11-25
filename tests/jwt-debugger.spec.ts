@@ -13,6 +13,7 @@ test('JWTの実検証・コピー・クリア・履歴・非通信・非保存',
   const logs: string[] = []; page.on('console', message => logs.push(message.text()));
   await page.getByLabel('JWT入力', { exact: true }).fill(token);
   await expect(page.locator('[data-verification]')).toHaveText('未検証');
+  await expect(page.locator('[data-verification]')).toHaveAttribute('data-state', 'idle');
   await expect(page.locator('[data-claims]')).toContainText('期限切れ');
   await page.getByLabel('共有Secret', { exact: true }).fill(secret);
   await expect(page.getByLabel('共有Secret', { exact: true })).toHaveAttribute('type', 'text');
@@ -20,6 +21,8 @@ test('JWTの実検証・コピー・クリア・履歴・非通信・非保存',
   await expect(page.getByRole('button', { name: /Secretを(?:表示|隠す)/ })).toHaveCount(0);
   await page.getByRole('button', { name: '検証', exact: true }).click();
   await expect(page.locator('[data-verification]')).toHaveText('署名一致');
+  await expect(page.locator('[data-verification]')).toHaveAttribute('data-state', 'match');
+  await expect(page.locator('[data-verification-icon] svg')).toHaveCount(1);
   const payloadText = await page.getByLabel('Payload', { exact: true }).inputValue();
   await page.getByRole('button', { name: 'Payloadをコピー' }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(payloadText);
@@ -37,8 +40,10 @@ test('JWTの実検証・コピー・クリア・履歴・非通信・非保存',
   expect(logs.join('')).not.toContain(secret); expect(logs.join('')).not.toContain(token);
   await page.getByLabel('共有Secret', { exact: true }).fill('wrong');
   await expect(page.locator('[data-verification]')).toHaveText('未検証');
+  await expect(page.locator('[data-verification]')).toHaveAttribute('data-state', 'idle');
   await page.getByRole('button', { name: '検証', exact: true }).click();
   await expect(page.locator('[data-verification]')).toHaveText('署名不一致');
+  await expect(page.locator('[data-verification]')).toHaveAttribute('data-state', 'mismatch');
   await page.getByRole('button', { name: '入力をクリア' }).click();
   await expect(page.getByLabel('JWT入力', { exact: true })).toBeFocused();
   await expect(page.getByLabel('Payload', { exact: true })).toHaveValue('');
@@ -49,6 +54,23 @@ test('JWTの実検証・コピー・クリア・履歴・非通信・非保存',
   await page.getByRole('link', { name: 'Web Toolbox', exact: true }).click();
   await page.goBack(); await expect(page.getByLabel('JWT入力', { exact: true })).toHaveValue(SAMPLE_JWT);
   await expect(page.getByLabel('共有Secret', { exact: true })).toHaveValue(DEMO_SECRET);
+});
+
+test('署名バッジはforced-colorsでもアイコン・文言・状態属性を保つ', async ({ page }) => {
+  await page.goto('./?tool=jwt-debugger');
+  await page.emulateMedia({ forcedColors: 'active' });
+  const badge = page.locator('[data-verification]');
+  await page.getByRole('button', { name: '検証', exact: true }).click();
+  await expect(badge).toHaveAttribute('data-state', 'match');
+  await expect(badge).toContainText('署名一致');
+  await expect(page.locator('[data-verification-icon] svg')).toHaveCount(1);
+  const matchColor = await badge.evaluate(element => getComputedStyle(element).color);
+  await page.getByLabel('共有Secret', { exact: true }).fill('wrong');
+  await page.getByRole('button', { name: '検証', exact: true }).click();
+  await expect(badge).toHaveAttribute('data-state', 'mismatch');
+  await expect(badge).toContainText('署名不一致');
+  const mismatchColor = await badge.evaluate(element => getComputedStyle(element).color);
+  expect(matchColor).not.toBe(mismatchColor);
 });
 for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1], [768, 1], [1280, 2], [1920, 2]] as const) {
   test(`JWT ${theme} ${width}px・キーボード`, async ({ page }) => {
@@ -67,33 +89,37 @@ for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1],
     await expect(signature.getByRole('heading', { name: 'Signature（Base64URL）' })).toBeVisible();
     await expect(claims.getByRole('heading', { name: 'Claims・日時評価（署名とは独立）' })).toBeVisible();
     await expect(page.locator('.jwt-verification')).toBeVisible();
-    expect(await workspace.locator('.jwt-signature, .jwt-claims').count()).toBe(0);
-    expect(await page.locator('.jwt-tool > .jwt-workspace ~ .jwt-signature ~ .jwt-claims ~ .jwt-verification').count()).toBe(1);
+    expect(await workspace.locator(':scope > .jwt-source, :scope > .jwt-signature, :scope > .jwt-decoded').count()).toBe(3);
+    expect(await page.locator('.jwt-source + .jwt-signature + .jwt-decoded').count()).toBe(1);
+    expect(await page.locator('.jwt-workspace + .jwt-claims').count()).toBe(1);
+    expect(await page.locator('.jwt-decoded .jwt-verification').count()).toBe(1);
     const panes = await Promise.all([sourcePane.boundingBox(), decodedPane.boundingBox()]);
+    const signatureBox = await signature.boundingBox();
     const containerWidth = await workspace.evaluate(element => element.clientWidth);
     expect(containerWidth >= 832 ? 2 : 1).toBe(columns);
-    const [workspaceBox, signatureBox, claimsBox] = await Promise.all([workspace.boundingBox(), signature.boundingBox(), claims.boundingBox()]);
-    for (const box of [signatureBox, claimsBox]) {
-      expect(Math.abs(box!.x - workspaceBox!.x)).toBeLessThanOrEqual(1);
-      expect(Math.abs(box!.width - workspaceBox!.width)).toBeLessThanOrEqual(1);
-    }
+    const [workspaceBox, claimsBox] = await Promise.all([workspace.boundingBox(), claims.boundingBox()]);
+    expect(Math.abs(claimsBox!.x - workspaceBox!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(claimsBox!.width - workspaceBox!.width)).toBeLessThanOrEqual(1);
     const claimsColumns = await claims.locator('[data-claims]').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length);
     expect(claimsColumns).toBe(containerWidth >= 832 ? 2 : 1);
     if (columns === 2) {
       expect(panes[0]!.x).toBeLessThan(panes[1]!.x);
       expect(Math.abs(panes[0]!.y - panes[1]!.y)).toBeLessThanOrEqual(1);
       expect(panes[0]!.x + panes[0]!.width).toBeLessThanOrEqual(panes[1]!.x);
+      expect(signatureBox!.y).toBeGreaterThanOrEqual(panes[0]!.y + panes[0]!.height);
+      expect(Math.abs(signatureBox!.x - panes[0]!.x)).toBeLessThanOrEqual(1);
       const sourceInput = await page.locator('#jwt-input').boundingBox();
       expect(sourceInput!.height).toBeGreaterThanOrEqual(80);
       expect(sourceInput!.height).toBeLessThanOrEqual(192);
       await expect(page.locator('#jwt-input')).toHaveCSS('field-sizing', 'content');
       await expect(page.locator('#jwt-input')).toHaveValue(SAMPLE_JWT);
     } else {
-      expect(panes[1]!.y).toBeGreaterThan(panes[0]!.y);
-      expect(panes[0]!.y + panes[0]!.height).toBeLessThanOrEqual(panes[1]!.y);
+      expect(signatureBox!.y).toBeGreaterThanOrEqual(panes[0]!.y + panes[0]!.height);
+      expect(panes[1]!.y).toBeGreaterThanOrEqual(signatureBox!.y + signatureBox!.height);
     }
     const verificationBox = await page.locator('.jwt-verification').boundingBox();
-    expect(verificationBox!.y).toBeGreaterThanOrEqual(Math.max(panes[0]!.y + panes[0]!.height, panes[1]!.y + panes[1]!.height));
+    const payloadBox = await page.locator('#jwt-payload').boundingBox();
+    expect(verificationBox!.y).toBeGreaterThanOrEqual(payloadBox!.y + payloadBox!.height);
     await page.getByLabel('JWT入力', { exact: true }).fill('eyJhbGciOiJub25lIn0.eyJzdWIiOiI8c2NyaXB0PiJ9.');
     for (const id of ['input', 'header', 'payload']) {
       const field = page.locator(`#jwt-${id}`);
@@ -101,6 +127,7 @@ for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1],
       expect(await field.locator('..').locator('pre').textContent()).toBe(await field.inputValue());
     }
     expect(await page.getByLabel('Payload', { exact: true }).inputValue()).toContain('<script>');
+    await expect(page.locator('[data-decode-state]')).toHaveAttribute('data-decode-state', 'success');
     const header = await page.getByLabel('Header', { exact: true }).boundingBox();
     const payload = await page.getByLabel('Payload', { exact: true }).boundingBox();
     expect(payload!.y).toBeGreaterThan(header!.y);
@@ -108,6 +135,9 @@ for (const theme of ['light', 'dark']) for (const [width, columns] of [[320, 1],
     const button = page.getByRole('button', { name: '検証', exact: true });
     await button.focus(); await expect(button).toHaveCSS('outline-style', 'solid');
     await page.keyboard.press('Enter'); await expect(page.locator('[data-verification]')).toContainText('検証不可');
+    await expect(page.locator('[data-verification]')).toHaveAttribute('data-state', 'unavailable');
+    await expect(page.locator('[data-verification-icon] svg')).toHaveCount(1);
+    await expect(page.locator('[data-verification-detail]')).toContainText('非対応アルゴリズム');
   });
 }
 
@@ -134,8 +164,17 @@ test('JWTレイアウトは同じ画面内の幅変更にも追従する', async
       expect(decodedBox!.y).toBeGreaterThan(sourceBox!.y);
       expect(sourceBox!.y + sourceBox!.height).toBeLessThanOrEqual(decodedBox!.y);
     }
+    const signatureBox = await page.locator('.jwt-signature').boundingBox();
+    if (columns === 2) {
+      expect(signatureBox!.y).toBeGreaterThanOrEqual(sourceBox!.y + sourceBox!.height);
+      expect(decodedBox!.y).toBeLessThan(signatureBox!.y);
+    } else {
+      expect(signatureBox!.y).toBeGreaterThanOrEqual(sourceBox!.y + sourceBox!.height);
+      expect(decodedBox!.y).toBeGreaterThanOrEqual(signatureBox!.y + signatureBox!.height);
+    }
     const verification = await page.locator('.jwt-verification').boundingBox();
-    expect(verification!.y).toBeGreaterThanOrEqual(Math.max(sourceBox!.y + sourceBox!.height, decodedBox!.y + decodedBox!.height));
+    const payloadBox = await page.locator('#jwt-payload').boundingBox();
+    expect(verification!.y).toBeGreaterThanOrEqual(payloadBox!.y + payloadBox!.height);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   };
   await assertLayout(320, 1);
