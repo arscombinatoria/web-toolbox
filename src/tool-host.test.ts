@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { Globe } from 'lucide';
 import { describe, expect, it, vi } from 'vitest';
 import type { ToolDefinition, ToolModule } from './registry';

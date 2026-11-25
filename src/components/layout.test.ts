@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createElement, House } from 'lucide';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tools } from '../registry';

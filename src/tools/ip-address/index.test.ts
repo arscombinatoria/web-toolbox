@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Check, CircleAlert, Info } from 'lucide';
 import { mount } from './index';

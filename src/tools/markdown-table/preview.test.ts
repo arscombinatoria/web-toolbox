@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
 import { parseMarkdown } from './logic';
 import { buildMarkdownPreview, PREVIEW_LIMITS } from './preview';

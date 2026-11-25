@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { renderMatchError, renderMatchResults } from './match-view';
 import type { MatchResult } from './match-protocol';

@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { expect, it } from 'vitest';
 import { decodeJwt, analyzeClaims } from './logic';
 import { formatJson, losesNumericPrecision } from './json';

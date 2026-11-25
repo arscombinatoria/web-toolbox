@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { expect, it } from 'vitest';
 import { highlightJwt, highlightJson, renderHighlight, MAX_HIGHLIGHT_TOKENS } from './highlight';
 

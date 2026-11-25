@@ -1,5 +1,3 @@
-// @vitest-environment node
-
 import { describe, expect, it } from 'vitest';
 import { parseMarkdown, parseMarkdownWithAlignments, parseTsv, toMarkdown, toTsv, type TableData } from './logic';
 

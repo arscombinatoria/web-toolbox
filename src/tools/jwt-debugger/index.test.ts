@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { DEMO_SECRET, SAMPLE_JWT } from './sample';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mount } from './index';
