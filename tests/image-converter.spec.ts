@@ -1,6 +1,9 @@
 import { readFile } from 'node:fs/promises';
+import { deflateSync, inflateSync } from 'node:zlib';
 import type { FileChooser, Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { formatFileSize, sizeChange } from '../src/tools/image-converter/encoder';
+import { imageWorkerLockName } from '../src/tools/image-converter/worker-slot';
 
 async function testImage(page: Page, width = 64, height = 32) {
   const png = await page.evaluate(({ width, height }) => {
@@ -13,6 +16,83 @@ async function testImage(page: Page, width = 64, height = 32) {
     return canvas.toDataURL().split(',')[1]!;
   }, { width, height });
   return { name: 'sample.alpha.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') };
+}
+
+function crc32(data: Buffer) {
+  let crc = 0xffffffff;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer) {
+  const name = Buffer.from(type);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const checksum = Buffer.alloc(4);
+  checksum.writeUInt32BE(crc32(Buffer.concat([name, data])));
+  return Buffer.concat([length, name, data, checksum]);
+}
+
+function rgbaPng(width: number, height: number) {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  const rows = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    const row = y * (width * 4 + 1);
+    rows[row] = 0;
+    for (let x = 0; x < width; x++) {
+      const i = row + 1 + x * 4;
+      rows[i] = x * 37 + y * 13 & 255;
+      rows[i + 1] = x * 11 + y * 29 & 255;
+      rows[i + 2] = x * 19 + y * 7 & 255;
+      rows[i + 3] = [0, 64, 128, 255][(x + y) % 4]!;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    pngChunk('IHDR', header), pngChunk('IDAT', deflateSync(rows)), pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+function readRgbaPng(png: Buffer) {
+  let width = 0, height = 0, bitDepth = 0, colorType = 0, interlace = 0;
+  const compressed: Buffer[] = [];
+  for (let cursor = 8; cursor < png.length;) {
+    const length = png.readUInt32BE(cursor);
+    const type = png.toString('ascii', cursor + 4, cursor + 8);
+    const chunk = png.subarray(cursor + 8, cursor + 8 + length);
+    if (type === 'IHDR') {
+      width = chunk.readUInt32BE(0); height = chunk.readUInt32BE(4);
+      bitDepth = chunk[8]!; colorType = chunk[9]!; interlace = chunk[12]!;
+    }
+    if (type === 'IDAT') compressed.push(chunk);
+    cursor += 12 + length;
+  }
+  if (bitDepth !== 8 || colorType !== 6 || interlace !== 0) return { width, height, bitDepth, colorType, interlace };
+  const data = inflateSync(Buffer.concat(compressed));
+  const stride = width * 4;
+  const pixels = Buffer.alloc(stride * height);
+  const paeth = (a: number, b: number, c: number) => {
+    const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+  };
+  for (let y = 0; y < height; y++) {
+    const filter = data[y * (stride + 1)]!;
+    for (let x = 0; x < stride; x++) {
+      const raw = data[y * (stride + 1) + 1 + x]!;
+      const left = x >= 4 ? pixels[y * stride + x - 4]! : 0;
+      const above = y > 0 ? pixels[(y - 1) * stride + x]! : 0;
+      const upperLeft = y > 0 && x >= 4 ? pixels[(y - 1) * stride + x - 4]! : 0;
+      const predictor = filter === 1 ? left : filter === 2 ? above : filter === 3 ? Math.floor((left + above) / 2) : filter === 4 ? paeth(left, above, upperLeft) : 0;
+      pixels[y * stride + x] = (raw + predictor) & 255;
+    }
+  }
+  return { width, height, bitDepth, colorType, interlace, pixels };
 }
 
 async function dragDividerOutsideStage(page: Page, split: Locator) {
@@ -181,6 +261,212 @@ test('画像を選択し、比較線と左右のエンコーダーを操作し�
   await expect(page.locator('.image-drop')).toBeVisible();
   await expect(saveLeft).toBeHidden();
   await expect(saveRight).toBeHidden();
+});
+
+test('Oxipng WASM preserves normalized RGBA by default and exposes interlace and transparent-RGB options', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  const inputPng = rgbaPng(127, 97);
+  await page.locator('[type=file]').setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: inputPng });
+  const format = page.getByLabel('右の出力形式');
+  const level = page.getByLabel('右のOxipngレベル');
+  const interlace = page.getByLabel('右のインターレースを有効にする');
+  const alpha = page.getByLabel('右の完全透明画素のRGB最適化を有効にする');
+  const status = page.locator('.image-panel[data-side="right"] .image-oxipng-status');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  await expect(format.locator('option[value="oxipng"]')).toHaveText('Oxipng');
+  await format.selectOption('oxipng');
+  await expect(level).toHaveValue('2');
+  await expect(interlace).not.toBeChecked();
+  await expect(alpha).not.toBeChecked();
+  await expect(status).toContainText('完了');
+  await expect(page.locator('.image-score').last()).toHaveText('可逆圧縮（スコア評価対象外）');
+  await expect(page.locator('.image-result').last()).toContainText('→ 出力');
+  const baseline = await page.locator('canvas').evaluate(canvas => {
+    const element = canvas as HTMLCanvasElement;
+    return [...element.getContext('2d')!.getImageData(0, 0, element.width, element.height).data];
+  });
+  const defaultPng = await saveImage(page, save, 'sample-right-oxipng-o2.png');
+  const decodedDefault = readRgbaPng(defaultPng);
+  expect(decodedDefault).toMatchObject({ width: 127, height: 97, bitDepth: 8, colorType: 6, interlace: 0 });
+  expect([...decodedDefault.pixels!]).toEqual(baseline);
+  await expect(page.getByAltText('右側のプレビュー')).toBeVisible();
+  await expect(page.locator('.image-panel[data-side="right"] .image-size-change')).toHaveText(sizeChange(inputPng.length, defaultPng.length));
+  await expect(page.locator('.image-panel[data-side="right"] .image-output-size')).toContainText(formatFileSize(defaultPng.length));
+
+  await page.getByLabel('左の出力形式').selectOption('oxipng');
+  await expect(page.locator('.image-panel[data-side="left"] .image-oxipng-status')).toContainText('完了');
+  await expect(page.getByAltText('左側のプレビュー')).toBeVisible();
+  const leftPng = await saveImage(page, page.getByRole('button', { name: '左をダウンロード' }), 'sample-left-oxipng-o2.png');
+  expect(leftPng.equals(defaultPng)).toBe(true);
+  await expect(page.locator('.image-panel[data-side="left"] .image-size-change')).toHaveText(sizeChange(inputPng.length, leftPng.length));
+
+  await alpha.check();
+  await expect(status).toContainText('完了');
+  const alphaPng = await saveImage(page, save, 'sample-right-oxipng-o2.png');
+  const decodedAlpha = readRgbaPng(alphaPng);
+  expect(decodedAlpha).toMatchObject({ width: 127, height: 97, interlace: 0 });
+  for (let pixel = 0; pixel < baseline.length; pixel += 4) {
+    if (baseline[pixel + 3] !== 0) expect([...decodedAlpha.pixels!.subarray(pixel, pixel + 4)]).toEqual(baseline.slice(pixel, pixel + 4));
+  }
+
+  await level.selectOption('6');
+  await interlace.check();
+  await expect(status).toContainText('完了');
+  const interlaced = await saveImage(page, save, 'sample-right-oxipng-o6.png');
+  expect(readRgbaPng(interlaced)).toMatchObject({ width: 127, height: 97, interlace: 1 });
+  await level.focus();
+  await level.press('ArrowUp');
+  await expect(level).toHaveValue('5');
+  await page.setViewportSize({ width: 320, height: 800 });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  await format.selectOption('image/png');
+  await expect(level).toBeHidden();
+  expect(await level.evaluate(element => {
+    (element as HTMLSelectElement).focus();
+    return document.activeElement === element;
+  })).toBe(false);
+});
+
+test('Oxipng accepts JPEG, PNG and WebP browser-normalized inputs', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  const fileInput = page.locator('[type=file]');
+  for (const mimeType of ['image/jpeg', 'image/webp']) {
+    const encoded = await page.evaluate(async type => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32; canvas.height = 24;
+      const context = canvas.getContext('2d')!;
+      context.fillStyle = 'rgb(70, 120, 210)';
+      context.fillRect(0, 0, 32, 24);
+      const blob = await new Promise<Blob>(resolve => canvas.toBlob(value => resolve(value!), type));
+      return { name: `input.${type.split('/')[1]}`, mimeType: type, bytes: [...new Uint8Array(await blob.arrayBuffer())] };
+    }, mimeType);
+    const image = { name: encoded.name, mimeType: encoded.mimeType, buffer: Buffer.from(encoded.bytes) };
+    await fileInput.setInputFiles(image);
+    await expect(page.locator('.image-filename')).toHaveText(encoded.name);
+    await page.getByLabel('左の出力形式').selectOption('oxipng');
+    await expect(page.locator('.image-panel[data-side="left"] .image-oxipng-status')).toContainText('完了');
+    const output = await saveImage(page, page.getByRole('button', { name: '左をダウンロード' }), `${encoded.name.replace(/\.[^.]*$/, '')}-left-oxipng-o2.png`);
+    expect(readRgbaPng(output)).toMatchObject({ width: 32, height: 24, interlace: 0 });
+    await page.getByLabel('左の出力形式').selectOption('original');
+  }
+});
+
+test('Oxipng cancellation and retry terminate and recreate the real production worker', async ({ page }) => {
+  test.setTimeout(60000);
+  let releaseFirstRequest!: () => void;
+  let firstRequestStarted!: () => void;
+  const firstWasmRequest = new Promise<void>(resolve => { firstRequestStarted = resolve; });
+  const holdFirstRequest = new Promise<void>(resolve => { releaseFirstRequest = resolve; });
+  let wasmRequests = 0;
+  await page.route(/squoosh_oxipng_bg.*\.wasm$/, async route => {
+    wasmRequests++;
+    if (wasmRequests === 1) {
+      firstRequestStarted();
+      await holdFirstRequest;
+      await route.abort();
+    } else {
+      await route.continue();
+    }
+  });
+  await page.addInitScript(() => {
+    const events: { action: string; name: string }[] = [];
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      readonly observedName: string;
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.observedName = options?.name ?? '';
+        events.push({ action: 'create', name: this.observedName });
+      }
+      override terminate() {
+        events.push({ action: 'terminate', name: this.observedName });
+        super.terminate();
+      }
+    };
+    (window as unknown as { __workerEvents: typeof events }).__workerEvents = events;
+  });
+  await page.goto('./?tool=image-converter');
+  await page.locator('.image-evaluation-toggle input').uncheck();
+  await page.locator('.image-sample[data-sample="outline"]').click();
+  await expect(page.locator('.image-filename')).toHaveText('outline.png');
+  const format = page.getByLabel('右の出力形式');
+  const status = page.locator('.image-panel[data-side="right"] .image-oxipng-status');
+  const cancel = page.getByRole('button', { name: '右側のOxipngを中止' });
+  const retry = page.getByRole('button', { name: '右側のOxipngを再試行' });
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  await format.selectOption('oxipng');
+  await firstWasmRequest;
+  await cancel.click();
+  releaseFirstRequest();
+  await expect(status).toContainText('中止しました');
+  await expect(retry).toBeVisible();
+  await expect(save).toBeDisabled();
+  await retry.click();
+  await expect(cancel).toBeFocused();
+  await expect(status).toContainText('完了', { timeout: 30000 });
+  await expect(save).toBeEnabled();
+  await expect(cancel).toBeHidden();
+  expect(wasmRequests).toBe(2);
+  const events = await page.evaluate(() => (window as unknown as { __workerEvents: { action: string; name: string }[] }).__workerEvents);
+  expect(events.filter(event => event.action === 'create' && event.name === 'image-converter-oxipng')).toHaveLength(2);
+  expect(events.filter(event => event.action === 'terminate' && event.name === 'image-converter-oxipng')).toHaveLength(2);
+});
+
+test('Oxipng is lazy, loads only same-origin /web-toolbox assets, and sends no image requests externally', async ({ page }) => {
+  const external: string[] = [];
+  const requests: string[] = [];
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.origin !== 'http://127.0.0.1:4173') external.push(request.url());
+    else requests.push(url.pathname);
+  });
+  await page.goto('./');
+  await expect(page.locator('body')).toBeVisible();
+  await page.goto('./?tool=image-converter');
+  await page.locator('.image-evaluation-toggle input').uncheck();
+  expect(requests.some(path => /oxipng|squoosh|\.wasm|worker-/i.test(path))).toBe(false);
+  await page.locator('.image-sample[data-sample="outline"]').click();
+  await expect(page.locator('.image-filename')).toHaveText('outline.png');
+  await page.getByLabel('左の出力形式').selectOption('oxipng');
+  await expect(page.locator('.image-panel[data-side="left"] .image-oxipng-status')).toContainText('完了');
+  expect(requests.some(path => path.endsWith('.wasm') && path.startsWith('/web-toolbox/assets/'))).toBe(true);
+  expect(requests.some(path => /worker-.*\.js$/.test(path) && path.startsWith('/web-toolbox/assets/'))).toBe(true);
+  expect(external).toEqual([]);
+});
+
+test('Oxipng and automatic SSIMULACRA2 workers run one at a time', async ({ page }) => {
+  test.setTimeout(90000);
+  await page.addInitScript(() => {
+    const events: { action: string; name: string; at: number; url: string }[] = [];
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      readonly observedName: string;
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.observedName = options?.name ?? '';
+        events.push({ action: 'create', name: this.observedName, at: performance.now(), url: String(url) });
+      }
+      override terminate() {
+        events.push({ action: 'terminate', name: this.observedName, at: performance.now(), url: '' });
+        super.terminate();
+      }
+    };
+    (window as unknown as { __workerEvents: typeof events }).__workerEvents = events;
+  });
+  await page.goto('./?tool=image-converter');
+  await page.locator('.image-sample[data-sample="geometry"]').click();
+  await expect(page.locator('.image-filename')).toHaveText('geometry.png');
+  await page.getByLabel('左の出力形式').selectOption('oxipng');
+  await expect(page.locator('.image-panel[data-side="left"] .image-oxipng-status')).toContainText('完了', { timeout: 60000 });
+  await expect(page.locator('.image-evaluation-status')).toContainText('完了', { timeout: 60000 });
+  const events = await page.evaluate(() => (window as unknown as { __workerEvents: { action: string; name: string; at: number }[] }).__workerEvents);
+  const oxipngEnd = events.findIndex(event => event.action === 'terminate' && event.name === 'image-converter-oxipng');
+  const qualityStart = events.findIndex(event => event.action === 'create' && event.name === 'image-quality-ssimulacra2');
+  expect(oxipngEnd).toBeGreaterThanOrEqual(0);
+  expect(qualityStart).toBeGreaterThan(oxipngEnd);
 });
 
 test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を保存する', async ({ page }) => {
@@ -1036,10 +1322,10 @@ test('狭い画面と両テーマで、Wasmロード中の中止と失敗から�
   const status = page.locator('.image-evaluation-status');
   const score = page.locator('.image-panel[data-side=right] .image-score');
   const wasm = '**/ssimulacra2-0.1.0-*.wasm';
-  const scoringLockHeld = () => page.evaluate(async () => {
+  const scoringLockHeld = () => page.evaluate(async lockName => {
     const { held } = await navigator.locks.query();
-    return held?.some(lock => lock.name?.startsWith('web-toolbox:image-quality:')) ?? false;
-  });
+    return held?.some(lock => lock.name === lockName) ?? false;
+  }, imageWorkerLockName);
   let release!: () => void;
   const blocked = new Promise<void>(resolve => { release = resolve; });
   await page.route(wasm, async route => {

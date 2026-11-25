@@ -1,0 +1,9 @@
+This directory contains license and attribution notices for the Oxipng WebAssembly
+codec distributed by this project.
+
+The npm package @jsquash/oxipng 2.3.0 is distributed under Apache-2.0. Its
+single-thread WebAssembly codec is derived from Squoosh and contains the Oxipng
+Rust crate 9.1.1, distributed under MIT, plus the libdeflate 1.20.0 library,
+distributed under MIT. The compiled Rust 1.81.0-nightly standard library is
+dual licensed Apache-2.0/MIT. See LICENSE, LICENSE.codec.md, LICENSE.libdeflate, the Rust
+license files, and DEPENDENCIES.txt.
