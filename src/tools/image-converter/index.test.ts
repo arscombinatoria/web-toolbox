@@ -279,11 +279,11 @@ it('サムネイルは独立した読み込み状態を持ち、load・error後�
 });
 
 it('キャッシュ済みサムネイルはDOM構築時にすぐreadyになる', () => {
-  Object.defineProperties(HTMLImageElement.prototype, {
-    complete: { configurable: true, get: () => true },
-    currentSrc: { configurable: true, get() { return (this as HTMLImageElement).src; } },
-    naturalWidth: { configurable: true, get: () => 32 },
+  vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
+  vi.spyOn(HTMLImageElement.prototype, 'currentSrc', 'get').mockImplementation(function (this: HTMLImageElement) {
+    return this.src;
   });
+  vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(32);
   setup();
   expect([...document.querySelectorAll<HTMLElement>('.image-sample-thumbnail')].map(frame => frame.dataset.state))
     .toEqual(['ready', 'ready', 'ready', 'ready']);
