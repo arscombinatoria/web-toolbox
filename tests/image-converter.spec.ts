@@ -1819,3 +1819,231 @@ test('WebP previews a 16-megapixel input and cancels during high-effort encoding
   await expect(save).toBeDisabled();
   await expect.poll(() => page.workers().length).toBe(0);
 });
+
+test('MozJPEG loads on demand, composites white, saves and reopens JPEG on the deployment subpath', async ({ page, context, browserName }) => {
+  test.setTimeout(60_000);
+  const requests: string[] = [];
+  context.on('request', request => requests.push(request.url()));
+  await page.goto('./');
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  const input = page.locator('[type=file]');
+  await input.setInputFiles(await testImage(page, 127, 97));
+
+  const left = page.getByLabel('左の出力形式');
+  const right = page.getByLabel('右の出力形式');
+  await expect(left).toHaveValue('original');
+  await expect(right).toHaveValue('image/jpeg');
+  await expect(right.locator('option')).toHaveText([
+    'Original', 'AVIF (libaom)', 'Browser JPEG', 'Browser PNG', 'JPEG (MozJPEG)', 'Oxipng', 'WebP (libwebp)',
+  ]);
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  await expect(save).toBeEnabled();
+  expect(requests.some(url => /mozjpeg|\/assets\/worker-/.test(url))).toBe(false);
+
+  const wasm = page.waitForResponse('**/web-toolbox/assets/mozjpeg-4.1.5-encoder-*.wasm');
+  await right.selectOption('mozjpeg');
+  expect((await wasm).ok()).toBe(true);
+  const preview = page.getByAltText('右側のプレビュー');
+  await expect(preview).toBeVisible();
+  const pixels = await preview.evaluate(element => {
+    const image = element as HTMLImageElement;
+    const canvas = new OffscreenCanvas(image.naturalWidth, image.naturalHeight);
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    return [...context.getImageData(8, 8, 1, 1).data, ...context.getImageData(112, 80, 1, 1).data];
+  });
+  expect(pixels.slice(0, 3).every(value => value >= 250)).toBe(true);
+  expect(pixels[3]).toBe(255);
+  expect(pixels[4]).toBeGreaterThan(240);
+  expect(pixels[5]).toBeLessThan(15);
+  expect(pixels[6]).toBeLessThan(15);
+
+  await left.selectOption('mozjpeg');
+  await expect(page.getByAltText('左側のプレビュー')).toBeVisible();
+  expect(requests.filter(url => /mozjpeg-4\.1\.5-encoder/.test(url))).toHaveLength(1);
+  const baseline = page.getByLabel('右のMozJPEGプログレッシブJPEG');
+  const optimize = page.getByLabel('右のMozJPEGハフマン符号化最適化');
+  const quality = page.getByLabel('右のMozJPEG品質');
+  await expect(optimize).toBeDisabled();
+  await baseline.press('Space');
+  await expect(optimize).toBeEnabled();
+  await optimize.press('Space');
+  await page.getByLabel('右のMozJPEG色差サンプリング').selectOption('444');
+  await quality.fill('90');
+  await right.selectOption('image/jpeg');
+  await right.selectOption('mozjpeg');
+  await expect(quality).toHaveValue('90');
+  await expect(optimize).not.toBeChecked();
+  await expect(page.getByLabel('左のMozJPEG品質')).toHaveValue('75');
+  await expect(page.getByLabel('左のMozJPEGハフマン符号化最適化')).toBeDisabled();
+  const output = await saveBrowserImage(page, save, 'sample.alpha-right-mozjpeg-q90-444-b-noopt.jpg', browserName);
+  expect(output.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+  expect(output.subarray(-2)).toEqual(Buffer.from([0xff, 0xd9]));
+  expect(output.includes(Buffer.from([0xff, 0xc0]))).toBe(true);
+  await right.selectOption('original');
+  await left.selectOption('original');
+  await input.setInputFiles({ name: 'roundtrip.jpg', mimeType: 'image/jpeg', buffer: output });
+  await expect(page.locator('.image-filename')).toHaveText('roundtrip.jpg');
+  await expect(page.locator('.image-original-layer canvas')).toHaveJSProperty('width', 127);
+  expect(requests.some(url => /\/web-toolbox\/assets\/worker-/.test(url))).toBe(true);
+  expect(requests.filter(url => /^https?:/.test(url) && !url.startsWith('http://127.0.0.1:4173/web-toolbox/'))).toEqual([]);
+});
+
+test('MozJPEG shares a fetch, survives one-side cancel, and recovers from a failed replacement', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  const input = page.locator('[type=file]');
+  await input.setInputFiles(await testImage(page));
+  const left = page.getByLabel('左の出力形式');
+  const right = page.getByLabel('右の出力形式');
+  const wasm = '**/web-toolbox/assets/mozjpeg-4.1.5-encoder-*.wasm';
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  let unblockOld!: () => void;
+  const oldInput = new Promise<void>(resolve => { unblockOld = resolve; });
+  let markOldRequested!: () => void;
+  const oldRequest = new Promise<void>(resolve => { markOldRequested = resolve; });
+  let requests = 0;
+  let phase: 'share' | 'hold-old' | 'fail-new' | 'allow' = 'share';
+  await page.route(wasm, async route => {
+    ++requests;
+    if (phase === 'hold-old') {
+      markOldRequested();
+      await oldInput;
+      return route.abort().catch(() => {});
+    }
+    if (phase === 'fail-new') {
+      phase = 'allow';
+      return route.fulfill({ status: 503 });
+    }
+    if (phase === 'share') await blocked;
+    await route.continue().catch(() => {});
+  });
+  const pending = page.waitForRequest(wasm);
+  try {
+    await right.selectOption('mozjpeg');
+    await pending;
+    const holdsLock = () => page.evaluate(async name =>
+      (await navigator.locks.query()).held?.some(lock => lock.name === name) ?? false, imageWorkerLockName);
+    await expect.poll(holdsLock).toBe(true);
+    await left.selectOption('mozjpeg');
+    await page.getByRole('button', { name: '左側のMozJPEG変換を中止' }).press('Enter');
+    await expect(page.getByRole('button', { name: '左側のMozJPEG変換を再試行' })).toBeFocused();
+  } finally {
+    release();
+  }
+  await expect(page.getByRole('button', { name: '右をダウンロード' })).toBeEnabled();
+  await page.getByRole('button', { name: '左側のMozJPEG変換を再試行' }).press('Space');
+  await expect(page.getByRole('button', { name: '左をダウンロード' })).toBeEnabled();
+  expect(requests).toBe(1);
+
+  try {
+    phase = 'hold-old';
+    await page.getByLabel('右のMozJPEG品質').fill('90');
+    await oldRequest;
+    phase = 'fail-new';
+    await left.selectOption('original');
+    const replacement = await testImage(page, 91, 55);
+    await input.setInputFiles({ ...replacement, name: 'replacement.png' });
+    await expect(page.locator('.image-filename')).toHaveText('replacement.png');
+  } finally {
+    unblockOld();
+  }
+  await expect(page.locator('.image-panel[data-side=right] .image-mozjpeg-status')).toContainText('失敗');
+  const retry = page.getByRole('button', { name: '右側のMozJPEG変換を再試行' });
+  await retry.press('Enter');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  await expect(save).toBeFocused();
+  await expect(page.getByAltText('右側のプレビュー')).toHaveJSProperty('naturalWidth', 91);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await expect.poll(() => page.workers().length).toBe(0);
+});
+
+test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evaluation queue', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.goto('./?tool=image-converter');
+  await page.locator('[type=file]').setInputFiles({ name: 'mixed.png', mimeType: 'image/png', buffer: rgbaPng(127, 97) });
+  await page.getByLabel('左の出力形式').selectOption('mozjpeg');
+  const scores = page.locator('.image-score');
+  const finiteScore = /^-?\d+\.\d$/;
+  await expect(scores.first()).toHaveText(finiteScore);
+  await expect(scores.last()).toHaveText(finiteScore);
+  await page.getByLabel('画質の自動評価').uncheck();
+
+  let maxWorkers = 0;
+  page.on('worker', () => { maxWorkers = Math.max(maxWorkers, page.workers().length); });
+  await page.getByLabel('左のMozJPEG品質').fill('100');
+  for (const format of ['image/avif', 'image/webp']) {
+    await page.getByLabel('右の出力形式').selectOption(format);
+    await page.getByRole('button', { name: '画質を評価' }).click();
+    await expect(scores.first()).toHaveText(finiteScore);
+    await expect(scores.last()).toHaveText(finiteScore);
+    await expect.poll(() => page.workers().length).toBe(0);
+  }
+  expect(maxWorkers).toBe(1);
+});
+
+test('MozJPEG previews and saves a 16-megapixel input and cancels active encoding', async ({ page, browserName }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.addEventListener('message', event => {
+          if (event.data?.mozjpegEncodeStarted !== true) return;
+          event.stopImmediatePropagation();
+          document.documentElement.dataset.mozjpegEncodeStarted = 'true';
+        });
+      }
+    };
+  });
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  const input = page.locator('[type=file]');
+  const format = page.getByLabel('右の出力形式');
+  const preview = page.getByAltText('右側のプレビュー');
+  const status = page.locator('.image-panel[data-side=right] .image-mozjpeg-status');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  await input.setInputFiles({ name: '16mp.png', mimeType: 'image/png', buffer: rgbaPng(4000, 4000) });
+  await expect(page.locator('.image-info')).toContainText('4000 × 4000 px');
+  await format.selectOption('mozjpeg');
+  await expect(status).toContainText('完了', { timeout: 60_000 });
+  await expect(preview).toHaveJSProperty('naturalWidth', 4000);
+  await expect(preview).toHaveJSProperty('naturalHeight', 4000);
+  const output = await saveBrowserImage(page, save, '16mp-right-mozjpeg-q75-420-p-opt.jpg', browserName);
+  expect(output.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+
+  // Observe entry to the actual WASM encoder. The first message is consumed by
+  // the test listener before the conversion client sees the normal result.
+  await page.route('**/assets/worker-*.js', async route => {
+    const worker = await route.fetch();
+    const source = await worker.text();
+    if (!source.includes('mozjpeg_encode')) return route.fulfill({ response: worker });
+    await route.fulfill({ response: worker, body: `
+      const instantiate = WebAssembly.instantiate;
+      WebAssembly.instantiate = async (...args) => {
+        const result = await instantiate(...args);
+        const { mozjpeg_encode, ...rest } = result.instance.exports;
+        return { instance: { exports: { ...rest, mozjpeg_encode(...params) {
+          self.postMessage({ mozjpegEncodeStarted: true });
+          return mozjpeg_encode(...params);
+        } } } };
+      };
+      ${source}
+    ` });
+  });
+  await page.getByLabel('右のMozJPEG色差サンプリング').selectOption('444');
+  await expect(page.locator('html')).toHaveAttribute('data-mozjpeg-encode-started', 'true', { timeout: 20_000 });
+  await page.getByRole('button', { name: '右側のMozJPEG変換を中止' }).click();
+  await expect(status).toContainText('中止しました');
+  await expect(save).toBeDisabled();
+  await expect.poll(() => page.workers().length).toBe(0);
+});
