@@ -13,8 +13,8 @@ export function evaluationLimit(width: number, height: number): string | undefin
   }
 }
 
-export function isEvaluable(encoder: EncoderId, avifLossless = false): boolean {
-  return encoder === 'image/jpeg' || (encoder === 'image/avif' && !avifLossless);
+export function isEvaluable(encoder: EncoderId, lossless = false): boolean {
+  return encoder === 'image/jpeg' || ((encoder === 'image/avif' || encoder === 'image/webp') && !lossless);
 }
 
 export function isFiniteScore(value: unknown): value is number {

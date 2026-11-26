@@ -1,0 +1,34 @@
+Web Toolbox WebP encoder — third-party notices
+
+libwebp 1.6.0, including SharpYUV 0.4.2
+Copyright (c) 2010, Google Inc. All rights reserved.
+BSD 3-Clause. See COPYING, AUTHORS and PATENTS in this directory.
+https://chromium.googlesource.com/webm/libwebp/+/refs/tags/v1.6.0/
+
+Official WebM Project source archive
+https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz
+SHA-256: e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564
+
+The single-threaded SIMD encoder is built from this archive using the
+repository's scripts/webp/build.sh and scripts/webp/encoder.c. The linker
+checks that no decoder source objects or decoder, mux or demux APIs are
+linked. The WebAssembly encoder returns 0x010600 from WebPGetEncoderVersion.
+libwebp-1.6.0-encoder.wasm SHA-256:
+e10cdf3958b9ce28f130d7b23b2a1e60014e3a4cf515c4f865b943e510169197
+
+Emscripten 4.0.20 and its system libraries
+https://github.com/emscripten-core/emscripten/tree/4.0.20
+Linux amd64 image emscripten/emsdk digest:
+sha256:33e992367f721747d8008c9141c04fa017139e3557a60e0c80be93a0870fe462
+See LICENSE.Emscripten, AUTHORS.Emscripten and COPYRIGHT.musl.
+The LLVM runtime notices are included in LICENSE.* and CREDITS.*.
+The bundled allocator is Doug Lea's dlmalloc 2.8.6 (public domain).
+https://github.com/emscripten-core/emscripten/blob/4.0.20/system/lib/dlmalloc.c
+
+Security sources
+Upstream NEWS records the lossless encoder security fixes in 1.2.3 and
+1.3.1 (including CVE-2023-1999), and the lossless decoder fix in 1.3.2
+(CVE-2023-4863). These releases predate the adopted 1.6.0. Decoding in the
+application uses the browser's own decoder.
+https://chromium.googlesource.com/webm/libwebp/+/refs/tags/v1.6.0/NEWS
+https://security-tracker.debian.org/tracker/source-package/libwebp
