@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { decode, encode } from './encoder';
 import { encodeOxipng } from './oxipng/client';
 import { encodeAvif } from './avif/client';
+import { encodeWebp } from './webp/client';
 import { mount } from './index';
 
 vi.mock('./encoder', async importOriginal => ({
@@ -10,6 +11,7 @@ vi.mock('./encoder', async importOriginal => ({
 }));
 vi.mock('./oxipng/client', () => ({ encodeOxipng: vi.fn() }));
 vi.mock('./avif/client', () => ({ encodeAvif: vi.fn() }));
+vi.mock('./webp/client', () => ({ encodeWebp: vi.fn() }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -23,6 +25,7 @@ const jpeg = new Blob(['1234'], { type: 'image/jpeg' });
 const png = new Blob(['1'], { type: 'image/png' });
 const oxipngPng = new Blob(['optimized'], { type: 'image/png' });
 const avif = new Blob(['avif'], { type: 'image/avif' });
+const webp = new Blob(['webp'], { type: 'image/webp' });
 let dispose: (() => void) | undefined;
 afterEach(() => {
   dispose?.();
@@ -39,6 +42,7 @@ function setup(active = bitmap()) {
   vi.mocked(encode).mockImplementation(async (_, type) => type === 'image/jpeg' ? jpeg : png);
   vi.mocked(encodeOxipng).mockResolvedValue(oxipngPng);
   vi.mocked(encodeAvif).mockResolvedValue(avif);
+  vi.mocked(encodeWebp).mockResolvedValue(webp);
   let urlNumber = 0;
   const createUrl = vi.fn((_blob: Blob) => 'blob:result-' + ++urlNumber);
   const revokeUrl = vi.fn();
@@ -87,6 +91,14 @@ function setup(active = bitmap()) {
       avifStatus: panel.querySelector<HTMLElement>('.image-avif-status')!,
       avifCancel: panel.querySelector<HTMLButtonElement>('.image-avif-cancel')!,
       avifRetry: panel.querySelector<HTMLButtonElement>('.image-avif-retry')!,
+      webpQuality: panel.querySelector<HTMLInputElement>('.image-webp-quality')!,
+      webpAlpha: panel.querySelector<HTMLInputElement>('.image-webp-alpha')!,
+      webpMethod: panel.querySelector<HTMLInputElement>('.image-webp-method')!,
+      webpLossless: panel.querySelector<HTMLInputElement>('.image-webp-lossless')!,
+      webpSharp: panel.querySelector<HTMLInputElement>('.image-webp-sharp')!,
+      webpStatus: panel.querySelector<HTMLElement>('.image-webp-status')!,
+      webpCancel: panel.querySelector<HTMLButtonElement>('.image-webp-cancel')!,
+      webpRetry: panel.querySelector<HTMLButtonElement>('.image-webp-retry')!,
       oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
       oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
       oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
@@ -102,7 +114,7 @@ function setup(active = bitmap()) {
         slider.value = value;
         slider.dispatchEvent(new Event('input'));
       },
-      avifRange(input: HTMLInputElement, value: number) {
+      setRange(input: HTMLInputElement, value: number) {
         input.value = String(value);
         input.dispatchEvent(new Event('input'));
       },
@@ -539,6 +551,7 @@ it('左右の出力形式はOriginalを先頭にし、表示名のアルファ�
     ['image/jpeg', 'Browser JPEG'],
     ['image/png', 'Browser PNG'],
     ['oxipng', 'Oxipng'],
+    ['image/webp', 'WebP (libwebp)'],
   ];
 
   for (const format of [left.format, right.format]) {
@@ -1316,8 +1329,8 @@ it('AVIF controls start at the specified values, debounce changes and restore lo
     .toEqual(['50', '100', '6', '1', false]);
   expect(encodeAvif).toHaveBeenCalledWith(expect.anything(), { quality: 50, qualityAlpha: 100, speed: 6, subsample: 1, lossless: false }, expect.anything(), expect.any(Function));
 
-  left.avifRange(left.avifQuality, 80);
-  left.avifRange(left.avifSpeed, 4);
+  left.setRange(left.avifQuality, 80);
+  left.setRange(left.avifSpeed, 4);
   left.avifSubsample.value = '3';
   left.avifSubsample.dispatchEvent(new Event('change'));
   await vi.advanceTimersByTimeAsync(179);
@@ -1388,10 +1401,10 @@ it('AVIFの共有ジョブは両側へ同じBlobを反映し、設定変更後�
   const stale = deferred<Blob>();
   const replacement = new Blob(['replacement'], { type: 'image/avif' });
   vi.mocked(encodeAvif).mockImplementationOnce(() => stale.promise).mockResolvedValueOnce(replacement);
-  left.avifRange(left.avifQuality, 80);
+  left.setRange(left.avifQuality, 80);
   await vi.advanceTimersByTimeAsync(180);
   const staleSignal = vi.mocked(encodeAvif).mock.calls.at(-1)![2];
-  left.avifRange(left.avifQuality, 81);
+  left.setRange(left.avifQuality, 81);
   await vi.advanceTimersByTimeAsync(180);
   await flush();
   const displayedUrl = left.preview.src;
@@ -1425,7 +1438,7 @@ it('AVIFの実行中に入力世代が変わった場合、古いBlobを表示�
 
   const pending = deferred<Blob>();
   vi.mocked(encodeAvif).mockImplementationOnce(() => pending.promise);
-  left.avifRange(left.avifQuality, 82);
+  left.setRange(left.avifQuality, 82);
   await vi.advanceTimersByTimeAsync(180);
   const pendingSignal = vi.mocked(encodeAvif).mock.calls.at(-1)![2];
   unmount();
@@ -1479,4 +1492,113 @@ it('失敗した唯一のAVIFは自動評価予約を破棄し、再試行後に
   await vi.advanceTimersByTimeAsync(800);
   expect(workers).toHaveLength(1);
   expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([avif]);
+});
+
+it('WebP keeps per-side and per-mode settings when changing output formats', async () => {
+  const { choose, left, right } = setup();
+  choose();
+  await flush();
+  left.select('image/webp');
+  right.select('image/webp');
+  await flush();
+  left.setRange(left.webpQuality, 83);
+  left.setRange(left.webpAlpha, 60);
+  left.webpSharp.click();
+  left.webpLossless.click();
+  expect(left.webpQuality.getAttribute('aria-label')).toBe('左の圧縮効率');
+  expect(left.webpQuality.value).toBe('75');
+  expect(left.webpAlpha.disabled).toBe(true);
+  expect(left.webpSharp.disabled).toBe(true);
+  left.setRange(left.webpQuality, 98);
+  left.setRange(left.webpMethod, 5);
+  expect(right.webpQuality.value).toBe('75');
+  expect(right.webpAlpha.value).toBe('100');
+  expect(right.webpMethod.value).toBe('4');
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeWebp).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(encodeWebp).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(encodeWebp).mock.calls[1]![1]).toMatchObject({ lossless: true, losslessQuality: 98, method: 5 });
+  left.select('image/png');
+  left.select('image/webp');
+  await flush();
+  expect(left.webpQuality.value).toBe('98');
+  left.webpLossless.click();
+  expect(left.webpQuality.value).toBe('83');
+  expect(left.webpAlpha.value).toBe('60');
+  expect(left.webpSharp.checked).toBe(true);
+});
+
+it('WebP shares jobs and blobs by effective settings and aborts after the last pending side leaves', async () => {
+  const { choose, left, right, createUrl, unmount } = setup();
+  const pending = deferred<Blob>();
+  vi.mocked(encodeWebp).mockImplementationOnce(() => pending.promise);
+  left.select('image/webp');
+  right.select('image/webp');
+  left.setRange(left.webpQuality, 53);
+  right.setRange(right.webpAlpha, 37);
+  left.webpLossless.click();
+  right.webpLossless.click();
+  choose();
+  await flush();
+  expect(encodeWebp).toHaveBeenCalledOnce();
+  const signal = vi.mocked(encodeWebp).mock.calls[0]![2];
+  left.webpCancel.click();
+  expect(signal.aborted).toBe(false);
+  right.webpCancel.click();
+  expect(signal.aborted).toBe(true);
+  const stale = new Blob(['stale'], { type: 'image/webp' });
+  pending.resolve(stale);
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+  left.webpRetry.click();
+  await flush();
+  right.webpRetry.click();
+  await flush();
+  expect(encodeWebp).toHaveBeenCalledTimes(2);
+  expect(createUrl.mock.calls.slice(-2).map(([blob]) => blob)).toEqual([webp, webp]);
+  left.select('original');
+  right.select('original');
+  right.select('image/webp');
+  await flush();
+  expect(encodeWebp).toHaveBeenCalledTimes(3);
+
+  const replacement = deferred<Blob>();
+  vi.mocked(encodeWebp).mockImplementationOnce(() => replacement.promise);
+  choose('replacement.png');
+  await flush();
+  const replacementSignal = vi.mocked(encodeWebp).mock.calls[3]![2];
+  unmount();
+  expect(replacementSignal.aborted).toBe(true);
+  replacement.resolve(stale);
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+});
+
+it('WebP drops queued and late results after input and settings changes', async () => {
+  const { choose, left, createUrl } = setup();
+  const oldInput = deferred<Blob>();
+  const oldSettings = deferred<Blob>();
+  vi.mocked(encodeWebp)
+    .mockImplementationOnce(() => oldInput.promise)
+    .mockImplementationOnce(() => oldSettings.promise);
+  left.select('image/webp');
+  choose('first.png');
+  await flush();
+  choose('second.png');
+  await flush();
+  expect(vi.mocked(encodeWebp).mock.calls[0]![2].aborted).toBe(true);
+  left.setRange(left.webpMethod, 2);
+  left.setRange(left.webpMethod, 6);
+  await vi.advanceTimersByTimeAsync(180);
+  expect(vi.mocked(encodeWebp).mock.calls[1]![2].aborted).toBe(true);
+  expect(encodeWebp).toHaveBeenCalledTimes(3);
+  expect(vi.mocked(encodeWebp).mock.lastCall?.[1].method).toBe(6);
+  const preview = left.preview.src;
+  const replaced = new Blob(['old'], { type: 'image/webp' });
+  oldInput.resolve(replaced);
+  oldSettings.resolve(replaced);
+  await flush();
+  expect(left.preview.src).toBe(preview);
+  expect(createUrl.mock.calls.some(([blob]) => blob === replaced)).toBe(false);
 });

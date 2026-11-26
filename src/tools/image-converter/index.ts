@@ -6,6 +6,8 @@ import { encodeOxipng } from './oxipng/client';
 import { defaultOxipngOptions, oxipngKey, validateOxipngOptions, type OxipngOptions } from './oxipng/options';
 import { encodeAvif } from './avif/client';
 import { avifFilename, avifKey, defaultAvifOptions, effectiveAvifOptions, isAvifLossless, validateAvifOptions, type AvifOptions } from './avif/options';
+import { encodeWebp } from './webp/client';
+import { defaultWebpOptions, effectiveWebpOptions, validateWebpOptions, webpFilename, webpKey, type WebpOptions } from './webp/options';
 import { evaluateImages } from './quality/client';
 import { evaluationLimit, isEvaluable, MIN_EVALUATION_SIDE } from './quality/rules';
 import './style.css';
@@ -97,6 +99,19 @@ export function mount(container: HTMLElement): () => void {
                 <div class="image-avif-actions">
                   <button type="button" class="image-avif-cancel" hidden aria-label="${label}側のAVIF変換を中止">AVIF変換を中止</button>
                   <button type="button" class="image-avif-retry" hidden aria-label="${label}側のAVIF変換を再試行">AVIF変換を再試行</button>
+                </div>
+              </div>
+              <div class="image-webp-settings" hidden>
+                <label><span class="image-webp-quality-label">WebP品質</span> <input type="range" class="image-webp-quality" aria-label="${label}のWebP品質" min="0" max="100" step="1"><span class="image-webp-quality-value"></span></label>
+                <label>アルファ品質 <input type="range" class="image-webp-alpha" aria-label="${label}のWebPアルファ品質" min="0" max="100" step="1"><span></span></label>
+                <label>圧縮メソッド <input type="range" class="image-webp-method" aria-label="${label}のWebP圧縮メソッド" min="0" max="6" step="1"><span></span></label>
+                <label><input type="checkbox" class="image-webp-lossless" aria-label="${label}側のWebPを可逆圧縮にする"> 可逆圧縮</label>
+                <label><input type="checkbox" class="image-webp-sharp" aria-label="${label}側のWebPでSharp YUVを有効にする"> Sharp YUV</label>
+                <p class="image-note">可逆圧縮は8-bit sRGBに正規化したRGBA画素を保持します。可逆時の圧縮効率は圧縮処理にかける労力を調整します。メソッドは0が高速側、6が圧縮効率重視側です。高い値で出力が小さくなるとは限りません。Sharp YUVは非可逆時に色変換の精度を高めます。画像や設定によって処理時間とメモリ使用量が増えることがあります。</p>
+                <p class="image-webp-status" role="status" aria-atomic="true"></p>
+                <div class="image-webp-actions">
+                  <button type="button" class="image-webp-cancel" hidden aria-label="${label}側のWebP変換を中止">WebP変換を中止</button>
+                  <button type="button" class="image-webp-retry" hidden aria-label="${label}側のWebP変換を再試行">WebP変換を再試行</button>
                 </div>
               </div>
               <div class="image-oxipng-settings" hidden>
@@ -257,6 +272,8 @@ export function mount(container: HTMLElement): () => void {
       quality: initialQuality,
       avifOptions: { ...initialAvifOptions } as AvifOptions,
       avifKey: undefined as string | undefined,
+      webpOptions: { ...defaultWebpOptions },
+      webpKey: undefined as string | undefined,
       oxipngOptions: { ...defaultOxipngOptions } as OxipngOptions,
       oxipngKey: undefined as string | undefined,
       generation: 0,
@@ -281,6 +298,19 @@ export function mount(container: HTMLElement): () => void {
       avifStatus: panel.querySelector<HTMLElement>('.image-avif-status')!,
       avifCancel: panel.querySelector<HTMLButtonElement>('.image-avif-cancel')!,
       avifRetry: panel.querySelector<HTMLButtonElement>('.image-avif-retry')!,
+      webpSettings: panel.querySelector<HTMLElement>('.image-webp-settings')!,
+      webpQualityLabel: panel.querySelector('.image-webp-quality-label')!,
+      webpQuality: panel.querySelector<HTMLInputElement>('.image-webp-quality')!,
+      webpQualityValue: panel.querySelector('.image-webp-quality-value')!,
+      webpAlpha: panel.querySelector<HTMLInputElement>('.image-webp-alpha')!,
+      webpAlphaValue: panel.querySelector('.image-webp-alpha + span')!,
+      webpMethod: panel.querySelector<HTMLInputElement>('.image-webp-method')!,
+      webpMethodValue: panel.querySelector('.image-webp-method + span')!,
+      webpLossless: panel.querySelector<HTMLInputElement>('.image-webp-lossless')!,
+      webpSharp: panel.querySelector<HTMLInputElement>('.image-webp-sharp')!,
+      webpStatus: panel.querySelector<HTMLElement>('.image-webp-status')!,
+      webpCancel: panel.querySelector<HTMLButtonElement>('.image-webp-cancel')!,
+      webpRetry: panel.querySelector<HTMLButtonElement>('.image-webp-retry')!,
       oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
       oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
       oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
@@ -300,6 +330,7 @@ export function mount(container: HTMLElement): () => void {
   type Side = ReturnType<typeof createSide>;
   const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
   const sides = [left, right];
+  const webpJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const avifJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const oxipngJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
 
@@ -398,10 +429,63 @@ export function mount(container: HTMLElement): () => void {
     return job.blob ? Promise.resolve(job.blob) : job.promise!;
   }
 
+  function detachWebp(side: Side) {
+    const key = side.webpKey;
+    side.webpKey = undefined;
+    if (!key) return;
+    const job = webpJobs.get(key);
+    if (!job) return;
+    job.consumers.delete(side);
+    if (!job.consumers.size) {
+      if (!job.blob) job.controller.abort();
+      webpJobs.delete(key);
+    }
+  }
+
+  function requestWebp(side: Side, bitmap: ImageBitmap, generation: number): Promise<Blob> {
+    const options = validateWebpOptions(side.webpOptions);
+    const key = webpKey(generation, options);
+    let job = webpJobs.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      job = { controller, consumers: new Set(), started: false };
+      webpJobs.set(key, job);
+      const current = job;
+      current.promise = encodeWebp(bitmap, options, controller.signal, () => {
+        if (webpJobs.get(key) !== current) return;
+        current.started = true;
+        for (const consumer of current.consumers) {
+          if (consumer.webpKey === key) consumer.webpStatus.textContent = 'WebPに変換しています…';
+        }
+      }).then(blob => {
+        if (webpJobs.get(key) === current && current.consumers.size) current.blob = blob;
+        return blob;
+      }, cause => {
+        if (webpJobs.get(key) === current) webpJobs.delete(key);
+        throw cause;
+      });
+      for (const pending of sides) {
+        if (pending.webpKey === key && pending.result.status === 'pending') current.consumers.add(pending);
+      }
+    }
+    job.consumers.add(side);
+    side.webpKey = key;
+    side.webpStatus.textContent = job.started ? 'WebPに変換しています…' : 'WebP変換を待っています…';
+    side.webpCancel.hidden = false;
+    side.webpRetry.hidden = true;
+    return job.blob ? Promise.resolve(job.blob) : job.promise!;
+  }
+
   for (const side of sides) side.save.prepend(createIcon(Download));
 
+  function isLossless(side: Side): boolean {
+    return side.encoder === 'oxipng' ||
+      (side.encoder === 'image/avif' && isAvifLossless(side.avifOptions)) ||
+      (side.encoder === 'image/webp' && side.webpOptions.lossless);
+  }
+
   function evaluationBlob(side: Side): Blob | undefined {
-    if (isEvaluable(side.encoder, side.encoder === 'image/avif' && isAvifLossless(side.avifOptions)) && side.result.status === 'ready') return side.result.blob;
+    if (isEvaluable(side.encoder, isLossless(side)) && side.result.status === 'ready') return side.result.blob;
   }
 
   function unevaluatedImages(): Blob[] {
@@ -415,7 +499,7 @@ export function mount(container: HTMLElement): () => void {
 
   function evaluationMessage(side: Side, blob: Blob | undefined, limit: string | undefined) {
     if (side.encoder === 'original') return '基準画像';
-    if (side.encoder === 'oxipng' || (side.encoder === 'image/avif' && isAvifLossless(side.avifOptions))) return '可逆圧縮（スコア評価対象外）';
+    if (isLossless(side)) return '可逆圧縮（スコア評価対象外）';
     if (!isEvaluable(side.encoder)) return '画質評価は未対応';
     if (limit && source) {
       const { width, height } = source.bitmap;
@@ -433,7 +517,7 @@ export function mount(container: HTMLElement): () => void {
     const currentSource = source;
     const limit = currentSource && evaluationLimit(currentSource.bitmap.width, currentSource.bitmap.height);
     if (limitNotice.textContent !== (limit ?? '')) limitNotice.textContent = limit ?? '';
-    const converting = sides.some(side => isEvaluable(side.encoder, side.encoder === 'image/avif' && isAvifLossless(side.avifOptions)) && side.result.status === 'pending');
+    const converting = sides.some(side => isEvaluable(side.encoder, isLossless(side)) && side.result.status === 'pending');
     const images = unevaluatedImages();
     const canEvaluate = currentSource && !limit && (converting || images.length > 0);
     if (!canEvaluate && requestedEvaluation) {
@@ -542,6 +626,7 @@ export function mount(container: HTMLElement): () => void {
 
   function invalidate(side: Side) {
     detachAvif(side);
+    detachWebp(side);
     detachOxipng(side);
     ++side.generation;
     clearTimeout(side.timer);
@@ -556,6 +641,8 @@ export function mount(container: HTMLElement): () => void {
     side.sizeChange.textContent = side.outputSize.textContent = side.error.textContent = '';
     side.oxipngStatus.textContent = '';
     side.avifStatus.textContent = '';
+    side.webpStatus.textContent = '';
+    side.webpCancel.hidden = side.webpRetry.hidden = true;
     side.avifCancel.hidden = side.avifRetry.hidden = true;
     side.oxipngCancel.hidden = side.oxipngRetry.hidden = true;
     delete side.output.dataset.change;
@@ -649,6 +736,17 @@ export function mount(container: HTMLElement): () => void {
     side.avifQuality.disabled = side.avifLossless.checked;
     side.avifAlpha.disabled = side.avifLossless.checked;
     side.avifSubsample.disabled = side.avifLossless.checked;
+    side.webpSettings.hidden = side.encoder !== 'image/webp';
+    const shownWebpOptions = effectiveWebpOptions(side.webpOptions);
+    const webpQualityLabel = side.webpOptions.lossless ? '圧縮効率' : 'WebP品質';
+    side.webpQualityLabel.textContent = webpQualityLabel;
+    side.webpQuality.setAttribute('aria-label', side.label + 'の' + webpQualityLabel);
+    side.webpQuality.value = side.webpQualityValue.textContent = String(shownWebpOptions.quality);
+    side.webpAlpha.value = side.webpAlphaValue.textContent = String(shownWebpOptions.alpha_quality);
+    side.webpMethod.value = side.webpMethodValue.textContent = String(shownWebpOptions.method);
+    side.webpLossless.checked = side.webpOptions.lossless;
+    side.webpSharp.checked = Boolean(shownWebpOptions.use_sharp_yuv);
+    side.webpAlpha.disabled = side.webpSharp.disabled = side.webpOptions.lossless;
     side.oxipngSettings.hidden = side.encoder !== 'oxipng';
     side.oxipngLevel.value = String(side.oxipngOptions.level);
     side.oxipngInterlace.checked = side.oxipngOptions.interlace;
@@ -675,14 +773,18 @@ export function mount(container: HTMLElement): () => void {
         blob = await encoding;
         if (!isCurrent()) return;
         filename = avifFilename(stem, side.id, side.avifOptions);
-      } else if (type) {
+      } else if (side.encoder === 'image/webp') {
+        blob = await requestWebp(side, bitmap, currentInput);
+        if (!isCurrent()) return;
+        filename = webpFilename(stem, side.id, side.webpOptions);
+      } else if (side.encoder === 'image/jpeg' || side.encoder === 'image/png') {
         let encoding: Promise<Blob> | undefined;
         // 設定が一致する間は、もう片側の変換処理か成功済みのBlobを共有する。
         if (side.encoder === other.encoder && (!hasQuality || side.quality === other.quality)) {
           if (other.result.status === 'ready') encoding = Promise.resolve(other.result.blob);
           if (other.result.status === 'pending') encoding = other.result.encoding;
         }
-        encoding ??= encode(bitmap, type, side.quality);
+        encoding ??= encode(bitmap, side.encoder, side.quality);
         side.result = { status: 'pending', encoding };
         const stem = file.name.replace(/\.[^.]*$/, '') || 'image';
         const qualitySuffix = hasQuality ? '-q' + side.quality.toFixed(2) : '';
@@ -710,6 +812,11 @@ export function mount(container: HTMLElement): () => void {
         side.avifStatus.textContent = 'AVIF変換が完了しました。';
         side.avifCancel.hidden = side.avifRetry.hidden = true;
       }
+      const restoreWebpFocus = side.encoder === 'image/webp' && document.activeElement === side.webpCancel;
+      if (side.encoder === 'image/webp') {
+        side.webpStatus.textContent = 'WebP変換が完了しました。';
+        side.webpCancel.hidden = side.webpRetry.hidden = true;
+      }
       side.output.dataset.change = blob.size < file.size ? 'reduction' : blob.size > file.size ? 'increase' : 'same';
       side.sizeChange.textContent = sizeChange(file.size, blob.size);
       const originalSize = document.createElement('span');
@@ -718,8 +825,7 @@ export function mount(container: HTMLElement): () => void {
       convertedSize.textContent = ' → 出力 ' + formatFileSize(blob.size);
       side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
-      if (restoreOxipngFocus) side.save.focus({ preventScroll: true });
-      if (restoreAvifFocus) side.save.focus({ preventScroll: true });
+      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus) side.save.focus({ preventScroll: true });
       updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
@@ -727,6 +833,8 @@ export function mount(container: HTMLElement): () => void {
       const isAvif = side.encoder === 'image/avif';
       const restoreOxipngFocus = isOxipng && document.activeElement === side.oxipngCancel;
       const restoreAvifFocus = isAvif && document.activeElement === side.avifCancel;
+      const isWebp = side.encoder === 'image/webp';
+      const restoreWebpFocus = isWebp && document.activeElement === side.webpCancel;
       invalidate(side);
       side.result = { status: 'failed' };
       const message = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
@@ -740,6 +848,11 @@ export function mount(container: HTMLElement): () => void {
         side.avifStatus.textContent = 'AVIF変換に失敗しました。もう一度お試しください。';
         side.avifRetry.hidden = false;
         if (restoreAvifFocus) side.avifRetry.focus({ preventScroll: true });
+      }
+      if (isWebp) {
+        side.webpStatus.textContent = 'WebP変換に失敗しました。もう一度お試しください。';
+        side.webpRetry.hidden = false;
+        if (restoreWebpFocus) side.webpRetry.focus({ preventScroll: true });
       }
       updateEvaluation();
     }
@@ -769,6 +882,14 @@ export function mount(container: HTMLElement): () => void {
       side.avifStatus.textContent = 'AVIF変換を待っています…';
       side.avifCancel.hidden = false;
       side.avifRetry.hidden = true;
+    }
+    if (side.encoder === 'image/webp') {
+      const key = webpKey(currentInput, side.webpOptions);
+      side.webpKey = key;
+      const active = webpJobs.get(key);
+      if (active) active.consumers.add(side);
+      side.webpStatus.textContent = active?.started ? 'WebPに変換しています…' : 'WebP変換を待っています…';
+      side.webpCancel.hidden = false;
     }
     updateEvaluation();
     if (delay === 0) {
@@ -1081,6 +1202,23 @@ export function mount(container: HTMLElement): () => void {
       side.avifOptions = validateAvifOptions({ ...side.avifOptions, lossless: side.avifLossless.checked });
       updateSettings(side, 180);
     }, options);
+    const updateWebpOptions = (change: Partial<WebpOptions>) => {
+      const updated = validateWebpOptions({ ...side.webpOptions, ...change });
+      const previousKey = webpKey(inputGeneration, side.webpOptions);
+      side.webpOptions = updated;
+      if (webpKey(inputGeneration, updated) !== previousKey) updateSettings(side, 180);
+    };
+    side.webpQuality.addEventListener('input', () => {
+      updateWebpOptions({ [side.webpOptions.lossless ? 'losslessQuality' : 'quality']: side.webpQuality.valueAsNumber });
+    }, options);
+    side.webpAlpha.addEventListener('input', () => {
+      if (!side.webpOptions.lossless) updateWebpOptions({ alphaQuality: side.webpAlpha.valueAsNumber });
+    }, options);
+    side.webpMethod.addEventListener('input', () => updateWebpOptions({ method: side.webpMethod.valueAsNumber }), options);
+    side.webpLossless.addEventListener('change', () => updateWebpOptions({ lossless: side.webpLossless.checked }), options);
+    side.webpSharp.addEventListener('change', () => {
+      if (!side.webpOptions.lossless) updateWebpOptions({ sharpYuv: side.webpSharp.checked });
+    }, options);
     side.qualityInput.addEventListener('input', () => {
       if (!encoders[side.encoder].hasQuality || side.quality === side.qualityInput.valueAsNumber) return;
       side.quality = side.qualityInput.valueAsNumber;
@@ -1123,6 +1261,21 @@ export function mount(container: HTMLElement): () => void {
       if (side.encoder === 'image/avif' && source) {
         updateSettings(side);
         side.avifCancel.focus({ preventScroll: true });
+      }
+    }, options);
+    side.webpCancel.addEventListener('click', () => {
+      if (side.encoder !== 'image/webp' || side.result.status !== 'pending') return;
+      invalidate(side);
+      side.result = { status: 'cancelled' };
+      side.webpStatus.textContent = 'WebP変換を中止しました。再試行できます。';
+      side.webpRetry.hidden = false;
+      side.webpRetry.focus({ preventScroll: true });
+      updateEvaluation();
+    }, options);
+    side.webpRetry.addEventListener('click', () => {
+      if (side.encoder === 'image/webp' && source) {
+        updateSettings(side);
+        side.webpCancel.focus({ preventScroll: true });
       }
     }, options);
   }
