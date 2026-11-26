@@ -14,6 +14,12 @@ const sideDefinitions = [
   { id: 'left', label: '左', initialEncoder: 'original' },
   { id: 'right', label: '右', initialEncoder: 'image/jpeg' },
 ] as const;
+const orderedEncoders = Object.entries(encoders).sort(([aId, a], [bId, b]) => {
+  if (aId === bId) return 0;
+  if (aId === 'original') return -1;
+  if (bId === 'original') return 1;
+  return a.label.localeCompare(b.label, 'en');
+});
 const initialQuality = 0.75;
 const initialAvifOptions = defaultAvifOptions;
 const autoEvaluationDelay = 800;
@@ -72,7 +78,7 @@ export function mount(container: HTMLElement): () => void {
             <legend>${label}の設定</legend>
             <div class="image-panel-content">
               <label>出力形式 <select aria-label="${label}の出力形式">
-                ${Object.entries(encoders).map(([key, { label }]) => `<option value="${key}"${key === initialEncoder ? ' selected' : ''}>${label}</option>`).join('')}
+                ${orderedEncoders.map(([key, { label }]) => `<option value="${key}"${key === initialEncoder ? ' selected' : ''}>${label}</option>`).join('')}
               </select></label>
               <label class="image-quality" ${encoders[initialEncoder].hasQuality ? '' : 'hidden'}>
                 JPEG品質 <input type="range" aria-label="${label}のJPEG品質" min="0.01" max="1" step="0.01" value="${initialQuality}">

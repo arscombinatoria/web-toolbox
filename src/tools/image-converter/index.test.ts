@@ -531,6 +531,21 @@ it('初期状態は左Original・右JPEG 0.75で、両側の元画像を再エ�
   expect(anchors.map(anchor => anchor.href)).toEqual(['blob:result-1', 'blob:result-3']);
 });
 
+it('左右の出力形式はOriginalを先頭にし、表示名のアルファベット順で並ぶ', () => {
+  const { left, right } = setup();
+  const expected = [
+    ['original', 'Original'],
+    ['image/avif', 'AVIF (libaom)'],
+    ['image/jpeg', 'Browser JPEG'],
+    ['image/png', 'Browser PNG'],
+    ['oxipng', 'Oxipng'],
+  ];
+
+  for (const format of [left.format, right.format]) {
+    expect([...format.options].map(option => [option.value, option.textContent])).toEqual(expected);
+  }
+});
+
 it('KB表示はサイズだけを丸め、元ファイル比をバイト数から計算する', async () => {
   const { choose, left, right, info } = setup();
   vi.mocked(encode).mockResolvedValue(new Blob([new Uint8Array(1_250)], { type: 'image/jpeg' }));
