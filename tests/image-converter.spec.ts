@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { deflateSync, inflateSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
 import type { FileChooser, Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { formatFileSize, sizeChange } from '../src/tools/image-converter/encoder';
@@ -127,6 +128,29 @@ async function saveImage(page: Page, button: Locator, filename: string) {
   const download = await downloading;
   expect(download.suggestedFilename()).toBe(filename);
   return readFile((await download.path())!);
+}
+
+async function saveAvif(page: Page, button: Locator, filename: string, browserName: string) {
+  await expect(button).toBeEnabled();
+  if (browserName !== 'firefox') return saveImage(page, button, filename);
+  const downloading = page.waitForEvent('download', { timeout: 10_000 })
+    .then(download => ({ kind: 'download' as const, download }), () => undefined);
+  const opened = page.context().waitForEvent('page', { timeout: 10_000 })
+    .then(popup => ({ kind: 'page' as const, popup }), () => undefined);
+  await button.click({ noWaitAfter: true });
+  const result = await Promise.race([downloading, opened]);
+  if (!result) throw new Error('Firefox did not start an AVIF download or open its saved file.');
+  if (result.kind === 'download') {
+    expect(result.download.suggestedFilename()).toBe(filename);
+    return readFile((await result.download.path())!);
+  }
+  try {
+    const path = fileURLToPath(result.popup.url());
+    expect(path.endsWith(filename)).toBe(true);
+    return await readFile(path);
+  } finally {
+    await result.popup.close({ runBeforeUnload: false });
+  }
 }
 
 async function firstPixel(preview: Locator) {
@@ -330,6 +354,154 @@ test('Oxipng WASM preserves normalized RGBA by default and exposes interlace and
   })).toBe(false);
 });
 
+test('AVIF single-thread WASM creates lossless odd-sized RGBA, previews, saves and accepts the saved AVIF as input', async ({ page, browserName }) => {
+  test.setTimeout(60_000);
+  await page.goto('./?tool=image-converter');
+  const inputPng = rgbaPng(127, 97);
+  const input = page.locator('[type=file]');
+  await input.setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: inputPng });
+  await expect(page.locator('.image-info')).toContainText('127 × 97 px');
+  const baseline = await page.locator('.image-original-layer canvas').evaluate(canvas => {
+    const element = canvas as HTMLCanvasElement;
+    return [...element.getContext('2d')!.getImageData(0, 0, element.width, element.height).data];
+  });
+  const format = page.getByLabel('右の出力形式');
+  const quality = page.getByLabel('右のAVIF品質');
+  const speed = page.getByLabel('右のAVIF速度');
+  const alphaQuality = page.getByLabel('右のAVIFアルファ品質');
+  const subsample = page.getByLabel('右のAVIF色差サンプリング');
+  const lossless = page.getByLabel('右側のAVIFを可逆圧縮にする');
+  const preview = page.locator('.image-stage img[data-side="right"]');
+  const status = page.locator('.image-panel[data-side="right"] .image-avif-status');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  await format.selectOption('image/avif');
+  await expect(status).toContainText('完了');
+  await expect(quality).toHaveValue('50');
+  await expect(alphaQuality).toHaveValue('100');
+  await expect(page.getByLabel('右のAVIF速度')).toHaveValue('6');
+  await expect(subsample).toHaveValue('1');
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveJSProperty('naturalWidth', 127);
+  await expect(preview).toHaveJSProperty('naturalHeight', 97);
+  const defaultAvif = await saveAvif(page, save, 'sample-right-avif-q50-a100-s6-420.avif', browserName);
+  expect(defaultAvif.toString('ascii', 4, 8)).toBe('ftyp');
+  expect(defaultAvif.toString('ascii', 8, 12)).toBe('avif');
+  if (browserName === 'firefox') {
+    await page.goto('./?tool=image-converter');
+    await input.setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: inputPng });
+    await expect(page.locator('.image-info')).toContainText('127 × 97 px');
+    await format.selectOption('image/avif');
+    await expect(status).toContainText('完了');
+  }
+
+  await quality.fill('100');
+  await alphaQuality.fill('100');
+  await subsample.selectOption('3');
+  await expect(lossless).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await expect(save).toBeEnabled();
+  await expect(status).toContainText('完了');
+  await expect(page.locator('.image-score').last()).toHaveText('可逆圧縮（スコア評価対象外）');
+  const losslessAvif = await saveAvif(page, save, 'sample-right-avif-lossless-s6.avif', browserName);
+  if (browserName === 'firefox') await page.goto('./?tool=image-converter');
+  const decoded = await page.evaluate(async encoded => {
+    const image = await createImageBitmap(new Blob([new Uint8Array(encoded)], { type: 'image/avif' }));
+    try {
+      const canvas = new OffscreenCanvas(image.width, image.height);
+      const context = canvas.getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      return { width: image.width, height: image.height, rgba: [...context.getImageData(0, 0, image.width, image.height).data] };
+    } finally {
+      image.close();
+    }
+  }, [...losslessAvif]);
+  expect(decoded.width).toBe(127);
+  expect(decoded.height).toBe(97);
+  expect(decoded.rgba).toEqual(baseline);
+
+  await input.setInputFiles({ name: 'roundtrip.avif', mimeType: 'image/avif', buffer: losslessAvif });
+  await expect(page.locator('.image-info')).toContainText('roundtrip.avif');
+  await expect(page.locator('.image-info')).toContainText('127 × 97 px');
+  await format.selectOption('image/avif');
+  await expect(status).toContainText('完了');
+  await expect(page.getByAltText('右側のプレビュー')).toHaveJSProperty('naturalWidth', 127);
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+  await speed.focus();
+  await speed.press('ArrowUp');
+  await expect(speed).toHaveValue('7');
+  await expect(status).toContainText('完了');
+});
+
+test('mixed JPEG and AVIF outputs are evaluated together by the local SSIMULACRA2 worker', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  const image = rgbaPng(128, 96);
+  const avifWasm = page.waitForResponse('**/assets/avif_enc-*.wasm');
+  const scorerWasm = page.waitForResponse('**/assets/ssimulacra2-0.1.0-*.wasm');
+  await page.locator('[type=file]').setInputFiles({ name: 'mixed.png', mimeType: 'image/png', buffer: image });
+  await expect(page.locator('.image-info')).toContainText('128 × 96 px');
+  await page.getByLabel('左の出力形式').selectOption('image/avif');
+  await expect(page.locator('.image-panel[data-side=left] .image-avif-status')).toContainText('完了');
+  await expect(page.locator('.image-evaluation-status')).toContainText('完了', { timeout: 30_000 });
+  expect((await avifWasm).ok()).toBe(true);
+  expect((await scorerWasm).ok()).toBe(true);
+  await expect(page.locator('.image-panel[data-side=left] .image-score')).toHaveText(/^-?\d+\.\d$/);
+  await expect(page.locator('.image-panel[data-side=right] .image-score')).toHaveText(/^-?\d+\.\d$/);
+  await expect.poll(() => page.workers().length).toBe(0);
+});
+
+test('AVIF Wasm loading can be canceled, fail and retry without leaving a Worker or lock behind', async ({ page }) => {
+  await pauseUiClock(page);
+  await page.goto('./?tool=image-converter');
+  await page.locator('.image-evaluation-toggle input').uncheck();
+  await page.locator('.image-sample[data-sample="outline"]').click();
+  const format = page.getByLabel('右の出力形式');
+  const status = page.locator('.image-panel[data-side="right"] .image-avif-status');
+  const cancel = page.getByRole('button', { name: '右側のAVIF変換を中止' });
+  const retry = page.getByRole('button', { name: '右側のAVIF変換を再試行' });
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  const wasm = '**/assets/avif_enc-*.wasm';
+  const avifLockHeld = () => page.evaluate(async lockName => {
+    const { held } = await navigator.locks.query();
+    return held?.some(lock => lock.name === lockName) ?? false;
+  }, imageWorkerLockName);
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route(wasm, async route => {
+    await blocked;
+    await route.abort().catch(() => {});
+  }, { times: 1 });
+  try {
+    const requested = page.waitForRequest(wasm);
+    await format.selectOption('image/avif');
+    await requested;
+    await expect(status).toContainText('変換しています');
+    await expect.poll(avifLockHeld).toBe(true);
+    await cancel.click();
+    await expect(status).toContainText('中止しました');
+    await expect(retry).toBeVisible();
+    await expect(save).toBeDisabled();
+    await expect.poll(() => page.workers().length).toBe(0);
+    await expect.poll(avifLockHeld).toBe(false);
+  } finally {
+    release();
+  }
+
+  await page.route(wasm, route => route.fulfill({ status: 503 }), { times: 1 });
+  await retry.click();
+  await expect(status).toContainText('失敗');
+  await expect(retry).toBeVisible();
+  await expect.poll(() => page.workers().length).toBe(0);
+  await retry.click();
+  await expect(status).toContainText('完了', { timeout: 30_000 });
+  await expect(save).toBeEnabled();
+  await expect.poll(() => page.workers().length).toBe(0);
+});
+
 test('Oxipng accepts JPEG, PNG and WebP browser-normalized inputs', async ({ page }) => {
   await page.goto('./?tool=image-converter');
   const fileInput = page.locator('[type=file]');
@@ -415,7 +587,7 @@ test('Oxipng cancellation and retry terminate and recreate the real production w
   expect(events.filter(event => event.action === 'terminate' && event.name === 'image-converter-oxipng')).toHaveLength(2);
 });
 
-test('Oxipng is lazy, loads only same-origin /web-toolbox assets, and sends no image requests externally', async ({ page }) => {
+test('Oxipng and AVIF load lazily from same-origin /web-toolbox assets, without sending image requests externally', async ({ page }) => {
   const external: string[] = [];
   const requests: string[] = [];
   page.on('request', request => {
@@ -427,17 +599,18 @@ test('Oxipng is lazy, loads only same-origin /web-toolbox assets, and sends no i
   await expect(page.locator('body')).toBeVisible();
   await page.goto('./?tool=image-converter');
   await page.locator('.image-evaluation-toggle input').uncheck();
-  expect(requests.some(path => /oxipng|squoosh|\.wasm|worker-/i.test(path))).toBe(false);
+  expect(requests.some(path => /oxipng|squoosh|avif|\.wasm|worker-/i.test(path))).toBe(false);
   await page.locator('.image-sample[data-sample="outline"]').click();
   await expect(page.locator('.image-filename')).toHaveText('outline.png');
   await page.getByLabel('左の出力形式').selectOption('oxipng');
   await expect(page.locator('.image-panel[data-side="left"] .image-oxipng-status')).toContainText('完了');
   expect(requests.some(path => path.endsWith('.wasm') && path.startsWith('/web-toolbox/assets/'))).toBe(true);
   expect(requests.some(path => /worker-.*\.js$/.test(path) && path.startsWith('/web-toolbox/assets/'))).toBe(true);
+  expect(requests.some(path => /avif/i.test(path))).toBe(false);
   expect(external).toEqual([]);
 });
 
-test('Oxipng and automatic SSIMULACRA2 workers run one at a time', async ({ page }) => {
+test('Oxipng, AVIF and automatic SSIMULACRA2 workers run one at a time', async ({ page }) => {
   test.setTimeout(90000);
   await page.addInitScript(() => {
     const events: { action: string; name: string; at: number; url: string }[] = [];
@@ -456,17 +629,38 @@ test('Oxipng and automatic SSIMULACRA2 workers run one at a time', async ({ page
     };
     (window as unknown as { __workerEvents: typeof events }).__workerEvents = events;
   });
+  await pauseUiClock(page);
   await page.goto('./?tool=image-converter');
   await page.locator('.image-sample[data-sample="geometry"]').click();
   await expect(page.locator('.image-filename')).toHaveText('geometry.png');
-  await page.getByLabel('左の出力形式').selectOption('oxipng');
-  await expect(page.locator('.image-panel[data-side="left"] .image-oxipng-status')).toContainText('完了', { timeout: 60000 });
+  const wasm = '**/assets/avif_enc-*.wasm';
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route(wasm, async route => { await blocked; await route.continue(); }, { times: 1 });
+  const avifRequest = page.waitForRequest(wasm);
+  await page.getByLabel('左の出力形式').selectOption('image/avif');
+  await avifRequest;
+  await page.getByLabel('右の出力形式').selectOption('oxipng');
+  const oxipngStatus = page.locator('.image-panel[data-side="right"] .image-oxipng-status');
+  await expect(oxipngStatus).toContainText('待っています');
+  const beforeRelease = await page.evaluate(() => (window as unknown as { __workerEvents: { action: string; name: string }[] }).__workerEvents);
+  expect(beforeRelease.some(event => event.action === 'create' && event.name === 'image-converter-oxipng')).toBe(false);
+  release();
+  await expect(page.locator('.image-panel[data-side="left"] .image-avif-status')).toContainText('完了', { timeout: 60000 });
+  await expect(oxipngStatus).toContainText('完了', { timeout: 60000 });
+  await page.clock.runFor(800);
   await expect(page.locator('.image-evaluation-status')).toContainText('完了', { timeout: 60000 });
   const events = await page.evaluate(() => (window as unknown as { __workerEvents: { action: string; name: string; at: number }[] }).__workerEvents);
+  const avifStart = events.findIndex(event => event.action === 'create' && event.name === 'image-converter-avif');
+  const avifEnd = events.findIndex(event => event.action === 'terminate' && event.name === 'image-converter-avif');
+  const oxipngStart = events.findIndex(event => event.action === 'create' && event.name === 'image-converter-oxipng');
   const oxipngEnd = events.findIndex(event => event.action === 'terminate' && event.name === 'image-converter-oxipng');
-  const qualityStart = events.findIndex(event => event.action === 'create' && event.name === 'image-quality-ssimulacra2');
-  expect(oxipngEnd).toBeGreaterThanOrEqual(0);
-  expect(qualityStart).toBeGreaterThan(oxipngEnd);
+  const qualityAfterOxipng = events.findIndex((event, index) => index > oxipngEnd && event.action === 'create' && event.name === 'image-quality-ssimulacra2');
+  expect(avifStart).toBeGreaterThanOrEqual(0);
+  expect(avifEnd).toBeGreaterThan(avifStart);
+  expect(oxipngStart).toBeGreaterThan(avifEnd);
+  expect(oxipngEnd).toBeGreaterThan(oxipngStart);
+  expect(qualityAfterOxipng).toBeGreaterThan(oxipngEnd);
 });
 
 test('4種類のサンプルを選び、元データとJPEG・PNG変換結果を保存する', async ({ page }) => {
@@ -1154,13 +1348,13 @@ test('元画像とHTML Canvasが作った左右のJPEGをWasmで評価し、変�
     }
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (message: unknown) {
-      const { reference, jpegs } = message as { reference: ImageBitmap; jpegs: Blob[] };
+      const { reference, images } = message as { reference: ImageBitmap; images: Blob[] };
       const { width, height } = reference;
       const normalizer = new OffscreenCanvas(width, height);
       const original = read(reference, normalizer);
       checks.push({
-        referenceMatches: jpegs.every(blob => encodings.get(blob)?.every((byte, i) => byte === original[i])),
-        decodesMatch: Promise.all(jpegs.map(async blob => {
+        referenceMatches: images.every(blob => encodings.get(blob)?.every((byte, i) => byte === original[i])),
+        decodesMatch: Promise.all(images.map(async blob => {
           const image = await createImageBitmap(blob);
           try {
             const canvas = document.createElement('canvas');

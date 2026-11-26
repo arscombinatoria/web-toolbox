@@ -2,12 +2,14 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { decode, encode } from './encoder';
 import { encodeOxipng } from './oxipng/client';
+import { encodeAvif } from './avif/client';
 import { mount } from './index';
 
 vi.mock('./encoder', async importOriginal => ({
   ...await importOriginal<typeof import('./encoder')>(), decode: vi.fn(), encode: vi.fn(),
 }));
 vi.mock('./oxipng/client', () => ({ encodeOxipng: vi.fn() }));
+vi.mock('./avif/client', () => ({ encodeAvif: vi.fn() }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -20,6 +22,7 @@ const bitmap = (width = 64, height = 32) => ({ width, height, close: vi.fn() }) 
 const jpeg = new Blob(['1234'], { type: 'image/jpeg' });
 const png = new Blob(['1'], { type: 'image/png' });
 const oxipngPng = new Blob(['optimized'], { type: 'image/png' });
+const avif = new Blob(['avif'], { type: 'image/avif' });
 let dispose: (() => void) | undefined;
 afterEach(() => {
   dispose?.();
@@ -35,6 +38,7 @@ function setup(active = bitmap()) {
   vi.mocked(decode).mockResolvedValue(active);
   vi.mocked(encode).mockImplementation(async (_, type) => type === 'image/jpeg' ? jpeg : png);
   vi.mocked(encodeOxipng).mockResolvedValue(oxipngPng);
+  vi.mocked(encodeAvif).mockResolvedValue(avif);
   let urlNumber = 0;
   const createUrl = vi.fn((_blob: Blob) => 'blob:result-' + ++urlNumber);
   const revokeUrl = vi.fn();
@@ -74,6 +78,15 @@ function setup(active = bitmap()) {
       score: panel.querySelector('.image-score')!,
       save: panel.querySelector<HTMLButtonElement>('.image-save')!,
       qualityLabel: panel.querySelector<HTMLElement>('.image-quality')!,
+      avifSettings: panel.querySelector<HTMLElement>('.image-avif-settings')!,
+      avifQuality: panel.querySelector<HTMLInputElement>('.image-avif-quality')!,
+      avifAlpha: panel.querySelector<HTMLInputElement>('.image-avif-alpha')!,
+      avifSpeed: panel.querySelector<HTMLInputElement>('.image-avif-speed')!,
+      avifSubsample: panel.querySelector<HTMLSelectElement>('.image-avif-subsample')!,
+      avifLossless: panel.querySelector<HTMLInputElement>('.image-avif-lossless')!,
+      avifStatus: panel.querySelector<HTMLElement>('.image-avif-status')!,
+      avifCancel: panel.querySelector<HTMLButtonElement>('.image-avif-cancel')!,
+      avifRetry: panel.querySelector<HTMLButtonElement>('.image-avif-retry')!,
       oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
       oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
       oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
@@ -88,6 +101,10 @@ function setup(active = bitmap()) {
       quality(value: string) {
         slider.value = value;
         slider.dispatchEvent(new Event('input'));
+      },
+      avifRange(input: HTMLInputElement, value: number) {
+        input.value = String(value);
+        input.dispatchEvent(new Event('input'));
       },
     };
   }
@@ -843,7 +860,7 @@ it('片側のJPEG変換が失敗しても、出力済みの反対側を採点で
   expect(left.error.textContent).toContain('変換に失敗');
   expect(right.save.disabled).toBe(false);
   expect(evaluate.disabled).toBe(true);
-  expect(workers[0]!.postMessage.mock.calls[0]![0].jpegs).toEqual([jpeg]);
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
 });
 
 it.each([[7, 8, '各辺8 px'], [2500, 4001, '10,000,000画素']])(
@@ -875,7 +892,7 @@ it('左右で同じJPEG Blobを採点するのは一度で、別のBlobに変わ
   const [worker] = workers;
   expect(copy).toHaveBeenCalledWith(active);
   const duplicate = await copy.mock.results[0]!.value;
-  expect(worker!.postMessage).toHaveBeenCalledWith({ reference: duplicate, jpegs: [jpeg] }, [duplicate]);
+  expect(worker!.postMessage).toHaveBeenCalledWith({ reference: duplicate, images: [jpeg] }, [duplicate]);
   worker!.reply({ index: 0, score: 101.234 });
   await flush();
   expect(left.score.textContent).toBe('101.2');
@@ -893,7 +910,7 @@ it('左右で同じJPEG Blobを採点するのは一度で、別のBlobに変わ
   expect(workers).toHaveLength(1);
   evaluate.click();
   await flush();
-  expect(workers[1]!.postMessage.mock.calls[0]![0].jpegs).toEqual([changed]);
+  expect(workers[1]!.postMessage.mock.calls[0]![0].images).toEqual([changed]);
   workers[1]!.reply({ index: 0, score: 75 });
   await flush();
   left.quality('0.75');
@@ -904,7 +921,7 @@ it('左右で同じJPEG Blobを採点するのは一度で、別のBlobに変わ
 
   choose('new-reference.png');
   await vi.advanceTimersByTimeAsync(800);
-  expect(workers[2]!.postMessage.mock.calls[0]![0].jpegs).toEqual([jpeg]);
+  expect(workers[2]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
 });
 
 it('中止後に再実行でき、画像切り替えとツール破棄は実行中のWorkerを終了する', async () => {
@@ -1018,7 +1035,7 @@ it('採点中の変更で古いWorkerを止め、連続操作の最後の品質�
   expect(left.score.textContent).toBe('変換待ち…');
   await vi.advanceTimersByTimeAsync(800);
   const oldWorker = workers[1]!;
-  expect(oldWorker.postMessage.mock.calls[0]![0].jpegs).toEqual([first]);
+  expect(oldWorker.postMessage.mock.calls[0]![0].images).toEqual([first]);
   const lateReply = oldWorker.onmessage!;
 
   left.quality('0.45');
@@ -1036,7 +1053,7 @@ it('採点中の変更で古いWorkerを止め、連続操作の最後の品質�
   expect(right.score.textContent).toBe('85.0');
 
   await vi.advanceTimersByTimeAsync(1);
-  expect(workers[2]!.postMessage.mock.calls[0]![0].jpegs).toEqual([last]);
+  expect(workers[2]!.postMessage.mock.calls[0]![0].images).toEqual([last]);
   lateReply(new MessageEvent('message', { data: { index: 0, score: 42 } }));
   expect(left.score.textContent).toBe('評価中…');
   workers[2]!.reply({ index: 0, score: 83 });
@@ -1064,7 +1081,7 @@ it.each(['auto', 'manual'])('JPEGとプレビューの完了を待ってから%s
   preview.resolve(undefined);
   await flush();
   expect(workers).toHaveLength(1);
-  expect(workers[0]!.postMessage.mock.calls[0]![0].jpegs).toEqual([jpeg]);
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
 });
 
 it('自動評価をオフにすると待機と実行を止め、手動評価は継続できる', async () => {
@@ -1269,4 +1286,182 @@ it('共有中のOxipngは最後の側が中止するまで生き、片側の中�
   await flush();
   expect(left.save.disabled).toBe(false);
   expect(left.oxipngStatus.textContent).toContain('完了');
+});
+
+it('AVIF controls start at the specified values, debounce changes and restore lossy values after lossless mode', async () => {
+  const { choose, left, right } = setup();
+  choose();
+  await flush();
+  left.select('image/avif');
+  await flush();
+  expect(left.avifSettings.hidden).toBe(false);
+  expect([left.avifQuality.value, left.avifAlpha.value, left.avifSpeed.value, left.avifSubsample.value, left.avifLossless.checked])
+    .toEqual(['50', '100', '6', '1', false]);
+  expect([right.avifQuality.value, right.avifAlpha.value, right.avifSpeed.value, right.avifSubsample.value, right.avifLossless.checked])
+    .toEqual(['50', '100', '6', '1', false]);
+  expect(encodeAvif).toHaveBeenCalledWith(expect.anything(), { quality: 50, qualityAlpha: 100, speed: 6, subsample: 1, lossless: false }, expect.anything(), expect.any(Function));
+
+  left.avifRange(left.avifQuality, 80);
+  left.avifRange(left.avifSpeed, 4);
+  left.avifSubsample.value = '3';
+  left.avifSubsample.dispatchEvent(new Event('change'));
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeAvif).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(encodeAvif).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(encodeAvif).mock.lastCall?.[1]).toEqual({ quality: 80, qualityAlpha: 100, speed: 4, subsample: 3, lossless: false });
+
+  left.avifLossless.checked = true;
+  left.avifLossless.dispatchEvent(new Event('change'));
+  await vi.advanceTimersByTimeAsync(180);
+  await flush();
+  expect([left.avifQuality.value, left.avifAlpha.value, left.avifSubsample.value]).toEqual(['100', '100', '3']);
+  expect(left.avifQuality.disabled).toBe(true);
+  expect(left.avifAlpha.disabled).toBe(true);
+  expect(left.avifSubsample.disabled).toBe(true);
+  expect(vi.mocked(encodeAvif).mock.lastCall?.[1]).toEqual({ quality: 80, qualityAlpha: 100, speed: 4, subsample: 3, lossless: true });
+
+  left.avifLossless.checked = false;
+  left.avifLossless.dispatchEvent(new Event('change'));
+  await vi.advanceTimersByTimeAsync(180);
+  await flush();
+  expect([left.avifQuality.value, left.avifAlpha.value, left.avifSpeed.value, left.avifSubsample.value]).toEqual(['80', '100', '4', '3']);
+  expect(left.avifQuality.disabled).toBe(false);
+  expect(right.avifSettings.hidden).toBe(true);
+});
+
+it('AVIF changes only the selected side, shares equal settings, and keeps a shared job until its last consumer cancels', async () => {
+  const { choose, left, right } = setup();
+  vi.mocked(encodeAvif).mockImplementation((_bitmap, _options, _signal, onStart) => {
+    onStart();
+    return deferredAvif.promise;
+  });
+  const deferredAvif = deferred<Blob>();
+  choose();
+  await flush();
+  left.select('image/avif');
+  right.select('image/avif');
+  await flush();
+  expect(encodeAvif).toHaveBeenCalledOnce();
+  expect(left.avifStatus.textContent).toContain('変換しています');
+  expect(right.avifStatus.textContent).toContain('変換しています');
+  const signal = vi.mocked(encodeAvif).mock.calls[0]![2];
+  right.avifCancel.click();
+  expect(signal.aborted).toBe(false);
+  expect(right.avifRetry.hidden).toBe(false);
+  expect(left.save.disabled).toBe(true);
+  left.avifCancel.click();
+  expect(signal.aborted).toBe(true);
+  expect(left.avifRetry.hidden).toBe(false);
+});
+
+it('AVIFの共有ジョブは両側へ同じBlobを反映し、設定変更後の古い結果を捨てる', async () => {
+  const { choose, left, right, createUrl } = setup();
+  const shared = deferred<Blob>();
+  vi.mocked(encodeAvif).mockImplementationOnce(() => shared.promise);
+  choose();
+  await flush();
+  left.select('image/avif');
+  right.select('image/avif');
+  await flush();
+  expect(encodeAvif).toHaveBeenCalledOnce();
+  shared.resolve(avif);
+  await flush();
+  expect(createUrl.mock.calls.slice(-2).map(call => call[0])).toEqual([avif, avif]);
+  expect(left.preview.src).not.toBe(right.preview.src);
+
+  const stale = deferred<Blob>();
+  const replacement = new Blob(['replacement'], { type: 'image/avif' });
+  vi.mocked(encodeAvif).mockImplementationOnce(() => stale.promise).mockResolvedValueOnce(replacement);
+  left.avifRange(left.avifQuality, 80);
+  await vi.advanceTimersByTimeAsync(180);
+  const staleSignal = vi.mocked(encodeAvif).mock.calls.at(-1)![2];
+  left.avifRange(left.avifQuality, 81);
+  await vi.advanceTimersByTimeAsync(180);
+  await flush();
+  const displayedUrl = left.preview.src;
+  const urlCount = createUrl.mock.calls.length;
+  stale.resolve(avif);
+  await flush();
+  expect(staleSignal.aborted).toBe(true);
+  expect(createUrl).toHaveBeenCalledTimes(urlCount);
+  expect(left.preview.src).toBe(displayedUrl);
+});
+
+it('AVIFの実行中に入力世代が変わった場合、古いBlobを表示せず、破棄時にWorkerを中止する', async () => {
+  const { choose, left, unmount, createUrl } = setup();
+  const oldResult = deferred<Blob>();
+  const current = new Blob(['current'], { type: 'image/avif' });
+  vi.mocked(encodeAvif).mockImplementationOnce(() => oldResult.promise).mockResolvedValueOnce(current);
+  choose('first.png');
+  await flush();
+  left.select('image/avif');
+  await flush();
+  const oldSignal = vi.mocked(encodeAvif).mock.calls[0]![2];
+  choose('second.png');
+  await flush();
+  oldResult.resolve(avif);
+  await flush();
+  expect(oldSignal.aborted).toBe(true);
+  expect(createUrl.mock.calls.some(([blob]) => blob === avif)).toBe(false);
+  left.select('image/avif');
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === current)).toBe(true);
+
+  const pending = deferred<Blob>();
+  vi.mocked(encodeAvif).mockImplementationOnce(() => pending.promise);
+  left.avifRange(left.avifQuality, 82);
+  await vi.advanceTimersByTimeAsync(180);
+  const pendingSignal = vi.mocked(encodeAvif).mock.calls.at(-1)![2];
+  unmount();
+  expect(pendingSignal.aborted).toBe(true);
+  pending.resolve(avif);
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === avif)).toBe(false);
+});
+
+it('非可逆AVIFをSSIMULACRA2へ渡し、可逆AVIFは採点対象から除外する', async () => {
+  const { choose, left, right, evaluate, auto } = setup();
+  const { workers } = mockScoring();
+  auto.checked = false;
+  auto.dispatchEvent(new Event('change'));
+  choose();
+  await flush();
+  right.select('original');
+  left.select('image/avif');
+  await flush();
+  evaluate.click();
+  await flush();
+  expect(workers).toHaveLength(1);
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([avif]);
+  workers[0]!.reply({ index: 0, score: 84.2 });
+  await flush();
+  expect(left.score.textContent).toBe('84.2');
+
+  left.avifLossless.checked = true;
+  left.avifLossless.dispatchEvent(new Event('change'));
+  await flush();
+  expect(left.score.textContent).toContain('スコア評価対象外');
+  evaluate.click();
+  await flush();
+  expect(workers).toHaveLength(1);
+});
+
+it('失敗した唯一のAVIFは自動評価予約を破棄し、再試行後に評価を再開する', async () => {
+  const { choose, left, right, auto } = setup();
+  const { workers } = mockScoring();
+  vi.mocked(encodeAvif).mockRejectedValueOnce(new Error('temporary failure')).mockResolvedValueOnce(avif);
+  auto.checked = true;
+  choose();
+  await flush();
+  left.select('image/avif');
+  right.select('original');
+  await flush();
+  expect(left.avifStatus.textContent).toContain('失敗');
+  expect(workers).toHaveLength(0);
+  left.avifRetry.click();
+  await flush();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers).toHaveLength(1);
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([avif]);
 });

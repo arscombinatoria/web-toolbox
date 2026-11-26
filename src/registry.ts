@@ -66,7 +66,7 @@ export const tools: readonly ToolDefinition[] = [
   },
   {
     id: 'image-converter', name: '画像変換', category: 'image',
-    description: 'JPEG・PNGへの画像変換、画質比較、元ファイル比の確認',
+    description: 'JPEG・PNG・AVIFへの画像変換、画質比較、元ファイル比の確認',
     icon: Image,
     load: () => import('./tools/image-converter/index'),
   },

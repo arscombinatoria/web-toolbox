@@ -2,17 +2,17 @@ import { evaluationLimit, isFiniteScore } from './rules';
 import type { EvaluationRequest } from './worker';
 import { imageWorkerLockName, runHeavyWorker } from '../worker-slot';
 
-export async function evaluateJpegs(
+export async function evaluateImages(
   reference: ImageBitmap,
-  jpegs: readonly Blob[],
+  images: readonly Blob[],
   signal: AbortSignal,
   onStart: () => void,
-  onScore: (jpeg: Blob, score: number) => void,
+  onScore: (image: Blob, score: number) => void,
 ): Promise<void> {
   signal.throwIfAborted();
   const limit = evaluationLimit(reference.width, reference.height);
   if (limit) throw new RangeError(limit);
-  if (!jpegs.length) return;
+  if (!images.length) return;
 
   await runHeavyWorker(signal, async () => {
     const copy = await createImageBitmap(reference);
@@ -43,16 +43,16 @@ export async function evaluateJpegs(
             return;
           }
           try {
-            onScore(jpegs[index]!, data.score);
+            onScore(images[index]!, data.score);
             index++;
-            if (index === jpegs.length) finish();
+            if (index === images.length) finish();
           } catch (error) {
             finish(error);
           }
         };
         worker.onerror = worker.onmessageerror = fail;
         try {
-          const request: EvaluationRequest = { reference: copy, jpegs };
+          const request: EvaluationRequest = { reference: copy, images };
           if (navigator.locks) request.lockName = imageWorkerLockName;
           onStart();
           worker.postMessage(request, [copy]);
