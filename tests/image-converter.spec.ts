@@ -1601,11 +1601,18 @@ test('WebP encodes transparent odd-sized images, saves and accepts JPEG, PNG, We
   const status = right.locator('.image-webp-status');
   const preview = page.getByAltText('右側のプレビュー');
   const save = page.getByRole('button', { name: '右をダウンロード' });
+  const originalCanvas = page.locator('.image-original-layer canvas');
+  const expectOriginalImage = async (filename: string) => {
+    await expect(page.locator('.image-filename')).toHaveText(filename);
+    await expect(originalCanvas).toHaveJSProperty('width', 127);
+    await expect(originalCanvas).toHaveJSProperty('height', 97);
+  };
   const originalPixels = () => page.locator('.image-original-layer canvas').evaluate(canvas => {
     const element = canvas as HTMLCanvasElement;
     return [...element.getContext('2d')!.getImageData(0, 0, element.width, element.height).data];
   });
 
+  await expectOriginalImage('sample.png');
   const baseline = await originalPixels();
   expect(requests.some(url => /libwebp|\/assets\/worker-/.test(url))).toBe(false);
   const wasm = page.waitForResponse('**/web-toolbox/assets/libwebp-1.6.0-encoder-*.wasm');
@@ -1649,7 +1656,7 @@ test('WebP encodes transparent odd-sized images, saves and accepts JPEG, PNG, We
   // comparison of all browser-visible RGBA bytes.
   if (browserName === 'firefox') await openTool();
   await input.setInputFiles({ name: 'binary-alpha.png', mimeType: 'image/png', buffer: rgbaPng(127, 97, [0, 255]) });
-  await expect(page.locator('.image-filename')).toHaveText('binary-alpha.png');
+  await expectOriginalImage('binary-alpha.png');
   if (browserName === 'firefox') {
     await format.selectOption('image/webp');
     await losslessToggle.check();
