@@ -1,9 +1,41 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { decode, encode, formatFileSize, sizeChange } from './encoder';
+import { decode, encode, formatFileSize, inputType, sizeChange } from './encoder';
 
 const image = { width: 2, height: 3, close: vi.fn() } as unknown as ImageBitmap;
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it('AVIF入力は妥当なISO BMFF ftypのmajor/compatible brandだけを受け付ける', () => {
+  const box = (brands: string[], extended = false) => {
+    const headerSize = extended ? 16 : 8;
+    const compatible = brands.slice(1);
+    const size = headerSize + 8 + compatible.length * 4;
+    const bytes = new Uint8Array(size);
+    const view = new DataView(bytes.buffer);
+    if (extended) {
+      view.setUint32(0, 1);
+      bytes.set(new TextEncoder().encode('ftyp'), 4);
+      view.setBigUint64(8, BigInt(size));
+    } else {
+      view.setUint32(0, size);
+      bytes.set(new TextEncoder().encode('ftyp'), 4);
+    }
+    bytes.set(new TextEncoder().encode(brands[0]!), headerSize);
+    view.setUint32(headerSize + 4, 0);
+    compatible.forEach((brand, index) => bytes.set(new TextEncoder().encode(brand), headerSize + 8 + index * 4));
+    return bytes;
+  };
+  expect(inputType(box(['avif']))).toBe('image/avif');
+  expect(inputType(box(['mif1', 'avif']))).toBe('image/avif');
+  expect(inputType(box(['avis', 'mif1'], true))).toBe('image/avif');
+  expect(inputType(box(['mif1', 'heic']))).toBeUndefined();
+  const malformed = box(['mif1', 'avif']);
+  new DataView(malformed.buffer).setUint32(0, malformed.byteLength + 1);
+  expect(inputType(malformed, malformed.byteLength)).toBeUndefined();
+  const badBrandList = box(['mif1', 'avif']);
+  new DataView(badBrandList.buffer).setUint32(0, badBrandList.byteLength - 1);
+  expect(inputType(badBrandList)).toBeUndefined();
+});
 
 it.each(['image/jpeg', 'image/png'] as const)('%s の画布と品質、出力形式を検証する', async type => {
   const ctx = { fillStyle: '', drawImage: vi.fn(), fillRect: vi.fn() };

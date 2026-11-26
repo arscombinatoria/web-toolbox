@@ -1,9 +1,11 @@
 import { drawOnWhite } from './paint';
+import { isAvifFtyp } from './avif/ftyp';
 
 export const encoders = {
   original: { label: 'Original', type: null, extension: '', hasQuality: false },
   'image/jpeg': { label: 'Browser JPEG', type: 'image/jpeg', extension: '.jpg', hasQuality: true },
   'image/png': { label: 'Browser PNG', type: 'image/png', extension: '.png', hasQuality: false },
+  'image/avif': { label: 'AVIF (libaom)', type: 'image/avif', extension: '.avif', hasQuality: false },
   oxipng: { label: 'Oxipng', type: 'image/png', extension: '.png', hasQuality: false },
 } as const;
 
@@ -18,18 +20,29 @@ export function formatFileSize(bytes: number): string {
   return (bytes / 1_000_000).toLocaleString('ja-JP', { maximumFractionDigits: 2 }) + ' MB';
 }
 
-function inputType(bytes: Uint8Array): string | undefined {
+export function inputType(bytes: Uint8Array, fileSize = bytes.byteLength): string | undefined {
   if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return 'image/jpeg';
   if ([137, 80, 78, 71, 13, 10, 26, 10].every((byte, i) => byte === bytes[i])) return 'image/png';
   const tag = (start: number) => String.fromCharCode(...bytes.subarray(start, start + 4));
   if (tag(0) === 'RIFF' && tag(8) === 'WEBP') return 'image/webp';
+  if (isAvifFtyp(bytes, fileSize)) return 'image/avif';
 }
 
 export async function decode(file: File, signal: AbortSignal): Promise<ImageBitmap> {
   if (file.size > 32 * 1024 * 1024) throw new Error('32 MiB以下の画像を選択してください。');
-  const type = inputType(new Uint8Array(await file.slice(0, 12).arrayBuffer()));
+  const header = new Uint8Array(await file.slice(0, 24).arrayBuffer());
+  let type = inputType(header, file.size);
+  if (!type && String.fromCharCode(...header.subarray(4, 8)) === 'ftyp') {
+    const prefix = new DataView(header.buffer, header.byteOffset, header.byteLength);
+    const size32 = prefix.getUint32(0);
+    const extended = size32 === 1;
+    const declaredSize = extended && header.length >= 16 ? Number(prefix.getBigUint64(8)) : size32;
+    if (Number.isSafeInteger(declaredSize) && declaredSize <= file.size && declaredSize >= (extended ? 24 : 16)) {
+      type = inputType(new Uint8Array(await file.slice(0, declaredSize).arrayBuffer()), file.size);
+    }
+  }
   if (!type || (file.type && file.type !== type)) {
-    throw new Error('JPEG・PNG・WebPの画像を選択してください。');
+    throw new Error('JPEG・PNG・WebP・AVIFの画像を選択してください。');
   }
   signal.throwIfAborted();
   const image = new Image();

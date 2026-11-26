@@ -4,7 +4,9 @@ import { findTool } from '../../registry';
 import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
 import { encodeOxipng } from './oxipng/client';
 import { defaultOxipngOptions, oxipngKey, validateOxipngOptions, type OxipngOptions } from './oxipng/options';
-import { evaluateJpegs } from './quality/client';
+import { encodeAvif } from './avif/client';
+import { avifFilename, avifKey, defaultAvifOptions, effectiveAvifOptions, isAvifLossless, validateAvifOptions, type AvifOptions } from './avif/options';
+import { evaluateImages } from './quality/client';
 import { evaluationLimit, isEvaluable, MIN_EVALUATION_SIDE } from './quality/rules';
 import './style.css';
 
@@ -13,6 +15,7 @@ const sideDefinitions = [
   { id: 'right', label: '右', initialEncoder: 'image/jpeg' },
 ] as const;
 const initialQuality = 0.75;
+const initialAvifOptions = defaultAvifOptions;
 const autoEvaluationDelay = 800;
 const evaluationWaiting = '画質評価を待機しています…';
 const sampleImages = [
@@ -36,14 +39,14 @@ export function mount(container: HTMLElement): () => void {
   view.innerHTML = `
     <h1 tabindex="-1"></h1>
     <p class="tool-description"></p>
-    <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp" hidden>
+    <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp,image/avif" hidden>
     <section class="image-samples" aria-label="サンプル画像">
       <h2>サンプルで試す</h2>
       <div class="image-sample-list"></div>
     </section>
     <p class="image-input-status" role="status" aria-atomic="true"></p>
     <p class="image-input-error" role="alert"></p>
-    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP）</span></button>
+    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP・AVIF）</span></button>
     <section hidden aria-label="画像の比較と変換設定">
       <div class="image-comparison-area">
         <div class="image-replace">
@@ -75,6 +78,21 @@ export function mount(container: HTMLElement): () => void {
                 JPEG品質 <input type="range" aria-label="${label}のJPEG品質" min="0.01" max="1" step="0.01" value="${initialQuality}">
                 <span>${initialQuality.toFixed(2)}</span>
               </label>
+              <div class="image-avif-settings" hidden>
+                <label>AVIF品質 <input type="range" class="image-avif-quality" aria-label="${label}のAVIF品質" min="0" max="100" step="1" value="${initialAvifOptions.quality}"><span>${initialAvifOptions.quality}</span></label>
+                <label>アルファ品質 <input type="range" class="image-avif-alpha" aria-label="${label}のAVIFアルファ品質" min="0" max="100" step="1" value="${initialAvifOptions.qualityAlpha}"><span>${initialAvifOptions.qualityAlpha}</span></label>
+                <label>速度 <input type="range" class="image-avif-speed" aria-label="${label}のAVIF速度" min="0" max="10" step="1" value="${initialAvifOptions.speed}"><span>${initialAvifOptions.speed}</span></label>
+                <label>色差サンプリング <select class="image-avif-subsample" aria-label="${label}のAVIF色差サンプリング">
+                  <option value="1" selected>4:2:0</option><option value="2">4:2:2</option><option value="3">4:4:4</option>
+                </select></label>
+                <label><input type="checkbox" class="image-avif-lossless" aria-label="${label}側のAVIFを可逆圧縮にする"> 可逆圧縮</label>
+                <p class="image-note">可逆時は品質100・アルファ品質100・4:4:4で符号化します。設定を100・100・4:4:4にした場合も可逆です。8-bit sRGBに正規化したRGBA画素を保持します。再表示時はブラウザの色管理やアルファ処理で変わる場合があります。速度の値を下げると処理が遅くなり、大きな画像ほど時間とメモリを使います。</p>
+                <p class="image-avif-status" role="status" aria-atomic="true"></p>
+                <div class="image-avif-actions">
+                  <button type="button" class="image-avif-cancel" hidden aria-label="${label}側のAVIF変換を中止">AVIF変換を中止</button>
+                  <button type="button" class="image-avif-retry" hidden aria-label="${label}側のAVIF変換を再試行">AVIF変換を再試行</button>
+                </div>
+              </div>
               <div class="image-oxipng-settings" hidden>
                 <label>Oxipngレベル <select aria-label="${label}のOxipngレベル">
                   ${[1, 2, 3, 4, 5, 6].map(level => `<option value="${level}"${level === 2 ? ' selected' : ''}>${level}</option>`).join('')}
@@ -120,7 +138,7 @@ export function mount(container: HTMLElement): () => void {
       <p class="image-evaluation-limit" role="status" aria-atomic="true"></p>
       <p id="image-evaluation-cost" class="image-note">大きい画像の評価には時間がかかり、多くのメモリを使います。</p>
       <div class="image-evaluation-details" hidden>
-        <p class="image-note">SSIMULACRA2は、元画像との見た目の近さを示す参考スコアです。透明部分は白背景で比較します。</p>
+        <p class="image-note">SSIMULACRA2は元画像との見た目の近さを示す参考スコアです。透明部分は白背景で比較し、半透明やアルファの見え方の忠実性を完全評価するものではありません。</p>
         <details class="image-score-guide">
           <summary>スコアの目安を見る</summary>
           <table>
@@ -143,7 +161,7 @@ export function mount(container: HTMLElement): () => void {
         </details>
       </div>
     </section>
-    <p class="image-note">画像はブラウザ内で処理します。JPEGでは透明部分が白になります。EXIFなどのメタデータは保持されない場合があります。</p>`;
+    <p class="image-note">画像はブラウザ内で処理します。JPEGでは透明部分が白になります。AVIFは8-bit sRGBの静止画として変換し、EXIFなどのメタデータは保持されない場合があります。</p>`;
   const get = <T extends Element>(selector: string) => view.querySelector<T>(selector)!;
   const tool = findTool('image-converter')!;
   get('h1').textContent = tool.name;
@@ -218,7 +236,7 @@ export function mount(container: HTMLElement): () => void {
   let selectionGeneration = 0;
   let reading: Selection | undefined;
   let source: { file: File; bitmap: ImageBitmap } | undefined;
-  let evaluation: { controller: AbortController; mode: EvaluationMode; jpegs: Blob[]; started: boolean } | undefined;
+  let evaluation: { controller: AbortController; mode: EvaluationMode; images: Blob[]; started: boolean } | undefined;
   let requestedEvaluation: { mode: EvaluationMode; readyAt: number } | undefined;
   let evaluationTimer: ReturnType<typeof setTimeout> | undefined;
   let scores = new WeakMap<Blob, number>();
@@ -231,6 +249,8 @@ export function mount(container: HTMLElement): () => void {
       label,
       encoder: initialEncoder as EncoderId,
       quality: initialQuality,
+      avifOptions: { ...initialAvifOptions } as AvifOptions,
+      avifKey: undefined as string | undefined,
       oxipngOptions: { ...defaultOxipngOptions } as OxipngOptions,
       oxipngKey: undefined as string | undefined,
       generation: 0,
@@ -243,6 +263,18 @@ export function mount(container: HTMLElement): () => void {
       qualityLabel: panel.querySelector<HTMLLabelElement>('.image-quality')!,
       qualityInput: panel.querySelector<HTMLInputElement>('.image-quality input')!,
       qualityValue: panel.querySelector('.image-quality span')!,
+      avifSettings: panel.querySelector<HTMLElement>('.image-avif-settings')!,
+      avifQuality: panel.querySelector<HTMLInputElement>('.image-avif-quality')!,
+      avifQualityValue: panel.querySelector('.image-avif-quality + span')!,
+      avifAlpha: panel.querySelector<HTMLInputElement>('.image-avif-alpha')!,
+      avifAlphaValue: panel.querySelector('.image-avif-alpha + span')!,
+      avifSpeed: panel.querySelector<HTMLInputElement>('.image-avif-speed')!,
+      avifSpeedValue: panel.querySelector('.image-avif-speed + span')!,
+      avifSubsample: panel.querySelector<HTMLSelectElement>('.image-avif-subsample')!,
+      avifLossless: panel.querySelector<HTMLInputElement>('.image-avif-lossless')!,
+      avifStatus: panel.querySelector<HTMLElement>('.image-avif-status')!,
+      avifCancel: panel.querySelector<HTMLButtonElement>('.image-avif-cancel')!,
+      avifRetry: panel.querySelector<HTMLButtonElement>('.image-avif-retry')!,
       oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
       oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
       oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
@@ -262,7 +294,55 @@ export function mount(container: HTMLElement): () => void {
   type Side = ReturnType<typeof createSide>;
   const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
   const sides = [left, right];
+  const avifJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const oxipngJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
+
+  function detachAvif(side: Side) {
+    const key = side.avifKey;
+    side.avifKey = undefined;
+    if (!key) return;
+    const job = avifJobs.get(key);
+    if (!job) return;
+    job.consumers.delete(side);
+    if (!job.consumers.size) {
+      if (!job.blob) job.controller.abort();
+      avifJobs.delete(key);
+    }
+  }
+
+  function requestAvif(side: Side, bitmap: ImageBitmap, generation: number): Promise<Blob> {
+    const options = validateAvifOptions(side.avifOptions);
+    const key = avifKey(generation, options);
+    let job = avifJobs.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      job = { controller, consumers: new Set(), started: false };
+      avifJobs.set(key, job);
+      const current = job;
+      current.promise = encodeAvif(bitmap, options, controller.signal, () => {
+        if (avifJobs.get(key) !== current) return;
+        current.started = true;
+        for (const consumer of current.consumers) {
+          if (consumer.avifKey === key) consumer.avifStatus.textContent = 'AVIFに変換しています…';
+        }
+      }).then(blob => {
+        if (avifJobs.get(key) === current && current.consumers.size) current.blob = blob;
+        return blob;
+      }, cause => {
+        if (avifJobs.get(key) === current) avifJobs.delete(key);
+        throw cause;
+      });
+      for (const pending of sides) {
+        if (pending.avifKey === key && pending.result.status === 'pending') current.consumers.add(pending);
+      }
+    }
+    job.consumers.add(side);
+    side.avifKey = key;
+    side.avifStatus.textContent = job.started ? 'AVIFに変換しています…' : 'AVIF変換を待っています…';
+    side.avifCancel.hidden = false;
+    side.avifRetry.hidden = true;
+    return job.blob ? Promise.resolve(job.blob) : job.promise!;
+  }
 
   function detachOxipng(side: Side) {
     const key = side.oxipngKey;
@@ -315,10 +395,10 @@ export function mount(container: HTMLElement): () => void {
   for (const side of sides) side.save.prepend(createIcon(Download));
 
   function evaluationBlob(side: Side): Blob | undefined {
-    if (isEvaluable(side.encoder) && side.result.status === 'ready') return side.result.blob;
+    if (isEvaluable(side.encoder, side.encoder === 'image/avif' && isAvifLossless(side.avifOptions)) && side.result.status === 'ready') return side.result.blob;
   }
 
-  function unevaluatedJpegs(): Blob[] {
+  function unevaluatedImages(): Blob[] {
     const blobs = new Set<Blob>();
     for (const side of sides) {
       const blob = evaluationBlob(side);
@@ -329,7 +409,7 @@ export function mount(container: HTMLElement): () => void {
 
   function evaluationMessage(side: Side, blob: Blob | undefined, limit: string | undefined) {
     if (side.encoder === 'original') return '基準画像';
-    if (side.encoder === 'oxipng') return '可逆圧縮（スコア評価対象外）';
+    if (side.encoder === 'oxipng' || (side.encoder === 'image/avif' && isAvifLossless(side.avifOptions))) return '可逆圧縮（スコア評価対象外）';
     if (!isEvaluable(side.encoder)) return '画質評価は未対応';
     if (limit && source) {
       const { width, height } = source.bitmap;
@@ -337,7 +417,7 @@ export function mount(container: HTMLElement): () => void {
     }
     if (side.result.status === 'failed') return '変換失敗';
     if (side.result.status === 'pending') return '変換待ち…';
-    if (blob && evaluation?.jpegs.includes(blob)) return evaluation.started ? '評価中…' : '評価待機中…';
+    if (blob && evaluation?.images.includes(blob)) return evaluation.started ? '評価中…' : '評価待機中…';
     if (blob && requestedEvaluation) return '評価待機中…';
     if (blob && failedEvaluations.has(blob)) return '評価に失敗';
     return '画質は未評価';
@@ -347,9 +427,9 @@ export function mount(container: HTMLElement): () => void {
     const currentSource = source;
     const limit = currentSource && evaluationLimit(currentSource.bitmap.width, currentSource.bitmap.height);
     if (limitNotice.textContent !== (limit ?? '')) limitNotice.textContent = limit ?? '';
-    const converting = sides.some(side => isEvaluable(side.encoder) && side.result.status === 'pending');
-    const jpegs = unevaluatedJpegs();
-    const canEvaluate = currentSource && !limit && (converting || jpegs.length > 0);
+    const converting = sides.some(side => isEvaluable(side.encoder, side.encoder === 'image/avif' && isAvifLossless(side.avifOptions)) && side.result.status === 'pending');
+    const images = unevaluatedImages();
+    const canEvaluate = currentSource && !limit && (converting || images.length > 0);
     if (!canEvaluate && requestedEvaluation) {
       clearEvaluationRequest();
       if (evaluationStatus.textContent === evaluationWaiting) evaluationStatus.textContent = '';
@@ -369,11 +449,11 @@ export function mount(container: HTMLElement): () => void {
     if (!converting && remaining <= 0) {
       const { mode } = requestedEvaluation;
       clearEvaluationRequest();
-      void startEvaluation(mode, currentSource.bitmap, jpegs, inputGeneration);
+      void startEvaluation(mode, currentSource.bitmap, images, inputGeneration);
       return;
     }
     if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
-    // JPEG変換が済んでから、自動評価に必要な残りの待機時間だけを計る。
+    // 変換が済んでから、自動評価に必要な残りの待機時間だけを計る。
     if (!converting && evaluationTimer === undefined) {
       evaluationTimer = setTimeout(() => {
         evaluationTimer = undefined;
@@ -402,17 +482,17 @@ export function mount(container: HTMLElement): () => void {
     evaluationStatus.textContent = message;
   }
 
-  async function startEvaluation(mode: EvaluationMode, bitmap: ImageBitmap, jpegs: Blob[], generation: number) {
+  async function startEvaluation(mode: EvaluationMode, bitmap: ImageBitmap, images: Blob[], generation: number) {
     const controller = new AbortController();
-    const job = { controller, mode, jpegs, started: false };
+    const job = { controller, mode, images, started: false };
     const isCurrent = () => evaluation === job && generation === inputGeneration;
     evaluation = job;
-    for (const jpeg of jpegs) failedEvaluations.delete(jpeg);
+    for (const image of images) failedEvaluations.delete(image);
     if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
     updateEvaluation();
     try {
-      await evaluateJpegs(
-        bitmap, jpegs, controller.signal,
+      await evaluateImages(
+        bitmap, images, controller.signal,
         () => {
           if (!isCurrent()) return;
           job.started = true;
@@ -432,8 +512,8 @@ export function mount(container: HTMLElement): () => void {
           evaluationStatus.textContent = '画質評価を中止しました。';
         } else {
           // If one JPEG completed before the worker failed, its cached score remains valid.
-          for (const jpeg of jpegs) {
-            if (!scores.has(jpeg)) failedEvaluations.add(jpeg);
+          for (const image of images) {
+            if (!scores.has(image)) failedEvaluations.add(image);
           }
           setIconMessage(evaluationStatus, CircleAlert, '画質を評価できませんでした。もう一度お試しください。');
         }
@@ -455,6 +535,7 @@ export function mount(container: HTMLElement): () => void {
   }
 
   function invalidate(side: Side) {
+    detachAvif(side);
     detachOxipng(side);
     ++side.generation;
     clearTimeout(side.timer);
@@ -468,6 +549,8 @@ export function mount(container: HTMLElement): () => void {
     side.url = undefined;
     side.sizeChange.textContent = side.outputSize.textContent = side.error.textContent = '';
     side.oxipngStatus.textContent = '';
+    side.avifStatus.textContent = '';
+    side.avifCancel.hidden = side.avifRetry.hidden = true;
     side.oxipngCancel.hidden = side.oxipngRetry.hidden = true;
     delete side.output.dataset.change;
   }
@@ -545,8 +628,21 @@ export function mount(container: HTMLElement): () => void {
   function showSettings(side: Side) {
     const encoder = encoders[side.encoder];
     side.caption.textContent = side.label + ' · ' + encoder.label;
-    side.qualityLabel.hidden = !encoder.hasQuality;
+    side.qualityLabel.hidden = side.encoder !== 'image/jpeg';
     side.qualityValue.textContent = side.quality.toFixed(2);
+    side.avifSettings.hidden = side.encoder !== 'image/avif';
+    const shownAvifOptions = effectiveAvifOptions(side.avifOptions);
+    side.avifQuality.value = String(shownAvifOptions.quality);
+    side.avifQualityValue.textContent = String(shownAvifOptions.quality);
+    side.avifAlpha.value = String(shownAvifOptions.qualityAlpha);
+    side.avifAlphaValue.textContent = String(shownAvifOptions.qualityAlpha);
+    side.avifSpeed.value = String(shownAvifOptions.speed);
+    side.avifSpeedValue.textContent = String(shownAvifOptions.speed);
+    side.avifSubsample.value = String(shownAvifOptions.subsample);
+    side.avifLossless.checked = side.avifOptions.lossless;
+    side.avifQuality.disabled = side.avifLossless.checked;
+    side.avifAlpha.disabled = side.avifLossless.checked;
+    side.avifSubsample.disabled = side.avifLossless.checked;
     side.oxipngSettings.hidden = side.encoder !== 'oxipng';
     side.oxipngLevel.value = String(side.oxipngOptions.level);
     side.oxipngInterlace.checked = side.oxipngOptions.interlace;
@@ -559,14 +655,20 @@ export function mount(container: HTMLElement): () => void {
     const { file, bitmap } = source;
     const { type, extension, hasQuality } = encoders[side.encoder];
     const other = side === left ? right : left;
+    const stem = file.name.replace(/\.[^.]*$/, '') || 'image';
     try {
       let blob: Blob = file;
       let filename = file.name;
       if (side.encoder === 'oxipng') {
         blob = await requestOxipng(side, bitmap, currentInput);
         if (!isCurrent()) return;
-        const stem = file.name.replace(/\.[^.]*$/, '') || 'image';
         filename = `${stem}-${side.id}-oxipng-o${side.oxipngOptions.level}.png`;
+      } else if (side.encoder === 'image/avif') {
+        const encoding = requestAvif(side, bitmap, currentInput);
+        side.result = { status: 'pending', encoding };
+        blob = await encoding;
+        if (!isCurrent()) return;
+        filename = avifFilename(stem, side.id, side.avifOptions);
       } else if (type) {
         let encoding: Promise<Blob> | undefined;
         // 設定が一致する間は、もう片側の変換処理か成功済みのBlobを共有する。
@@ -593,9 +695,14 @@ export function mount(container: HTMLElement): () => void {
       }
       side.result = { status: 'ready', blob, filename };
       const restoreOxipngFocus = side.encoder === 'oxipng' && document.activeElement === side.oxipngCancel;
+      const restoreAvifFocus = side.encoder === 'image/avif' && document.activeElement === side.avifCancel;
       if (side.encoder === 'oxipng') {
         side.oxipngStatus.textContent = 'Oxipngの変換が完了しました。';
         side.oxipngCancel.hidden = side.oxipngRetry.hidden = true;
+      }
+      if (side.encoder === 'image/avif') {
+        side.avifStatus.textContent = 'AVIF変換が完了しました。';
+        side.avifCancel.hidden = side.avifRetry.hidden = true;
       }
       side.output.dataset.change = blob.size < file.size ? 'reduction' : blob.size > file.size ? 'increase' : 'same';
       side.sizeChange.textContent = sizeChange(file.size, blob.size);
@@ -606,11 +713,14 @@ export function mount(container: HTMLElement): () => void {
       side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
       if (restoreOxipngFocus) side.save.focus({ preventScroll: true });
+      if (restoreAvifFocus) side.save.focus({ preventScroll: true });
       updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
       const isOxipng = side.encoder === 'oxipng';
+      const isAvif = side.encoder === 'image/avif';
       const restoreOxipngFocus = isOxipng && document.activeElement === side.oxipngCancel;
+      const restoreAvifFocus = isAvif && document.activeElement === side.avifCancel;
       invalidate(side);
       side.result = { status: 'failed' };
       const message = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
@@ -619,6 +729,11 @@ export function mount(container: HTMLElement): () => void {
         side.oxipngStatus.textContent = 'Oxipngの変換に失敗しました。もう一度お試しください。';
         side.oxipngRetry.hidden = false;
         if (restoreOxipngFocus) side.oxipngRetry.focus({ preventScroll: true });
+      }
+      if (isAvif) {
+        side.avifStatus.textContent = 'AVIF変換に失敗しました。もう一度お試しください。';
+        side.avifRetry.hidden = false;
+        if (restoreAvifFocus) side.avifRetry.focus({ preventScroll: true });
       }
       updateEvaluation();
     }
@@ -639,6 +754,15 @@ export function mount(container: HTMLElement): () => void {
       side.oxipngStatus.textContent = 'Oxipngの変換を待っています…';
       side.oxipngCancel.hidden = false;
       side.oxipngRetry.hidden = true;
+    }
+    if (side.encoder === 'image/avif') {
+      const options = validateAvifOptions(side.avifOptions);
+      side.avifKey = avifKey(inputGeneration, options);
+      const active = avifJobs.get(side.avifKey);
+      if (active) active.consumers.add(side);
+      side.avifStatus.textContent = 'AVIF変換を待っています…';
+      side.avifCancel.hidden = false;
+      side.avifRetry.hidden = true;
     }
     updateEvaluation();
     if (delay === 0) {
@@ -687,10 +811,10 @@ export function mount(container: HTMLElement): () => void {
       return false;
     }
     const file = files[0]!;
-    if (file.type && !['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    if (file.type && !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(file.type)) {
       reading = undefined;
       inputStatus.textContent = '';
-      setIconMessage(inputError, CircleAlert, 'JPEG・PNG・WebPの画像を選択してください。');
+      setIconMessage(inputError, CircleAlert, 'JPEG・PNG・WebP・AVIFの画像を選択してください。');
       return false;
     }
     const changedAt = selection.changedAt;
@@ -928,6 +1052,29 @@ export function mount(container: HTMLElement): () => void {
       side.oxipngOptions = { ...side.oxipngOptions, optimiseAlpha: side.oxipngAlpha.checked };
       updateSettings(side, 180);
     }, options);
+    for (const [inputElement, outputElement, key] of [
+      [side.avifQuality, side.avifQualityValue, 'quality'],
+      [side.avifAlpha, side.avifAlphaValue, 'qualityAlpha'],
+      [side.avifSpeed, side.avifSpeedValue, 'speed'],
+    ] as const) {
+      inputElement.addEventListener('input', () => {
+        const value = inputElement.valueAsNumber;
+        if (side.avifOptions[key] === value) return;
+        side.avifOptions = validateAvifOptions({ ...side.avifOptions, [key]: value });
+        outputElement.textContent = String(side.avifOptions[key]);
+        updateSettings(side, 180);
+      }, options);
+    }
+    side.avifSubsample.addEventListener('change', () => {
+      const updated = validateAvifOptions({ ...side.avifOptions, subsample: Number(side.avifSubsample.value) });
+      if (updated.subsample === side.avifOptions.subsample) return;
+      side.avifOptions = updated;
+      updateSettings(side, 180);
+    }, options);
+    side.avifLossless.addEventListener('change', () => {
+      side.avifOptions = validateAvifOptions({ ...side.avifOptions, lossless: side.avifLossless.checked });
+      updateSettings(side, 180);
+    }, options);
     side.qualityInput.addEventListener('input', () => {
       if (!encoders[side.encoder].hasQuality || side.quality === side.qualityInput.valueAsNumber) return;
       side.quality = side.qualityInput.valueAsNumber;
@@ -955,6 +1102,21 @@ export function mount(container: HTMLElement): () => void {
       if (side.encoder === 'oxipng' && source) {
         convertSide(side);
         side.oxipngCancel.focus({ preventScroll: true });
+      }
+    }, options);
+    side.avifCancel.addEventListener('click', () => {
+      if (side.encoder !== 'image/avif' || side.result.status !== 'pending') return;
+      invalidate(side);
+      side.result = { status: 'cancelled' };
+      side.avifStatus.textContent = 'AVIF変換を中止しました。再試行できます。';
+      side.avifRetry.hidden = false;
+      side.avifRetry.focus({ preventScroll: true });
+      updateEvaluation();
+    }, options);
+    side.avifRetry.addEventListener('click', () => {
+      if (side.encoder === 'image/avif' && source) {
+        updateSettings(side);
+        side.avifCancel.focus({ preventScroll: true });
       }
     }, options);
   }

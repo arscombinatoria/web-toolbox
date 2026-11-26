@@ -6,8 +6,11 @@ import { loadScorer, scoreImages } from './wasm';
 
 afterEach(() => vi.unstubAllGlobals());
 
-it('Browser JPEGのみ採点し、各辺8 px・10,000,000画素の境界を適用する', () => {
-  expect([isEvaluable('original'), isEvaluable('image/png'), isEvaluable('image/jpeg')]).toEqual([false, false, true]);
+it('JPEGと非可逆AVIFのみ採点し、各辺8 px・10,000,000画素の境界を適用する', () => {
+  expect([
+    isEvaluable('original'), isEvaluable('image/png'), isEvaluable('image/jpeg'),
+    isEvaluable('image/avif'), isEvaluable('image/avif', true),
+  ]).toEqual([false, false, true, true, false]);
   for (const [width, height] of [[8, 8], [1024, 1025], [2048, 512], [2047, 2049], [2500, 4000], [4096, 1024]] as const) {
     expect(evaluationLimit(width, height)).toBeUndefined();
   }

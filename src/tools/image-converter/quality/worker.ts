@@ -5,7 +5,7 @@ import { loadScorer, scoreImages } from './wasm';
 
 export interface EvaluationRequest {
   reference: ImageBitmap;
-  jpegs: readonly Blob[];
+  images: readonly Blob[];
   lockName?: string;
 }
 
@@ -13,7 +13,7 @@ export type EvaluationReply = { index: number; score: number } | { error: true }
 
 const worker = self as DedicatedWorkerGlobalScope;
 
-async function evaluate({ reference, jpegs }: EvaluationRequest) {
+async function evaluate({ reference, images }: EvaluationRequest) {
   try {
     const { width, height } = reference;
     const limit = evaluationLimit(width, height);
@@ -31,8 +31,8 @@ async function evaluate({ reference, jpegs }: EvaluationRequest) {
 
       const original = readPixels(reference);
       const scorer = await loadScorer();
-      for (const [index, jpeg] of jpegs.entries()) {
-        const decoded = await createImageBitmap(jpeg, { imageOrientation: 'from-image', colorSpaceConversion: 'default' });
+      for (const [index, image] of images.entries()) {
+        const decoded = await createImageBitmap(image, { imageOrientation: 'from-image', colorSpaceConversion: 'default' });
         let score: number;
         try {
           score = scoreImages(scorer, original, readPixels(decoded));
