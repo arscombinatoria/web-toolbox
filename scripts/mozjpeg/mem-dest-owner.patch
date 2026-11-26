@@ -1,0 +1,83 @@
+diff --git a/jcmaster.c b/jcmaster.c
+index b1ce15c..ecfec3b 100644
+--- a/jcmaster.c
++++ b/jcmaster.c
+@@ -24,6 +24,21 @@
+ #include "jmemsys.h"
+ #include "jcmaster.h"
+ 
++GLOBAL(void) jpeg_reset_standard_huffman_tables(j_compress_ptr cinfo);
++
++GLOBAL(void)
++jpeg_cleanup_scan_buffers (j_compress_ptr cinfo)
++{
++  my_master_ptr master = (my_master_ptr)cinfo->master;
++  int i;
++
++  if (master == NULL)
++    return;
++  for (i = 0; i < 64; i++) {
++    free(master->scan_buffer[i]);
++    master->scan_buffer[i] = NULL;
++  }
++}
+ 
+   /*
+  * Support routines that do various essential calculations.
+@@ -511,6 +526,9 @@ prepare_for_pass (j_compress_ptr cinfo)
+     FALLTHROUGH                 /*FALLTHROUGH*/
+   case output_pass:
+     /* Do a data-output pass. */
++    if (!cinfo->optimize_coding && master->pass_number > 0)
++      jpeg_reset_standard_huffman_tables(cinfo);
++
+     /* We need not repeat per-scan setup if prior optimization pass did it. */
+     if (! cinfo->optimize_coding) {
+       select_scan_parameters(cinfo);
+@@ -803,9 +821,7 @@ select_scans (j_compress_ptr cinfo, int next_scan_number)
+     }
+     
+     /* free the memory allocated for buffers */
+-    for (i = 0; i < cinfo->num_scans; i++)
+-      if (master->scan_buffer[i])
+-        free(master->scan_buffer[i]);
++    jpeg_cleanup_scan_buffers(cinfo);
+   }
+ }
+ 
+diff --git a/jcparam.c b/jcparam.c
+index a432a49..669c8c5 100644
+--- a/jcparam.c
++++ b/jcparam.c
+@@ -20,6 +20,17 @@
+ #include "jpeglib.h"
+ #include "jstdhuff.c"
+ 
++GLOBAL(void)
++jpeg_reset_standard_huffman_tables(j_compress_ptr cinfo)
++{
++  int i;
++  for (i = 0; i < NUM_HUFF_TBLS; i++) {
++    cinfo->dc_huff_tbl_ptrs[i] = NULL;
++    cinfo->ac_huff_tbl_ptrs[i] = NULL;
++  }
++  std_huff_tables((j_common_ptr)cinfo);
++}
++
+ 
+ /*
+  * Quantization table setup routines
+diff --git a/jdatadst.c b/jdatadst.c
+index 37b80c4..874db59 100644
+--- a/jdatadst.c
++++ b/jdatadst.c
+@@ -143,6 +143,9 @@ empty_mem_output_buffer (j_compress_ptr cinfo)
+ 
+   dest->newbuffer = nextbuffer;
+ 
++  /* Keep the caller's owner pointer current if a later error longjmps. */
++  *dest->outbuffer = nextbuffer;
++
+   dest->pub.next_output_byte = nextbuffer + dest->bufsize;
+   dest->pub.free_in_buffer = dest->bufsize;
+ 

@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { decode, encode } from './encoder';
 import { encodeOxipng } from './oxipng/client';
 import { encodeAvif } from './avif/client';
+import { encodeMozjpeg } from './mozjpeg/client';
 import { encodeWebp } from './webp/client';
 import { mount } from './index';
 
@@ -11,6 +12,7 @@ vi.mock('./encoder', async importOriginal => ({
 }));
 vi.mock('./oxipng/client', () => ({ encodeOxipng: vi.fn() }));
 vi.mock('./avif/client', () => ({ encodeAvif: vi.fn() }));
+vi.mock('./mozjpeg/client', () => ({ encodeMozjpeg: vi.fn() }));
 vi.mock('./webp/client', () => ({ encodeWebp: vi.fn() }));
 
 function deferred<T>() {
@@ -43,6 +45,7 @@ function setup(active = bitmap()) {
   vi.mocked(encodeOxipng).mockResolvedValue(oxipngPng);
   vi.mocked(encodeAvif).mockResolvedValue(avif);
   vi.mocked(encodeWebp).mockResolvedValue(webp);
+  vi.mocked(encodeMozjpeg).mockResolvedValue(jpeg);
   let urlNumber = 0;
   const createUrl = vi.fn((_blob: Blob) => 'blob:result-' + ++urlNumber);
   const revokeUrl = vi.fn();
@@ -91,6 +94,12 @@ function setup(active = bitmap()) {
       avifStatus: panel.querySelector<HTMLElement>('.image-avif-status')!,
       avifCancel: panel.querySelector<HTMLButtonElement>('.image-avif-cancel')!,
       avifRetry: panel.querySelector<HTMLButtonElement>('.image-avif-retry')!,
+      mozjpegQuality: panel.querySelector<HTMLInputElement>('.image-mozjpeg-quality')!,
+      mozjpegSubsample: panel.querySelector<HTMLSelectElement>('.image-mozjpeg-subsample')!,
+      mozjpegProgressive: panel.querySelector<HTMLInputElement>('.image-mozjpeg-progressive')!,
+      mozjpegOptimize: panel.querySelector<HTMLInputElement>('.image-mozjpeg-optimize')!,
+      mozjpegCancel: panel.querySelector<HTMLButtonElement>('.image-mozjpeg-cancel')!,
+      mozjpegRetry: panel.querySelector<HTMLButtonElement>('.image-mozjpeg-retry')!,
       webpQuality: panel.querySelector<HTMLInputElement>('.image-webp-quality')!,
       webpAlpha: panel.querySelector<HTMLInputElement>('.image-webp-alpha')!,
       webpMethod: panel.querySelector<HTMLInputElement>('.image-webp-method')!,
@@ -550,6 +559,7 @@ it('左右の出力形式はOriginalを先頭にし、表示名のアルファ�
     ['image/avif', 'AVIF (libaom)'],
     ['image/jpeg', 'Browser JPEG'],
     ['image/png', 'Browser PNG'],
+    ['mozjpeg', 'JPEG (MozJPEG)'],
     ['oxipng', 'Oxipng'],
     ['image/webp', 'WebP (libwebp)'],
   ];
@@ -1601,4 +1611,140 @@ it('WebP drops queued and late results after input and settings changes', async 
   await flush();
   expect(left.preview.src).toBe(preview);
   expect(createUrl.mock.calls.some(([blob]) => blob === replaced)).toBe(false);
+});
+
+it('MozJPEG debounces independent settings and restores the baseline Huffman choice', async () => {
+  const { choose, left, right } = setup();
+  left.select('mozjpeg');
+  right.select('mozjpeg');
+  choose();
+  await flush();
+  expect(encodeMozjpeg).toHaveBeenCalledOnce();
+  expect(left.mozjpegOptimize.checked).toBe(true);
+  expect(left.mozjpegOptimize.disabled).toBe(true);
+  left.mozjpegProgressive.click();
+  left.mozjpegOptimize.click();
+  left.mozjpegSubsample.value = '422';
+  left.mozjpegSubsample.dispatchEvent(new Event('change'));
+  left.setRange(left.mozjpegQuality, 100);
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeMozjpeg).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(encodeMozjpeg).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(encodeMozjpeg).mock.lastCall?.[1]).toEqual({
+    quality: 100, subsample: '422', progressive: false, optimizeCoding: false,
+  });
+  left.mozjpegProgressive.click();
+  expect(left.mozjpegOptimize.checked).toBe(true);
+  expect(left.mozjpegOptimize.disabled).toBe(true);
+  left.select('image/jpeg');
+  left.select('mozjpeg');
+  left.mozjpegProgressive.click();
+  expect(left.mozjpegOptimize.checked).toBe(false);
+  expect(left.mozjpegOptimize.disabled).toBe(false);
+  expect(left.mozjpegQuality.value).toBe('100');
+  expect(left.mozjpegSubsample.value).toBe('422');
+  expect(right.mozjpegQuality.value).toBe('75');
+  expect(right.mozjpegSubsample.value).toBe('420');
+  expect(right.mozjpegOptimize.disabled).toBe(true);
+});
+
+it('MozJPEG shares pending jobs and completed Blobs and cancels at last detach', async () => {
+  const { choose, left, right, createUrl, unmount } = setup();
+  const pending = deferred<Blob>();
+  vi.mocked(encodeMozjpeg).mockImplementationOnce(() => pending.promise);
+  left.select('mozjpeg');
+  right.select('mozjpeg');
+  left.mozjpegProgressive.click();
+  left.mozjpegOptimize.click();
+  left.mozjpegProgressive.click();
+  choose();
+  await flush();
+  expect(encodeMozjpeg).toHaveBeenCalledOnce();
+  const signal = vi.mocked(encodeMozjpeg).mock.lastCall![2];
+  left.mozjpegCancel.click();
+  expect(signal.aborted).toBe(false);
+  pending.resolve(jpeg);
+  await flush();
+  expect(right.save.disabled).toBe(false);
+  expect(left.save.disabled).toBe(true);
+  left.mozjpegRetry.click();
+  await flush();
+  expect(encodeMozjpeg).toHaveBeenCalledOnce();
+  expect(createUrl.mock.calls.slice(-2).map(([blob]) => blob)).toEqual([jpeg, jpeg]);
+
+  const replacement = deferred<Blob>();
+  vi.mocked(encodeMozjpeg).mockImplementationOnce(() => replacement.promise);
+  choose('replacement.png');
+  await flush();
+  const replacementSignal = vi.mocked(encodeMozjpeg).mock.lastCall![2];
+  left.setRange(left.mozjpegQuality, 90);
+  expect(replacementSignal.aborted).toBe(false);
+  right.mozjpegCancel.click();
+  expect(replacementSignal.aborted).toBe(true);
+  await vi.advanceTimersByTimeAsync(180);
+  const preview = left.preview.src;
+  const stale = new Blob(['stale'], { type: 'image/jpeg' });
+  replacement.resolve(stale);
+  await flush();
+  expect(left.preview.src).toBe(preview);
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+
+  const afterDispose = deferred<Blob>();
+  vi.mocked(encodeMozjpeg).mockImplementationOnce(() => afterDispose.promise);
+  right.select('original');
+  choose('third.png');
+  await flush();
+  const lastSignal = vi.mocked(encodeMozjpeg).mock.lastCall![2];
+  unmount();
+  expect(lastSignal.aborted).toBe(true);
+  afterDispose.resolve(stale);
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+});
+
+it('MozJPEG scores a shared quality-100 Blob once and reuses the result after manual evaluation', async () => {
+  const { choose, left, right, evaluate, auto, cancel } = setup();
+  const { workers } = mockScoring();
+  auto.checked = false;
+  auto.dispatchEvent(new Event('change'));
+  left.select('mozjpeg');
+  right.select('mozjpeg');
+  left.setRange(left.mozjpegQuality, 100);
+  right.setRange(right.mozjpegQuality, 100);
+  choose();
+  await flush();
+  evaluate.click();
+  await flush();
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
+  cancel.click();
+  expect(workers[0]!.terminate).toHaveBeenCalledOnce();
+
+  evaluate.click();
+  await flush();
+  workers[1]!.reply({ index: 0, score: 81.56 });
+  await flush();
+  expect(left.score.textContent).toBe('81.6');
+  expect(right.score.textContent).toBe('81.6');
+  left.select('original');
+  left.select('mozjpeg');
+  await flush();
+  expect(left.score.textContent).toBe('81.6');
+  expect(workers).toHaveLength(2);
+});
+
+it('MozJPEG clears automatic evaluation after conversion failure and scores a successful retry', async () => {
+  const { choose, left, right } = setup();
+  const { workers } = mockScoring();
+  vi.mocked(encodeMozjpeg).mockRejectedValueOnce(new Error('Wasm HTTP 503'));
+  left.select('mozjpeg');
+  right.select('original');
+  choose();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(left.mozjpegRetry.hidden).toBe(false);
+  expect(left.error.textContent).toContain('503');
+  expect(workers).toHaveLength(0);
+  left.mozjpegRetry.click();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
 });

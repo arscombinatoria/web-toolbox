@@ -6,6 +6,8 @@ import { encodeOxipng } from './oxipng/client';
 import { defaultOxipngOptions, oxipngKey, validateOxipngOptions, type OxipngOptions } from './oxipng/options';
 import { encodeAvif } from './avif/client';
 import { avifFilename, avifKey, defaultAvifOptions, effectiveAvifOptions, isAvifLossless, validateAvifOptions, type AvifOptions } from './avif/options';
+import { encodeMozjpeg } from './mozjpeg/client';
+import { defaultMozjpegOptions, effectiveMozjpegOptions, mozjpegFilename, mozjpegKey, validateMozjpegOptions, type MozjpegOptions } from './mozjpeg/options';
 import { encodeWebp } from './webp/client';
 import { defaultWebpOptions, effectiveWebpOptions, validateWebpOptions, webpFilename, webpKey, type WebpOptions } from './webp/options';
 import { evaluateImages } from './quality/client';
@@ -99,6 +101,20 @@ export function mount(container: HTMLElement): () => void {
                 <div class="image-avif-actions">
                   <button type="button" class="image-avif-cancel" hidden aria-label="${label}側のAVIF変換を中止">AVIF変換を中止</button>
                   <button type="button" class="image-avif-retry" hidden aria-label="${label}側のAVIF変換を再試行">AVIF変換を再試行</button>
+                </div>
+              </div>
+              <div class="image-mozjpeg-settings" hidden>
+                <label>MozJPEG品質 <input type="range" class="image-mozjpeg-quality" aria-label="${label}のMozJPEG品質" min="1" max="100" step="1"><span></span></label>
+                <label>色差サンプリング <select class="image-mozjpeg-subsample" aria-label="${label}のMozJPEG色差サンプリング">
+                  <option value="420">4:2:0</option><option value="422">4:2:2</option><option value="444">4:4:4</option>
+                </select></label>
+                <label><input type="checkbox" class="image-mozjpeg-progressive" aria-label="${label}のMozJPEGプログレッシブJPEG"> プログレッシブJPEG</label>
+                <label><input type="checkbox" class="image-mozjpeg-optimize" aria-label="${label}のMozJPEGハフマン符号化最適化"> ハフマン符号化最適化</label>
+                <p class="image-note">非可逆圧縮です。透明部分は白になります。大きな画像や設定によって変換に時間がかかります。</p>
+                <p class="image-mozjpeg-status" role="status" aria-atomic="true"></p>
+                <div class="image-mozjpeg-actions">
+                  <button type="button" class="image-mozjpeg-cancel" hidden aria-label="${label}側のMozJPEG変換を中止">MozJPEG変換を中止</button>
+                  <button type="button" class="image-mozjpeg-retry" hidden aria-label="${label}側のMozJPEG変換を再試行">MozJPEG変換を再試行</button>
                 </div>
               </div>
               <div class="image-webp-settings" hidden>
@@ -272,6 +288,8 @@ export function mount(container: HTMLElement): () => void {
       quality: initialQuality,
       avifOptions: { ...initialAvifOptions } as AvifOptions,
       avifKey: undefined as string | undefined,
+      mozjpegOptions: { ...defaultMozjpegOptions },
+      mozjpegKey: undefined as string | undefined,
       webpOptions: { ...defaultWebpOptions },
       webpKey: undefined as string | undefined,
       oxipngOptions: { ...defaultOxipngOptions } as OxipngOptions,
@@ -298,6 +316,15 @@ export function mount(container: HTMLElement): () => void {
       avifStatus: panel.querySelector<HTMLElement>('.image-avif-status')!,
       avifCancel: panel.querySelector<HTMLButtonElement>('.image-avif-cancel')!,
       avifRetry: panel.querySelector<HTMLButtonElement>('.image-avif-retry')!,
+      mozjpegSettings: panel.querySelector<HTMLElement>('.image-mozjpeg-settings')!,
+      mozjpegQuality: panel.querySelector<HTMLInputElement>('.image-mozjpeg-quality')!,
+      mozjpegQualityValue: panel.querySelector('.image-mozjpeg-quality + span')!,
+      mozjpegSubsample: panel.querySelector<HTMLSelectElement>('.image-mozjpeg-subsample')!,
+      mozjpegProgressive: panel.querySelector<HTMLInputElement>('.image-mozjpeg-progressive')!,
+      mozjpegOptimize: panel.querySelector<HTMLInputElement>('.image-mozjpeg-optimize')!,
+      mozjpegStatus: panel.querySelector<HTMLElement>('.image-mozjpeg-status')!,
+      mozjpegCancel: panel.querySelector<HTMLButtonElement>('.image-mozjpeg-cancel')!,
+      mozjpegRetry: panel.querySelector<HTMLButtonElement>('.image-mozjpeg-retry')!,
       webpSettings: panel.querySelector<HTMLElement>('.image-webp-settings')!,
       webpQualityLabel: panel.querySelector('.image-webp-quality-label')!,
       webpQuality: panel.querySelector<HTMLInputElement>('.image-webp-quality')!,
@@ -330,6 +357,7 @@ export function mount(container: HTMLElement): () => void {
   type Side = ReturnType<typeof createSide>;
   const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
   const sides = [left, right];
+  const mozjpegJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const webpJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const avifJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const oxipngJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
@@ -473,6 +501,53 @@ export function mount(container: HTMLElement): () => void {
     side.webpStatus.textContent = job.started ? 'WebPに変換しています…' : 'WebP変換を待っています…';
     side.webpCancel.hidden = false;
     side.webpRetry.hidden = true;
+    return job.blob ? Promise.resolve(job.blob) : job.promise!;
+  }
+
+  function detachMozjpeg(side: Side) {
+    const key = side.mozjpegKey;
+    side.mozjpegKey = undefined;
+    if (!key) return;
+    const job = mozjpegJobs.get(key);
+    if (!job) return;
+    job.consumers.delete(side);
+    if (!job.consumers.size) {
+      if (!job.blob) job.controller.abort();
+      mozjpegJobs.delete(key);
+    }
+  }
+
+  function requestMozjpeg(side: Side, bitmap: ImageBitmap, generation: number): Promise<Blob> {
+    const options = validateMozjpegOptions(side.mozjpegOptions);
+    const key = mozjpegKey(generation, options);
+    let job = mozjpegJobs.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      job = { controller, consumers: new Set(), started: false };
+      mozjpegJobs.set(key, job);
+      const current = job;
+      current.promise = encodeMozjpeg(bitmap, options, controller.signal, () => {
+        if (mozjpegJobs.get(key) !== current) return;
+        current.started = true;
+        for (const consumer of current.consumers) {
+          if (consumer.mozjpegKey === key) consumer.mozjpegStatus.textContent = 'MozJPEGに変換しています…';
+        }
+      }).then(blob => {
+        if (mozjpegJobs.get(key) === current && current.consumers.size) current.blob = blob;
+        return blob;
+      }, cause => {
+        if (mozjpegJobs.get(key) === current) mozjpegJobs.delete(key);
+        throw cause;
+      });
+      for (const pending of sides) {
+        if (pending.mozjpegKey === key && pending.result.status === 'pending') current.consumers.add(pending);
+      }
+    }
+    job.consumers.add(side);
+    side.mozjpegKey = key;
+    side.mozjpegStatus.textContent = job.started ? 'MozJPEGに変換しています…' : 'MozJPEG変換を待っています…';
+    side.mozjpegCancel.hidden = false;
+    side.mozjpegRetry.hidden = true;
     return job.blob ? Promise.resolve(job.blob) : job.promise!;
   }
 
@@ -626,6 +701,7 @@ export function mount(container: HTMLElement): () => void {
 
   function invalidate(side: Side) {
     detachAvif(side);
+    detachMozjpeg(side);
     detachWebp(side);
     detachOxipng(side);
     ++side.generation;
@@ -641,6 +717,8 @@ export function mount(container: HTMLElement): () => void {
     side.sizeChange.textContent = side.outputSize.textContent = side.error.textContent = '';
     side.oxipngStatus.textContent = '';
     side.avifStatus.textContent = '';
+    side.mozjpegStatus.textContent = '';
+    side.mozjpegCancel.hidden = side.mozjpegRetry.hidden = true;
     side.webpStatus.textContent = '';
     side.webpCancel.hidden = side.webpRetry.hidden = true;
     side.avifCancel.hidden = side.avifRetry.hidden = true;
@@ -736,6 +814,13 @@ export function mount(container: HTMLElement): () => void {
     side.avifQuality.disabled = side.avifLossless.checked;
     side.avifAlpha.disabled = side.avifLossless.checked;
     side.avifSubsample.disabled = side.avifLossless.checked;
+    side.mozjpegSettings.hidden = side.encoder !== 'mozjpeg';
+    const shownMozjpegOptions = effectiveMozjpegOptions(side.mozjpegOptions);
+    side.mozjpegQuality.value = side.mozjpegQualityValue.textContent = String(shownMozjpegOptions.quality);
+    side.mozjpegSubsample.value = shownMozjpegOptions.subsample;
+    side.mozjpegProgressive.checked = shownMozjpegOptions.progressive;
+    side.mozjpegOptimize.checked = shownMozjpegOptions.optimizeCoding;
+    side.mozjpegOptimize.disabled = shownMozjpegOptions.progressive;
     side.webpSettings.hidden = side.encoder !== 'image/webp';
     const shownWebpOptions = effectiveWebpOptions(side.webpOptions);
     const webpQualityLabel = side.webpOptions.lossless ? '圧縮効率' : 'WebP品質';
@@ -773,6 +858,10 @@ export function mount(container: HTMLElement): () => void {
         blob = await encoding;
         if (!isCurrent()) return;
         filename = avifFilename(stem, side.id, side.avifOptions);
+      } else if (side.encoder === 'mozjpeg') {
+        blob = await requestMozjpeg(side, bitmap, currentInput);
+        if (!isCurrent()) return;
+        filename = mozjpegFilename(stem, side.id, side.mozjpegOptions);
       } else if (side.encoder === 'image/webp') {
         blob = await requestWebp(side, bitmap, currentInput);
         if (!isCurrent()) return;
@@ -812,6 +901,11 @@ export function mount(container: HTMLElement): () => void {
         side.avifStatus.textContent = 'AVIF変換が完了しました。';
         side.avifCancel.hidden = side.avifRetry.hidden = true;
       }
+      const restoreMozjpegFocus = side.encoder === 'mozjpeg' && document.activeElement === side.mozjpegCancel;
+      if (side.encoder === 'mozjpeg') {
+        side.mozjpegStatus.textContent = 'MozJPEG変換が完了しました。';
+        side.mozjpegCancel.hidden = side.mozjpegRetry.hidden = true;
+      }
       const restoreWebpFocus = side.encoder === 'image/webp' && document.activeElement === side.webpCancel;
       if (side.encoder === 'image/webp') {
         side.webpStatus.textContent = 'WebP変換が完了しました。';
@@ -825,7 +919,7 @@ export function mount(container: HTMLElement): () => void {
       convertedSize.textContent = ' → 出力 ' + formatFileSize(blob.size);
       side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
-      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus) side.save.focus({ preventScroll: true });
+      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus || restoreMozjpegFocus) side.save.focus({ preventScroll: true });
       updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
@@ -833,6 +927,8 @@ export function mount(container: HTMLElement): () => void {
       const isAvif = side.encoder === 'image/avif';
       const restoreOxipngFocus = isOxipng && document.activeElement === side.oxipngCancel;
       const restoreAvifFocus = isAvif && document.activeElement === side.avifCancel;
+      const isMozjpeg = side.encoder === 'mozjpeg';
+      const restoreMozjpegFocus = isMozjpeg && document.activeElement === side.mozjpegCancel;
       const isWebp = side.encoder === 'image/webp';
       const restoreWebpFocus = isWebp && document.activeElement === side.webpCancel;
       invalidate(side);
@@ -848,6 +944,11 @@ export function mount(container: HTMLElement): () => void {
         side.avifStatus.textContent = 'AVIF変換に失敗しました。もう一度お試しください。';
         side.avifRetry.hidden = false;
         if (restoreAvifFocus) side.avifRetry.focus({ preventScroll: true });
+      }
+      if (isMozjpeg) {
+        side.mozjpegStatus.textContent = 'MozJPEG変換に失敗しました。もう一度お試しください。';
+        side.mozjpegRetry.hidden = false;
+        if (restoreMozjpegFocus) side.mozjpegRetry.focus({ preventScroll: true });
       }
       if (isWebp) {
         side.webpStatus.textContent = 'WebP変換に失敗しました。もう一度お試しください。';
@@ -882,6 +983,14 @@ export function mount(container: HTMLElement): () => void {
       side.avifStatus.textContent = 'AVIF変換を待っています…';
       side.avifCancel.hidden = false;
       side.avifRetry.hidden = true;
+    }
+    if (side.encoder === 'mozjpeg') {
+      const key = mozjpegKey(currentInput, side.mozjpegOptions);
+      side.mozjpegKey = key;
+      const active = mozjpegJobs.get(key);
+      if (active) active.consumers.add(side);
+      side.mozjpegStatus.textContent = active?.started ? 'MozJPEGに変換しています…' : 'MozJPEG変換を待っています…';
+      side.mozjpegCancel.hidden = false;
     }
     if (side.encoder === 'image/webp') {
       const key = webpKey(currentInput, side.webpOptions);
@@ -1202,6 +1311,24 @@ export function mount(container: HTMLElement): () => void {
       side.avifOptions = validateAvifOptions({ ...side.avifOptions, lossless: side.avifLossless.checked });
       updateSettings(side, 180);
     }, options);
+    const updateMozjpegOptions = (change: Partial<MozjpegOptions>) => {
+      const updated = validateMozjpegOptions({ ...side.mozjpegOptions, ...change });
+      const previousKey = mozjpegKey(inputGeneration, side.mozjpegOptions);
+      side.mozjpegOptions = updated;
+      if (mozjpegKey(inputGeneration, updated) !== previousKey) updateSettings(side, 180);
+    };
+    side.mozjpegQuality.addEventListener('input', () => {
+      updateMozjpegOptions({ quality: side.mozjpegQuality.valueAsNumber });
+    }, options);
+    side.mozjpegSubsample.addEventListener('change', () => {
+      updateMozjpegOptions({ subsample: side.mozjpegSubsample.value as MozjpegOptions['subsample'] });
+    }, options);
+    side.mozjpegProgressive.addEventListener('change', () => {
+      updateMozjpegOptions({ progressive: side.mozjpegProgressive.checked });
+    }, options);
+    side.mozjpegOptimize.addEventListener('change', () => {
+      if (!side.mozjpegOptions.progressive) updateMozjpegOptions({ optimizeCoding: side.mozjpegOptimize.checked });
+    }, options);
     const updateWebpOptions = (change: Partial<WebpOptions>) => {
       const updated = validateWebpOptions({ ...side.webpOptions, ...change });
       const previousKey = webpKey(inputGeneration, side.webpOptions);
@@ -1261,6 +1388,21 @@ export function mount(container: HTMLElement): () => void {
       if (side.encoder === 'image/avif' && source) {
         updateSettings(side);
         side.avifCancel.focus({ preventScroll: true });
+      }
+    }, options);
+    side.mozjpegCancel.addEventListener('click', () => {
+      if (side.encoder !== 'mozjpeg' || side.result.status !== 'pending') return;
+      invalidate(side);
+      side.result = { status: 'cancelled' };
+      side.mozjpegStatus.textContent = 'MozJPEG変換を中止しました。再試行できます。';
+      side.mozjpegRetry.hidden = false;
+      side.mozjpegRetry.focus({ preventScroll: true });
+      updateEvaluation();
+    }, options);
+    side.mozjpegRetry.addEventListener('click', () => {
+      if (side.encoder === 'mozjpeg' && source) {
+        updateSettings(side);
+        side.mozjpegCancel.focus({ preventScroll: true });
       }
     }, options);
     side.webpCancel.addEventListener('click', () => {

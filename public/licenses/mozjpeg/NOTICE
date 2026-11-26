@@ -1,0 +1,58 @@
+Web Toolbox MozJPEG encoder — third-party notices
+
+MozJPEG 4.1.5
+https://github.com/mozilla/mozjpeg/tree/v4.1.5
+Official source archive:
+https://github.com/mozilla/mozjpeg/archive/refs/tags/v4.1.5.tar.gz
+Annotated tag object: 38f37cf900958c1004c2eea945a773764ba20716
+Source commit (annotated tag target): 6c9f0897afa1c2738d7222a0a9ab49e8b536a267
+Archive SHA-256: 9fcbb7171f6ac383f5b391175d6fb3acde5e64c4c4727274eade84ed0998fcc1
+
+MozJPEG includes libjpeg-turbo under the compatible IJG, modified BSD, and
+zlib licenses. The required IJG notice is in README.ijg; the license roll-up
+and BSD/zlib terms are in LICENSE.md.
+
+The Wasm encoder is built from the verified archive with the repository's
+scripts/mozjpeg/build.sh and scripts/mozjpeg/encoder.c. The small source patch
+mem-dest-owner.patch updates jpeg_mem_dest's caller-owned pointer after each
+successful output-buffer growth, so a later longjmp can free the current
+allocation. It also provides cleanup for progressive scan buffers on success
+and error, and restores standard Huffman tables after trellis analysis when
+baseline output requests non-optimized Huffman coding.
+
+The build is single-threaded, enables WebAssembly SIMD with -msimd128, and
+disables arithmetic coding, 12-bit samples, PNG, TurboJPEG, Java and tools.
+Only the static JPEG library objects referenced by the RGBA compressor are
+linked. Memory growth is enabled with a 1 GiB maximum.
+mozjpeg-4.1.5-encoder.wasm SHA-256:
+94c11ca4c985cc7d1f5448b69af3ea004a165b01e0b2a796456b3604f981c81c
+Two builds with the same pinned inputs and the container network disabled
+produced the same SHA-256. The Wasm code section contains 3,608 SIMD
+instructions. A scalar performance comparison has not been run.
+
+Emscripten 4.0.20 and its system libraries
+https://github.com/emscripten-core/emscripten/tree/4.0.20
+Linux amd64 image emscripten/emsdk digest:
+sha256:33e992367f721747d8008c9141c04fa017139e3557a60e0c80be93a0870fe462
+See LICENSE.Emscripten, AUTHORS.Emscripten and COPYRIGHT.musl. LLVM runtime
+notices are in LICENSE.* and CREDITS.*.
+
+Security review
+The upstream MozJPEG 4.1.5 ChangeLog and NVD entries were reviewed against the
+linked path. The archive includes fixes for encoder and decoder issues listed
+there. Image decoding is done by the browser; this Wasm module receives RGBA
+pixels and contains no JPEG decoder, command-line reader, PPM/BMP/GIF loader,
+arithmetic coder, lossless transformer or TurboJPEG API. PNG and TurboJPEG are
+disabled, which excludes the indexed-PNG tj3LoadImage* division-by-zero
+described by CVE-2026-75466.
+
+Security references:
+https://github.com/mozilla/mozjpeg/blob/v4.1.5/ChangeLog.md
+https://github.com/mozilla/mozjpeg/commit/c76f4a08263b0cea40d2967560ac7c21f6959079 (CVE-2020-17541 fix)
+https://github.com/mozilla/mozjpeg/commit/402a715f82313384ef4606660c32d8678c79f197 (CVE-2014-9092 fix)
+https://nvd.nist.gov/vuln/detail/CVE-2020-13790 (PPM reader)
+https://nvd.nist.gov/vuln/detail/CVE-2021-20205 (cjpeg GIF reader)
+https://nvd.nist.gov/vuln/detail/CVE-2021-29390 (JPEG decoder)
+https://nvd.nist.gov/vuln/detail/CVE-2021-37972 (lossless transform Huffman path)
+https://nvd.nist.gov/vuln/detail/CVE-2014-9092 (fixed upstream Huffman encoder buffer issue)
+https://nvd.nist.gov/vuln/detail/CVE-2026-75466 (TurboJPEG PNG loader)
