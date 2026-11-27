@@ -38,11 +38,10 @@ mkdir -p "$repo/public/licenses/jpegli" \
 
 build_once() {
   local run=$1
-  mkdir -p "$build/$run/work"
   # The build container has no network access. Each build unpacks fresh verified
   # source trees into a separate directory to make the byte comparison useful.
   docker run --rm --platform linux/amd64 --network none \
-    -v "$build:/out" -v "$build/$run/work:/work" -w /work "$image" bash -euc '
+    -v "$build:/out" -w /work "$image" bash -euc '
     run="$1"
     mkdir -p /work/source/third_party /work/source/third_party/highway \
       /work/source/third_party/libjpeg-turbo /work/source/third_party/skcms
