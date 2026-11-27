@@ -32,7 +32,7 @@
     "@jsquash/oxipng": "2.3.0",
     "exceljs-community": "5.2.3",
     "jose": "^6.2.18",
-    "lucide": "^1.78.0",
+    "lucide": "^1.79.0",
     "markdown-it": "15.0.3",
     "string-width": "9.0.0"
   }
