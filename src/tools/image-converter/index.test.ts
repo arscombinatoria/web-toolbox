@@ -5,6 +5,8 @@ import { encodeOxipng } from './oxipng/client';
 import { encodeAvif } from './avif/client';
 import { encodeMozjpeg } from './mozjpeg/client';
 import { encodeWebp } from './webp/client';
+import { encodeJxl } from './jxl/client';
+import { detectJxlSupport, type JxlSupport } from './jxl/support';
 import { mount } from './index';
 
 vi.mock('./encoder', async importOriginal => ({
@@ -14,6 +16,8 @@ vi.mock('./oxipng/client', () => ({ encodeOxipng: vi.fn() }));
 vi.mock('./avif/client', () => ({ encodeAvif: vi.fn() }));
 vi.mock('./mozjpeg/client', () => ({ encodeMozjpeg: vi.fn() }));
 vi.mock('./webp/client', () => ({ encodeWebp: vi.fn() }));
+vi.mock('./jxl/client', () => ({ encodeJxl: vi.fn() }));
+vi.mock('./jxl/support', () => ({ detectJxlSupport: vi.fn() }));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -28,6 +32,7 @@ const png = new Blob(['1'], { type: 'image/png' });
 const oxipngPng = new Blob(['optimized'], { type: 'image/png' });
 const avif = new Blob(['avif'], { type: 'image/avif' });
 const webp = new Blob(['webp'], { type: 'image/webp' });
+const jxl = new Blob(['jxl'], { type: 'image/jxl' });
 let dispose: (() => void) | undefined;
 afterEach(() => {
   dispose?.();
@@ -38,7 +43,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function setup(active = bitmap()) {
+function setup(active = bitmap(), jxlSupport: JxlSupport = { input: true, preview: true }) {
   vi.useFakeTimers();
   vi.mocked(decode).mockResolvedValue(active);
   vi.mocked(encode).mockImplementation(async (_, type) => type === 'image/jpeg' ? jpeg : png);
@@ -46,6 +51,8 @@ function setup(active = bitmap()) {
   vi.mocked(encodeAvif).mockResolvedValue(avif);
   vi.mocked(encodeWebp).mockResolvedValue(webp);
   vi.mocked(encodeMozjpeg).mockResolvedValue(jpeg);
+  vi.mocked(encodeJxl).mockResolvedValue(jxl);
+  vi.mocked(detectJxlSupport).mockResolvedValue(jxlSupport);
   let urlNumber = 0;
   const createUrl = vi.fn((_blob: Blob) => 'blob:result-' + ++urlNumber);
   const revokeUrl = vi.fn();
@@ -108,6 +115,13 @@ function setup(active = bitmap()) {
       webpStatus: panel.querySelector<HTMLElement>('.image-webp-status')!,
       webpCancel: panel.querySelector<HTMLButtonElement>('.image-webp-cancel')!,
       webpRetry: panel.querySelector<HTMLButtonElement>('.image-webp-retry')!,
+      jxlDistance: panel.querySelector<HTMLInputElement>('.image-jxl-distance')!,
+      jxlDistanceValue: panel.querySelector('.image-jxl-distance + span')!,
+      jxlEffort: panel.querySelector<HTMLInputElement>('.image-jxl-effort')!,
+      jxlLossless: panel.querySelector<HTMLInputElement>('.image-jxl-lossless')!,
+      jxlStatus: panel.querySelector<HTMLElement>('.image-jxl-status')!,
+      jxlCancel: panel.querySelector<HTMLButtonElement>('.image-jxl-cancel')!,
+      jxlRetry: panel.querySelector<HTMLButtonElement>('.image-jxl-retry')!,
       oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
       oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
       oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
@@ -560,6 +574,7 @@ it('左右の出力形式はOriginalを先頭にし、表示名のアルファ�
     ['image/jpeg', 'Browser JPEG'],
     ['image/png', 'Browser PNG'],
     ['mozjpeg', 'JPEG (MozJPEG)'],
+    ['image/jxl', 'JPEG XL (libjxl)'],
     ['oxipng', 'Oxipng'],
     ['image/webp', 'WebP (libwebp)'],
   ];
@@ -1747,4 +1762,130 @@ it('MozJPEG clears automatic evaluation after conversion failure and scores a su
   left.mozjpegRetry.click();
   await vi.advanceTimersByTimeAsync(800);
   expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
+});
+
+it('JPEG XL keeps each side’s Distance through lossless mode and debounces effective changes', async () => {
+  const { choose, left, right, download } = setup();
+  choose('sample.png');
+  await flush();
+  left.select('image/jxl');
+  right.select('image/jxl');
+  await flush();
+  expect(encodeJxl).toHaveBeenCalledOnce();
+  expect(right.jxlDistance.valueAsNumber).toBe(1);
+  expect(right.jxlDistanceValue.textContent).toBe('1.0');
+  left.setRange(left.jxlDistance, 0.5);
+  left.jxlLossless.click();
+  expect(left.jxlDistance.disabled).toBe(true);
+  expect(left.jxlDistance.valueAsNumber).toBe(0);
+  expect(left.jxlDistanceValue.textContent).toBe('0');
+  left.setRange(left.jxlEffort, 9);
+  expect(right.jxlEffort.value).toBe('7');
+  expect(right.jxlDistance.valueAsNumber).toBe(1);
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeJxl).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(vi.mocked(encodeJxl).mock.calls[1]![1]).toEqual({ distance: 0.5, effort: 9, lossless: true });
+  expect(left.score.textContent).toBe('可逆圧縮（スコア評価対象外）');
+  left.save.click();
+  right.save.click();
+  expect(download.mock.contexts.map(anchor => (anchor as HTMLAnchorElement).download)).toEqual([
+    'sample-left-jxl-lossless-e9.jxl', 'sample-right-jxl-d1.0-e7.jxl',
+  ]);
+  left.jxlLossless.click();
+  expect(left.jxlDistance.disabled).toBe(false);
+  expect(left.jxlDistance.value).toBe('0.5');
+});
+
+it('JPEG XL shares pending jobs and completed Blobs, and rejects stale results after cancellation and replacement', async () => {
+  const { choose, left, right, createUrl } = setup();
+  const pending = deferred<Blob>();
+  const replaced = deferred<Blob>();
+  vi.mocked(encodeJxl).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(jxl).mockReturnValueOnce(replaced.promise);
+  await flush();
+  left.select('image/jxl');
+  right.select('image/jxl');
+  left.setRange(left.jxlDistance, 0.5);
+  left.jxlLossless.click();
+  right.jxlLossless.click();
+  choose();
+  await flush();
+  expect(encodeJxl).toHaveBeenCalledOnce();
+  const first = vi.mocked(encodeJxl).mock.calls[0]!;
+  expect(left.jxlStatus.textContent).toContain('待っています');
+  first[3]();
+  expect(right.jxlStatus.textContent).toContain('変換しています');
+  left.jxlCancel.click();
+  expect(first[2].aborted).toBe(false);
+  right.jxlCancel.click();
+  expect(first[2].aborted).toBe(true);
+  expect(left.jxlStatus.textContent).toContain('中止しました');
+  const stale = new Blob(['stale'], { type: 'image/jxl' });
+  pending.resolve(stale);
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+
+  left.jxlRetry.click();
+  await flush();
+  expect(left.jxlStatus.textContent).toContain('完了');
+  right.jxlRetry.click();
+  await flush();
+  expect(encodeJxl).toHaveBeenCalledTimes(2);
+  expect(createUrl.mock.calls.slice(-2)).toEqual([[jxl], [jxl]]);
+
+  choose('second.png');
+  await flush();
+  expect(encodeJxl).toHaveBeenCalledTimes(3);
+  choose('third.png');
+  await flush();
+  expect(vi.mocked(encodeJxl).mock.calls[2]![2].aborted).toBe(true);
+  replaced.resolve(stale);
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+});
+
+it('JPEG XL can retry a failed conversion', async () => {
+  const { choose, right } = setup();
+  vi.mocked(encodeJxl).mockRejectedValueOnce(new Error('Wasm HTTP 503'));
+  choose();
+  await flush();
+  right.select('image/jxl');
+  await flush();
+  expect(right.jxlStatus.textContent).toContain('失敗');
+  expect(right.error.textContent).toContain('Wasm HTTP 503');
+  expect(right.save.disabled).toBe(true);
+  right.jxlRetry.click();
+  await flush();
+  expect(right.jxlStatus.textContent).toContain('完了');
+  expect(right.save.disabled).toBe(false);
+});
+
+it('JPEG XL disables the output option when the browser cannot decode its preview', async () => {
+  const { choose, right } = setup(bitmap(), { input: false, preview: false });
+  choose();
+  await flush();
+  expect(right.format.querySelector<HTMLOptionElement>('[value="image/jxl"]')?.disabled).toBe(true);
+  expect(document.querySelector('.image-jxl-compatibility')?.textContent).toContain('入力と出力を利用できません');
+  right.select('image/jxl');
+  expect(right.format.value).toBe('image/jpeg');
+  expect(encodeJxl).not.toHaveBeenCalled();
+});
+
+it('JPEG XL evaluates lossy output automatically and keeps downloads when only the scoring decoder is unavailable', async () => {
+  const { choose, left, right, auto, evaluate } = setup();
+  const { workers } = mockScoring();
+  auto.checked = true;
+  choose();
+  await flush();
+  left.select('image/jxl');
+  await vi.advanceTimersByTimeAsync(800);
+  const first = workers[0]!;
+  expect(first.postMessage.mock.calls[0]![0].images).toEqual([jxl, jpeg]);
+  first.reply({ index: 0, unsupported: 'image/jxl' });
+  first.reply({ index: 1, score: 88.2 });
+  await flush();
+  expect(left.score.textContent).toContain('JPEG XLの画質評価を利用できません');
+  expect(left.save.disabled).toBe(false);
+  expect(right.score.textContent).toBe('88.2');
+  expect(evaluate.disabled).toBe(true);
 });

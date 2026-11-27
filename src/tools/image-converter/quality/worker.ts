@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { drawOnWhite } from '../paint';
+import { jxlProbeBlob } from '../jxl/support';
 import { evaluationLimit } from './rules';
 import { loadScorer, scoreImages } from './wasm';
 
@@ -9,9 +10,23 @@ export interface EvaluationRequest {
   lockName?: string;
 }
 
-export type EvaluationReply = { index: number; score: number } | { error: true };
+export type EvaluationReply = { index: number; score: number } | { index: number; unsupported: 'image/jxl' } | { error: true };
 
 const worker = self as DedicatedWorkerGlobalScope;
+const decodeBlob = (image: Blob) => createImageBitmap(image, { imageOrientation: 'from-image', colorSpaceConversion: 'default' });
+
+async function supportsJxl(): Promise<boolean> {
+  try {
+    const bitmap = await decodeBlob(jxlProbeBlob());
+    try {
+      return bitmap.width === 2 && bitmap.height === 2;
+    } finally {
+      bitmap.close();
+    }
+  } catch {
+    return false;
+  }
+}
 
 async function evaluate({ reference, images }: EvaluationRequest) {
   try {
@@ -19,6 +34,12 @@ async function evaluate({ reference, images }: EvaluationRequest) {
     const limit = evaluationLimit(width, height);
     if (limit) throw new RangeError(limit);
 
+    const canDecodeJxl = !images.some(image => image.type === 'image/jxl') || await supportsJxl();
+    const reportUnsupportedJxl = (index: number) => worker.postMessage({ index, unsupported: 'image/jxl' } satisfies EvaluationReply);
+    if (!canDecodeJxl && images.every(image => image.type === 'image/jxl')) {
+      images.forEach((_, index) => reportUnsupportedJxl(index));
+      return;
+    }
     const canvas = new OffscreenCanvas(width, height);
     try {
       const context = canvas.getContext('2d', { colorSpace: 'srgb', willReadFrequently: true });
@@ -30,9 +51,14 @@ async function evaluate({ reference, images }: EvaluationRequest) {
       };
 
       const original = readPixels(reference);
-      const scorer = await loadScorer();
+      let scorer: Awaited<ReturnType<typeof loadScorer>> | undefined;
       for (const [index, image] of images.entries()) {
-        const decoded = await createImageBitmap(image, { imageOrientation: 'from-image', colorSpaceConversion: 'default' });
+        if (image.type === 'image/jxl' && !canDecodeJxl) {
+          reportUnsupportedJxl(index);
+          continue;
+        }
+        scorer ??= await loadScorer();
+        const decoded = await decodeBlob(image);
         let score: number;
         try {
           score = scoreImages(scorer, original, readPixels(decoded));

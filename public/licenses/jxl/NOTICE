@@ -1,0 +1,33 @@
+Web Toolbox JPEG XL encoder — third-party notices
+
+libjxl 0.13.0, including its encoder and shared image/color code
+Copyright (c) the JPEG XL Project Authors. See LICENSE.libjxl,
+AUTHORS and PATENTS in this directory.
+https://github.com/libjxl/libjxl/tree/v0.13.0
+
+The encoder-only WebAssembly module is built from the pinned sources in
+DEPENDENCIES.txt using scripts/jxl/build.sh and scripts/jxl/encoder.c. It
+accepts 8-bit sRGB RGBA pixels. The public decoder API entry unit and Brotli
+decoder archive are excluded from the final link. libjxl's encoder does use
+some shared translation units with decoder-oriented names; these appear in
+the link report because they also provide encoder helpers. The module reports
+JxlEncoderVersion 0x0032C8 (13000 decimal).
+
+Bundled dependencies
+Brotli 1.2.1: MIT License; see LICENSE.brotli.
+Highway 1.2.0: Apache License 2.0; see LICENSE.highway.
+skcms: BSD 3-Clause; see LICENSE.skcms.
+See DEPENDENCIES.txt for source revisions, hashes and the Emscripten image.
+
+Emscripten 4.0.20 and its system libraries
+https://github.com/emscripten-core/emscripten/tree/4.0.20
+Linux amd64 image emscripten/emsdk digest:
+sha256:33e992367f721747d8008c9141c04fa017139e3557a60e0c80be93a0870fe462
+See LICENSE.Emscripten, AUTHORS.Emscripten and COPYRIGHT.musl. LLVM runtime
+notices are included in LICENSE.* and CREDITS.*. The bundled allocator is
+Doug Lea's dlmalloc 2.8.6 (public domain).
+
+libjxl v0.13.0 includes upstream security fixes. Brotli 1.2.1 addresses
+CVE-2026-111497. See upstream release notes and the dependency pins in
+DEPENDENCIES.txt. Decoding in the application uses the browser's own decoder.
+https://github.com/libjxl/libjxl/releases/tag/v0.13.0

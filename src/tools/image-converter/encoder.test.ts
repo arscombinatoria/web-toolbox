@@ -95,3 +95,18 @@ it.each([
 ] as const)('ファイルサイズ %i B を %s と表示する', (bytes, formatted) => {
   expect(formatFileSize(bytes)).toBe(formatted);
 });
+
+it('JPEG XLのraw codestreamとcontainerを判定し、短いシグネチャとMIME不整合を拒否する', async () => {
+  const raw = Uint8Array.of(0xff, 0x0a);
+  const container = Uint8Array.of(0, 0, 0, 0x0c, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a);
+  expect(inputType(raw)).toBe('image/jxl');
+  expect(inputType(container)).toBe('image/jxl');
+  expect(inputType(raw.subarray(0, 1))).toBeUndefined();
+  expect(inputType(container.subarray(0, 11))).toBeUndefined();
+  expect(inputType(Uint8Array.of(0xff, 0x0b))).toBeUndefined();
+  const signal = new AbortController().signal;
+  const unsupported = Promise.resolve({ input: false, preview: false });
+  await expect(decode(new File([raw], 'fake.png', { type: 'image/png' }), signal, unsupported)).rejects.toThrow('画像を選択');
+  await expect(decode(new File(['fake'], 'fake.jxl', { type: 'image/jxl' }), signal, unsupported)).rejects.toThrow('画像を選択');
+  await expect(decode(new File([container], 'file.jxl'), signal, unsupported)).rejects.toThrow('JPEG XLの入力を利用できません');
+});

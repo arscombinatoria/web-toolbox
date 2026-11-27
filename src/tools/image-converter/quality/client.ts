@@ -8,6 +8,7 @@ export async function evaluateImages(
   signal: AbortSignal,
   onStart: () => void,
   onScore: (image: Blob, score: number) => void,
+  onUnsupportedJxl: () => void,
 ): Promise<void> {
   signal.throwIfAborted();
   const limit = evaluationLimit(reference.width, reference.height);
@@ -37,13 +38,14 @@ export async function evaluateImages(
         signal.addEventListener('abort', abort, { once: true });
         worker.onmessage = ({ data }: MessageEvent<unknown>) => {
           if (finished) return;
-          if (!data || typeof data !== 'object' || !('index' in data) || data.index !== index ||
-              !('score' in data) || !isFiniteScore(data.score)) {
+          if (!data || typeof data !== 'object' || !('index' in data) || data.index !== index) {
             fail();
             return;
           }
           try {
-            onScore(images[index]!, data.score);
+            if ('score' in data && isFiniteScore(data.score)) onScore(images[index]!, data.score);
+            else if ('unsupported' in data && data.unsupported === 'image/jxl' && images[index]!.type === 'image/jxl') onUnsupportedJxl();
+            else return fail();
             index++;
             if (index === images.length) finish();
           } catch (error) {

@@ -1,5 +1,7 @@
 import { drawOnWhite } from './paint';
 import { isAvifFtyp } from './avif/ftyp';
+import { isJxl } from './jxl/signature';
+import { detectJxlSupport, type JxlSupport } from './jxl/support';
 
 export const encoders = {
   original: { label: 'Original', type: null, extension: '', hasQuality: false },
@@ -8,11 +10,15 @@ export const encoders = {
   'image/avif': { label: 'AVIF (libaom)', type: 'image/avif', extension: '.avif', hasQuality: false },
   'image/webp': { label: 'WebP (libwebp)', type: 'image/webp', extension: '.webp', hasQuality: false },
   mozjpeg: { label: 'JPEG (MozJPEG)', type: 'image/jpeg', extension: '.jpg', hasQuality: false },
+  'image/jxl': { label: 'JPEG XL (libjxl)', type: 'image/jxl', extension: '.jxl', hasQuality: false },
   oxipng: { label: 'Oxipng', type: 'image/png', extension: '.png', hasQuality: false },
 } as const;
 
 export type EncoderId = keyof typeof encoders;
 type OutputType = (typeof encoders)['image/jpeg' | 'image/png']['type'];
+
+export const inputMimeTypes: readonly string[] = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/jxl'];
+export const supportedInputMessage = 'JPEG・PNG・WebP・AVIF・JPEG XLの画像を選択してください。';
 
 export function formatFileSize(bytes: number): string {
   if (bytes < 1_000) return bytes.toLocaleString('ja-JP', { maximumFractionDigits: 0 }) + ' B';
@@ -28,9 +34,10 @@ export function inputType(bytes: Uint8Array, fileSize = bytes.byteLength): strin
   const tag = (start: number) => String.fromCharCode(...bytes.subarray(start, start + 4));
   if (tag(0) === 'RIFF' && tag(8) === 'WEBP') return 'image/webp';
   if (isAvifFtyp(bytes, fileSize)) return 'image/avif';
+  if (isJxl(bytes)) return 'image/jxl';
 }
 
-export async function decode(file: File, signal: AbortSignal): Promise<ImageBitmap> {
+export async function decode(file: File, signal: AbortSignal, jxlSupport?: Promise<JxlSupport>): Promise<ImageBitmap> {
   if (file.size > 32 * 1024 * 1024) throw new Error('32 MiB以下の画像を選択してください。');
   const header = new Uint8Array(await file.slice(0, 24).arrayBuffer());
   let type = inputType(header, file.size);
@@ -44,9 +51,14 @@ export async function decode(file: File, signal: AbortSignal): Promise<ImageBitm
     }
   }
   if (!type || (file.type && file.type !== type)) {
-    throw new Error('JPEG・PNG・WebP・AVIFの画像を選択してください。');
+    throw new Error(supportedInputMessage);
   }
   signal.throwIfAborted();
+  if (type === 'image/jxl') {
+    const support = await (jxlSupport ?? detectJxlSupport());
+    signal.throwIfAborted();
+    if (!support.input) throw new Error('このブラウザではJPEG XLの入力を利用できません。');
+  }
   const image = new Image();
   image.decoding = 'async';
   const url = URL.createObjectURL(file);
