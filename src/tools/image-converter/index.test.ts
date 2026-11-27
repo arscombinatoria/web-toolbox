@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { decode, encode } from './encoder';
 import { encodeOxipng } from './oxipng/client';
 import { encodeAvif } from './avif/client';
+import { encodeJpegli } from './jpegli/client';
 import { encodeMozjpeg } from './mozjpeg/client';
 import { encodeWebp } from './webp/client';
 import { encodeJxl } from './jxl/client';
@@ -14,6 +15,7 @@ vi.mock('./encoder', async importOriginal => ({
 }));
 vi.mock('./oxipng/client', () => ({ encodeOxipng: vi.fn() }));
 vi.mock('./avif/client', () => ({ encodeAvif: vi.fn() }));
+vi.mock('./jpegli/client', () => ({ encodeJpegli: vi.fn() }));
 vi.mock('./mozjpeg/client', () => ({ encodeMozjpeg: vi.fn() }));
 vi.mock('./webp/client', () => ({ encodeWebp: vi.fn() }));
 vi.mock('./jxl/client', () => ({ encodeJxl: vi.fn() }));
@@ -50,6 +52,7 @@ function setup(active = bitmap(), jxlSupport: JxlSupport = { input: true, previe
   vi.mocked(encodeOxipng).mockResolvedValue(oxipngPng);
   vi.mocked(encodeAvif).mockResolvedValue(avif);
   vi.mocked(encodeWebp).mockResolvedValue(webp);
+  vi.mocked(encodeJpegli).mockResolvedValue(jpeg);
   vi.mocked(encodeMozjpeg).mockResolvedValue(jpeg);
   vi.mocked(encodeJxl).mockResolvedValue(jxl);
   vi.mocked(detectJxlSupport).mockResolvedValue(jxlSupport);
@@ -101,6 +104,13 @@ function setup(active = bitmap(), jxlSupport: JxlSupport = { input: true, previe
       avifStatus: panel.querySelector<HTMLElement>('.image-avif-status')!,
       avifCancel: panel.querySelector<HTMLButtonElement>('.image-avif-cancel')!,
       avifRetry: panel.querySelector<HTMLButtonElement>('.image-avif-retry')!,
+      jpegliMode: panel.querySelector<HTMLSelectElement>('.image-jpegli-mode')!,
+      jpegliQuality: panel.querySelector<HTMLInputElement>('.image-jpegli-quality')!,
+      jpegliDistance: panel.querySelector<HTMLInputElement>('.image-jpegli-distance')!,
+      jpegliProgressive: panel.querySelector<HTMLSelectElement>('.image-jpegli-progressive')!,
+      jpegliOptimize: panel.querySelector<HTMLInputElement>('.image-jpegli-optimize')!,
+      jpegliCancel: panel.querySelector<HTMLButtonElement>('.image-jpegli-cancel')!,
+      jpegliRetry: panel.querySelector<HTMLButtonElement>('.image-jpegli-retry')!,
       mozjpegQuality: panel.querySelector<HTMLInputElement>('.image-mozjpeg-quality')!,
       mozjpegSubsample: panel.querySelector<HTMLSelectElement>('.image-mozjpeg-subsample')!,
       mozjpegProgressive: panel.querySelector<HTMLInputElement>('.image-mozjpeg-progressive')!,
@@ -573,6 +583,7 @@ it('左右の出力形式はOriginalを先頭にし、表示名のアルファ�
     ['image/avif', 'AVIF (libaom)'],
     ['image/jpeg', 'Browser JPEG'],
     ['image/png', 'Browser PNG'],
+    ['jpegli', 'JPEG (Jpegli)'],
     ['mozjpeg', 'JPEG (MozJPEG)'],
     ['image/jxl', 'JPEG XL (libjxl)'],
     ['oxipng', 'Oxipng'],
@@ -1760,6 +1771,150 @@ it('MozJPEG clears automatic evaluation after conversion failure and scores a su
   expect(left.error.textContent).toContain('503');
   expect(workers).toHaveLength(0);
   left.mozjpegRetry.click();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
+});
+
+function setSelect(select: HTMLSelectElement, value: string) {
+  select.value = value;
+  select.dispatchEvent(new Event('change'));
+}
+
+it('Jpegli holds both target values and restores the saved sequential Huffman choice independently', async () => {
+  const { choose, left, right } = setup();
+  left.select('jpegli');
+  right.select('jpegli');
+  choose();
+  await flush();
+  expect(encodeJpegli).toHaveBeenCalledOnce();
+  expect(left.jpegliDistance.closest('label')!.hidden).toBe(true);
+  left.setRange(left.jpegliQuality, 96);
+  setSelect(left.jpegliMode, 'distance');
+  left.setRange(left.jpegliDistance, 1.5);
+  setSelect(left.jpegliProgressive, '0');
+  left.jpegliOptimize.click();
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeJpegli).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(vi.mocked(encodeJpegli).mock.lastCall?.[1]).toMatchObject({
+    mode: 'distance', quality: 96, distance: 1.5, progressiveLevel: 0, optimizeCoding: false,
+  });
+  setSelect(left.jpegliProgressive, '1');
+  expect(left.jpegliOptimize.checked).toBe(true);
+  expect(left.jpegliOptimize.disabled).toBe(true);
+  setSelect(left.jpegliMode, 'quality');
+  left.select('original');
+  left.select('jpegli');
+  setSelect(left.jpegliProgressive, '0');
+  expect(left.jpegliOptimize.checked).toBe(false);
+  expect(left.jpegliOptimize.disabled).toBe(false);
+  expect(left.jpegliQuality.value).toBe('96');
+  expect(left.jpegliDistance.value).toBe('1.5');
+  expect(right.jpegliMode.value).toBe('quality');
+  expect(right.jpegliQuality.value).toBe('90');
+  expect(right.jpegliDistance.valueAsNumber).toBe(1);
+  expect(right.jpegliOptimize.disabled).toBe(true);
+});
+
+it('Jpegli shares pending jobs and completed Blobs and cancels at last detach', async () => {
+  const { choose, left, right, createUrl, unmount } = setup();
+  const pending = deferred<Blob>();
+  vi.mocked(encodeJpegli).mockImplementationOnce(() => pending.promise);
+  left.select('jpegli');
+  right.select('jpegli');
+  setSelect(left.jpegliMode, 'distance');
+  left.setRange(left.jpegliDistance, 1.5);
+  setSelect(left.jpegliMode, 'quality');
+  setSelect(left.jpegliProgressive, '0');
+  left.jpegliOptimize.click();
+  setSelect(left.jpegliProgressive, '2');
+  choose();
+  await flush();
+  expect(encodeJpegli).toHaveBeenCalledOnce();
+  const signal = vi.mocked(encodeJpegli).mock.lastCall![2];
+  left.jpegliCancel.click();
+  expect(signal.aborted).toBe(false);
+  pending.resolve(jpeg);
+  await flush();
+  expect(right.save.disabled).toBe(false);
+  expect(left.save.disabled).toBe(true);
+  left.jpegliRetry.click();
+  await flush();
+  expect(encodeJpegli).toHaveBeenCalledOnce();
+  expect(createUrl.mock.calls.slice(-2).map(([blob]) => blob)).toEqual([jpeg, jpeg]);
+
+  const replacement = deferred<Blob>();
+  vi.mocked(encodeJpegli).mockImplementationOnce(() => replacement.promise);
+  choose('replacement.png');
+  await flush();
+  const replacementSignal = vi.mocked(encodeJpegli).mock.lastCall![2];
+  left.setRange(left.jpegliQuality, 92);
+  expect(replacementSignal.aborted).toBe(false);
+  right.jpegliCancel.click();
+  expect(replacementSignal.aborted).toBe(true);
+  await vi.advanceTimersByTimeAsync(180);
+  const preview = left.preview.src;
+  const stale = new Blob(['stale'], { type: 'image/jpeg' });
+  replacement.resolve(stale);
+  await flush();
+  expect(left.preview.src).toBe(preview);
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+
+  const afterDispose = deferred<Blob>();
+  vi.mocked(encodeJpegli).mockImplementationOnce(() => afterDispose.promise);
+  right.select('original');
+  choose('third.png');
+  await flush();
+  const lastSignal = vi.mocked(encodeJpegli).mock.lastCall![2];
+  unmount();
+  expect(lastSignal.aborted).toBe(true);
+  afterDispose.resolve(stale);
+  await flush();
+  expect(createUrl.mock.calls.some(([blob]) => blob === stale)).toBe(false);
+});
+
+it('Jpegli scores a shared quality-100 Blob once and reuses the result after manual evaluation', async () => {
+  const { choose, left, right, evaluate, auto, cancel } = setup();
+  const { workers } = mockScoring();
+  auto.checked = false;
+  auto.dispatchEvent(new Event('change'));
+  left.select('jpegli');
+  right.select('jpegli');
+  left.setRange(left.jpegliQuality, 100);
+  right.setRange(right.jpegliQuality, 100);
+  choose();
+  await flush();
+  evaluate.click();
+  await flush();
+  expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
+  cancel.click();
+  expect(workers[0]!.terminate).toHaveBeenCalledOnce();
+
+  evaluate.click();
+  await flush();
+  workers[1]!.reply({ index: 0, score: 81.56 });
+  await flush();
+  expect(left.score.textContent).toBe('81.6');
+  expect(right.score.textContent).toBe('81.6');
+  left.select('original');
+  left.select('jpegli');
+  await flush();
+  expect(left.score.textContent).toBe('81.6');
+  expect(workers).toHaveLength(2);
+});
+
+it('Jpegli clears automatic evaluation after conversion failure and scores a successful retry', async () => {
+  const { choose, left, right } = setup();
+  const { workers } = mockScoring();
+  vi.mocked(encodeJpegli).mockRejectedValueOnce(new Error('Wasm HTTP 503'));
+  left.select('jpegli');
+  right.select('original');
+  choose();
+  await vi.advanceTimersByTimeAsync(800);
+  expect(left.jpegliRetry.hidden).toBe(false);
+  expect(left.error.textContent).toContain('503');
+  expect(workers).toHaveLength(0);
+  left.jpegliRetry.click();
   await vi.advanceTimersByTimeAsync(800);
   expect(workers[0]!.postMessage.mock.calls[0]![0].images).toEqual([jpeg]);
 });

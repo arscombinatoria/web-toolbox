@@ -1,0 +1,9 @@
+LLVM libunwind
+
+The Emscripten 4.0.20 SDK includes LLVM libunwind under
+system/lib/libunwind. That SDK directory does not ship a separate CREDITS.TXT;
+individual copyright holders are retained in the source files and in LLVM's
+project history.
+
+Project: https://github.com/llvm/llvm-project/tree/main/libunwind
+SDK source: https://github.com/emscripten-core/emscripten/tree/4.0.20/system/lib/libunwind

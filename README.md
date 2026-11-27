@@ -90,7 +90,7 @@ RDAP.org（`https://rdap.org/ip/{IP}`）へブラウザから直接問い合わ�
 
 ## 画像変換
 
-JPEG・PNG・WebP・AVIF・JPEG XLを1枚ドロップするか、大きな「画像を選択」ボタンをクリックまたはEnter・Spaceで開きます。読み込みに成功すると最初の選択ボタンが隠れ、比較結果が表示されます。表示中の比較画像エリアへドロップするか、「画像を変更」から別の画像を選べます。置き換える画像の読み込み中も現在の比較結果を使え、読み込みに失敗した場合はそのまま残ります。新しい画像の読み込みに成功すると、表示倍率・位置・比較位置が初期状態に戻ります。最初は左にOriginal、右に品質0.75のBrowser JPEGを表示します。画像の下にある左右の設定で、Original、AVIF (libaom)、Browser JPEG、Browser PNG、JPEG (MozJPEG)、JPEG XL (libjxl)、Oxipng、WebP (libwebp) を個別に選べます。
+JPEG・PNG・WebP・AVIF・JPEG XLを1枚ドロップするか、大きな「画像を選択」ボタンをクリックまたはEnter・Spaceで開きます。読み込みに成功すると最初の選択ボタンが隠れ、比較結果が表示されます。表示中の比較画像エリアへドロップするか、「画像を変更」から別の画像を選べます。置き換える画像の読み込み中も現在の比較結果を使え、読み込みに失敗した場合はそのまま残ります。新しい画像の読み込みに成功すると、表示倍率・位置・比較位置が初期状態に戻ります。最初は左にOriginal、右に品質0.75のBrowser JPEGを表示します。画像の下にある左右の設定で、Original、AVIF (libaom)、Browser JPEG、Browser PNG、JPEG (Jpegli)、JPEG (MozJPEG)、JPEG XL (libjxl)、Oxipng、WebP (libwebp) を個別に選べます。
 
 「サンプルで試す」から、実写写真、イラスト、架空のスマホアプリ画面、幾何学図形の4種類をワンクリックで比較・変換できます。各ボタンにはサムネイル、名前、寸法、形式、元ファイルサイズが表示され、選択中のサンプルは強調表示されます。比較中にも別のサンプルを選べます。 [サンプル画像の出典と再生成手順](docs/sample-images.md)
 
@@ -104,6 +104,8 @@ AVIF (libaom) は、透明度を保持した8-bit sRGBの静止画に変換し�
 
 AVIFの可逆圧縮は初期状態でオフです。オンにすると品質100・透明度品質100・4:4:4が適用され、対応する設定欄を操作できなくなります。オフに戻すと以前の値に戻ります。オフのままこの3値を選んだ場合も、エンコーダーは可逆圧縮を使います。可逆圧縮は、ブラウザで8-bit sRGBに正規化したRGBA画素を基準にします。元ファイルのICCプロファイル、ビット深度、メタデータ、アニメーションの維持は保証しません。再表示した画素値にはブラウザの色管理とアルファ処理が影響します。
 
+JPEG (Jpegli) はQuality 1〜100（整数、初期値90）またはDistance 0.1〜25.0（0.1刻み、初期値1.0）で画質を指定します。Distanceは小さいほど高画質で、同じQualityでもエンコーダーによって画質は異なります。色差サンプリングは4:4:4（初期値）、4:4:0、4:2:2、4:2:0です。Progressive Levelは0〜2（初期値2）で、適応量子化とハフマン符号化最適化は初期状態でオンです。レベル1・2ではハフマン最適化がオンに固定され、レベル0に戻すとその側で保存した設定を復元します。Quality 100も非可逆圧縮で、透明部分は白になります。 [Jpegliの実測結果](./docs/architecture.md#jpegliの実測)
+
 JPEG (MozJPEG) は品質1〜100（初期値75）、色差サンプリング4:2:0（初期値）・4:2:2・4:4:4、プログレッシブJPEG、ハフマン符号化最適化を選べます。プログレッシブとハフマン最適化は初期状態でオンです。プログレッシブをオンにするとハフマン最適化はオンに固定され、オフにするとその側で保存した設定に戻ります。品質100も非可逆圧縮で、透明部分は白になります。大きな画像では変換に時間がかかります。 [MozJPEGの実測結果](./docs/architecture.md#mozjpegの実測)
 
 WebP (libwebp) は透明度に対応した静止WebPを出力します。非可逆が初期設定で、品質75・アルファ品質100・圧縮メソッド4・Sharp YUVオフです。品質とアルファ品質は0〜100、圧縮メソッドは0〜6の整数です。メソッド0は高速側、6は圧縮効率重視側です。高い値で出力が小さくなるとは限らず、画像や設定により処理時間とメモリ使用量が増えます。Sharp YUVをオンにすると非可逆圧縮時の色変換を高精度化します。
@@ -114,9 +116,9 @@ JPEG XL (libjxl) は8-bit sRGB RGBAの静止画に変換します。Distanceは0
 
 JPEG XLはブラウザの標準デコード機能を使います。プレビューが非対応の環境では入力を受け付けず、JPEG XL出力も選べません。入力用の画像ビットマップだけが非対応の場合は、他形式からJPEG XLへの変換と保存を使えます。画質評価Workerでのデコードだけが非対応の場合は、変換と保存を使えます。
 
-元画像と各パネルの出力サイズは、1,000 B未満をB、1,000 B以上1,000,000 B未満をKB、1,000,000 B以上をMBで表示します。KB・MBは小数点以下最大2桁で、日本語ロケールの桁区切りを使います。各カードに元ファイルと出力のサイズを並べ、丸め前のバイト数で増減率を求めます。減少はマイナス符号と緑、増加はプラス符号と警告色、同じ容量は中立色の0%で示します。Originalは元ファイルと同じ容量で0%です。各側のダウンロードボタンで保存できます。Originalは入力ファイルの名前と内容を保持します。変換結果の名前には左右の区別が入り、JPEGでは品質、Oxipngでは圧縮レベルが分かります。MozJPEGのファイル名は例えば `sample-right-mozjpeg-q75-420-p-opt.jpg` になります。AVIFでは実効設定を含め、例えば `sample-right-avif-q50-a100-s6-420.avif` または `sample-right-avif-lossless-s6.avif` になります。WebPも実効設定を含め、例えば `sample-right-webp-q75-a100-m4-sharp.webp` または `sample-right-webp-lossless-q75-m4.webp` になります。JPEG XLも実効設定を含め、例えば `sample-right-jxl-d1.0-e7.jxl`、`sample-right-jxl-d0.5-e9.jxl`、`sample-right-jxl-lossless-e7.jxl` になります。Firefoxは設定により保存した画像を新しいタブで開く場合があります。
+元画像と各パネルの出力サイズは、1,000 B未満をB、1,000 B以上1,000,000 B未満をKB、1,000,000 B以上をMBで表示します。KB・MBは小数点以下最大2桁で、日本語ロケールの桁区切りを使います。各カードに元ファイルと出力のサイズを並べ、丸め前のバイト数で増減率を求めます。減少はマイナス符号と緑、増加はプラス符号と警告色、同じ容量は中立色の0%で示します。Originalは元ファイルと同じ容量で0%です。各側のダウンロードボタンで保存できます。Originalは入力ファイルの名前と内容を保持します。変換結果の名前には左右の区別が入り、JPEGでは品質、Oxipngでは圧縮レベルが分かります。Jpegliでは実効設定を含め、例えば `sample-left-jpegli-q90-444-p2-aq-opt.jpg` または `sample-right-jpegli-d1.5-420-p0-aq-noopt.jpg` になります。MozJPEGのファイル名は例えば `sample-right-mozjpeg-q75-420-p-opt.jpg` になります。AVIFでは実効設定を含め、例えば `sample-right-avif-q50-a100-s6-420.avif` または `sample-right-avif-lossless-s6.avif` になります。WebPも実効設定を含め、例えば `sample-right-webp-q75-a100-m4-sharp.webp` または `sample-right-webp-lossless-q75-m4.webp` になります。JPEG XLも実効設定を含め、例えば `sample-right-jxl-d1.0-e7.jxl`、`sample-right-jxl-d0.5-e9.jxl`、`sample-right-jxl-lossless-e7.jxl` になります。Firefoxは設定により保存した画像を新しいタブで開く場合があります。
 
-「画質の自動評価」は初期状態でオンです。画像の選択や変換設定の最後の操作から800msが経過し、対象の変換が済むとSSIMULACRA2のスコアを更新します。Browser JPEG、JPEG (MozJPEG)、非可逆AVIF、非可逆WebP、非可逆JPEG XLを採点し、両側に対象があれば未評価の出力を順に処理します。Originalは「基準画像」、Browser PNGは「画質評価は未対応」、Oxipng、可逆AVIF、可逆WebP、可逆JPEG XLは「可逆圧縮（スコア評価対象外）」と表示します。スコアは同じ元画像に対する見た目の近さの参考値です。
+「画質の自動評価」は初期状態でオンです。画像の選択や変換設定の最後の操作から800msが経過し、対象の変換が済むとSSIMULACRA2のスコアを更新します。Browser JPEG、JPEG (Jpegli)、JPEG (MozJPEG)、非可逆AVIF、非可逆WebP、非可逆JPEG XLを採点し、両側に対象があれば未評価の出力を順に処理します。Originalは「基準画像」、Browser PNGは「画質評価は未対応」、Oxipng、可逆AVIF、可逆WebP、可逆JPEG XLは「可逆圧縮（スコア評価対象外）」と表示します。スコアは同じ元画像に対する見た目の近さの参考値です。
 
 画像を選ぶ前から「画質の自動評価」のチェックを外せます。チェックを外すと待機中・実行中の自動評価が止まり、その設定はツールを開いている間だけ保持されます。「画質を評価」を押すと、対象の変換が済み次第、800msの待機を省いて採点します。直前のWorkerが終了処理中の場合は、その完了を待つことがあります。「評価を中止」で待機・実行を止めた後は、画像・形式・品質を変更するか、手動評価または自動評価の入れ直しで再開できます。設定を変更した側の旧スコアはすぐに消えます。
 
@@ -124,7 +126,7 @@ JPEG XLはブラウザの標準デコード機能を使います。プレビュ�
 
 PoCの2048×2048では、初回採点は約3.2〜5.2秒で、Wasm線形メモリの容量は約619 MiBでした。線形メモリはブラウザ全体の使用量の一部です。空きメモリの少ない端末では動作が重くなったり評価が失敗したりする場合があります。負荷が気になる場合は「画質の自動評価」をオフにできます。 [PoCの実測結果](https://github.com/arscombinatoria/web-toolbox/blob/5b42d2ab63c5a249c6734953affcd03248393acc/experiments/ssimulacra2/report.md#性能とメモリ)
 
-画像は外部送信せず、ブラウザ内で処理します。再エンコードしたJPEG・PNG・AVIF・WebP・JPEG XLは静止画で、EXIFなどのメタデータの維持は保証しません。上限は入力32 MiB、各辺8,192px、1,600万画素です。端末のメモリやCanvasの制限により、上限内でも変換できない場合があります。Oxipng、AVIF、MozJPEG、WebP、JPEG XL、SSIMULACRA2のWebAssembly処理は一度に1件ずつ実行します。Oxipng、AVIF、MozJPEG、WebP、JPEG XLは中止・失敗時に再試行できます。
+画像は外部送信せず、ブラウザ内で処理します。再エンコードしたJPEG・PNG・AVIF・WebP・JPEG XLは静止画で、EXIFなどのメタデータの維持は保証しません。上限は入力32 MiB、各辺8,192px、1,600万画素です。端末のメモリやCanvasの制限により、上限内でも変換できない場合があります。Oxipng、AVIF、Jpegli、MozJPEG、WebP、JPEG XL、SSIMULACRA2のWebAssembly処理は一度に1件ずつ実行します。Oxipng、AVIF、Jpegli、MozJPEG、WebP、JPEG XLは中止・失敗時に再試行できます。
 
 SSIMULACRA2には bytecut-ssimulacra2 0.1.0 の同梱Wasm（BSD-2-Clause）を使用しています。ライセンスと依存ライブラリの表示をサイトとともに配信します。 [LICENSE](./public/licenses/ssimulacra2/LICENSE) · [NOTICE](./public/licenses/ssimulacra2/NOTICE) · [依存ライブラリ](./public/licenses/ssimulacra2/DEPENDENCIES.txt) · [Rust標準ライブラリ](./public/licenses/ssimulacra2/RUST-COPYRIGHT-library.html)
 
@@ -133,6 +135,8 @@ Oxipngは `@jsquash/oxipng` 2.3.0の単一スレッドWasmを使います。ラ�
 AVIFは `@jsquash/avif` 2.1.1の単一スレッドエンコーダーを選択時に取得します。入力やプレビューのAVIFデコードはブラウザ標準APIを使います。 [AVIFの依存関係とライセンス](./public/licenses/avif/NOTICE)
 
 WebPは、公式ソースからビルドしたlibwebp 1.6.0の単一スレッドSIMDエンコーダーを選択時に取得します。デコードはブラウザ標準APIを使います。 [WebPの依存関係とライセンス](./public/licenses/webp/NOTICE)
+
+Jpegliは、Googleの公式ソースからビルドした単一スレッドSIMDエンコーダーを選択時に取得します。入力、プレビュー、画質評価にはブラウザ標準のJPEGデコードを使います。 [Jpegliの依存関係とライセンス](./public/licenses/jpegli/NOTICE)
 
 MozJPEGは、公式4.1.5ソースからビルドしたエンコード専用Wasmを選択時に取得します。入力とプレビューにはブラウザ標準のデコーダーを使います。 [MozJPEGの依存関係とライセンス](./public/licenses/mozjpeg/NOTICE)
 

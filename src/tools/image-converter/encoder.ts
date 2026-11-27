@@ -9,6 +9,7 @@ export const encoders = {
   'image/png': { label: 'Browser PNG', type: 'image/png', extension: '.png', hasQuality: false },
   'image/avif': { label: 'AVIF (libaom)', type: 'image/avif', extension: '.avif', hasQuality: false },
   'image/webp': { label: 'WebP (libwebp)', type: 'image/webp', extension: '.webp', hasQuality: false },
+  jpegli: { label: 'JPEG (Jpegli)', type: 'image/jpeg', extension: '.jpg', hasQuality: false },
   mozjpeg: { label: 'JPEG (MozJPEG)', type: 'image/jpeg', extension: '.jpg', hasQuality: false },
   'image/jxl': { label: 'JPEG XL (libjxl)', type: 'image/jxl', extension: '.jxl', hasQuality: false },
   oxipng: { label: 'Oxipng', type: 'image/png', extension: '.png', hasQuality: false },

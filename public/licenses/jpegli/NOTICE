@@ -1,0 +1,19 @@
+JPEGli Wasm encoder
+
+This binary contains the JPEGli encoder from google/jpegli at commit
+c7d342c25d3587ac0110c915989ad94f414b6c8d, licensed under the BSD-style terms
+in LICENSE.jpegli. The JPEGli project authors and patent file are listed in
+AUTHORS and PATENTS. It also contains Google Highway code at commit
+271a9a0ed9de1232d9117f1572c3fe28f8542ec1; see LICENSE.highway for its Apache
+2.0 and BSD 3-Clause license texts.
+
+The build uses libjpeg-turbo compatibility headers at commit
+8ecba3647edb6dd940463fedf38ca33a8e2a73d1. Their applicable IJG and BSD-style
+license texts are in LICENSE.libjpeg-turbo and README.ijg. No libjpeg-turbo
+implementation code is linked.
+
+This standalone Wasm was built with Emscripten SDK 4.0.20. Applicable notices
+for Emscripten, libc++, libc++abi, compiler-rt, LLVM libunwind, musl, and their
+authors are included in this directory. Emscripten's dlmalloc 2.8.6 allocator
+is public domain; see COPYRIGHT.dlmalloc. JPEGli's optional skcms source is
+used only to satisfy CMake configuration; it is not linked into this binary.

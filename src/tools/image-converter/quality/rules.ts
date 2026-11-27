@@ -14,7 +14,7 @@ export function evaluationLimit(width: number, height: number): string | undefin
 }
 
 export function isEvaluable(encoder: EncoderId, lossless = false): boolean {
-  return encoder === 'image/jpeg' || encoder === 'mozjpeg' ||
+  return encoder === 'image/jpeg' || encoder === 'mozjpeg' || encoder === 'jpegli' ||
     ((encoder === 'image/avif' || encoder === 'image/webp' || encoder === 'image/jxl') && !lossless);
 }
 
