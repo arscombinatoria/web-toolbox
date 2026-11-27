@@ -1,7 +1,7 @@
 import { Check, CircleAlert, Download, Image, ImageOff, ImagePlus, Minus, Plus, ScanEye, X } from 'lucide';
 import { createIcon, setIconMessage } from '../../components/icon';
 import { findTool } from '../../registry';
-import { decode, encode, encoders, formatFileSize, sizeChange, type EncoderId } from './encoder';
+import { decode, encode, encoders, formatFileSize, inputMimeTypes, sizeChange, supportedInputMessage, type EncoderId } from './encoder';
 import { encodeOxipng } from './oxipng/client';
 import { defaultOxipngOptions, oxipngKey, validateOxipngOptions, type OxipngOptions } from './oxipng/options';
 import { encodeAvif } from './avif/client';
@@ -10,6 +10,9 @@ import { encodeMozjpeg } from './mozjpeg/client';
 import { defaultMozjpegOptions, effectiveMozjpegOptions, mozjpegFilename, mozjpegKey, validateMozjpegOptions, type MozjpegOptions } from './mozjpeg/options';
 import { encodeWebp } from './webp/client';
 import { defaultWebpOptions, effectiveWebpOptions, validateWebpOptions, webpFilename, webpKey, type WebpOptions } from './webp/options';
+import { encodeJxl } from './jxl/client';
+import { defaultJxlOptions, effectiveJxlOptions, jxlFilename, jxlKey, validateJxlOptions, type JxlOptions } from './jxl/options';
+import { detectJxlSupport } from './jxl/support';
 import { evaluateImages } from './quality/client';
 import { evaluationLimit, isEvaluable, MIN_EVALUATION_SIDE } from './quality/rules';
 import './style.css';
@@ -28,6 +31,7 @@ const initialQuality = 0.75;
 const initialAvifOptions = defaultAvifOptions;
 const autoEvaluationDelay = 800;
 const evaluationWaiting = '画質評価を待機しています…';
+const jxlEvaluationUnavailable = 'このブラウザではJPEG XLの画質評価を利用できません。';
 const sampleImages = [
   { id: 'red-panda', label: 'レッサーパンダ・写真', dimensions: '3840 × 2560 px', filename: 'red-panda.jpg', type: 'image/jpeg', size: '3.87 MB' },
   { id: 'outline', label: '輪郭イラスト', dimensions: '1200 × 900 px', filename: 'outline.png', type: 'image/png', size: '70.22 KB' },
@@ -49,14 +53,15 @@ export function mount(container: HTMLElement): () => void {
   view.innerHTML = `
     <h1 tabindex="-1"></h1>
     <p class="tool-description"></p>
-    <input type="file" aria-label="入力画像" accept="image/jpeg,image/png,image/webp,image/avif" hidden>
+    <input type="file" aria-label="入力画像" accept="${[...inputMimeTypes, '.jxl'].join(',')}" hidden>
     <section class="image-samples" aria-label="サンプル画像">
       <h2>サンプルで試す</h2>
       <div class="image-sample-list"></div>
     </section>
     <p class="image-input-status" role="status" aria-atomic="true"></p>
     <p class="image-input-error" role="alert"></p>
-    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP・AVIF）</span></button>
+    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP・AVIF・JPEG XL）</span></button>
+    <p class="image-note image-jxl-compatibility" role="status" hidden></p>
     <section hidden aria-label="画像の比較と変換設定">
       <div class="image-comparison-area">
         <div class="image-replace">
@@ -82,7 +87,7 @@ export function mount(container: HTMLElement): () => void {
             <legend>${label}の設定</legend>
             <div class="image-panel-content">
               <label>出力形式 <select aria-label="${label}の出力形式">
-                ${orderedEncoders.map(([key, { label }]) => `<option value="${key}"${key === initialEncoder ? ' selected' : ''}>${label}</option>`).join('')}
+                ${orderedEncoders.map(([key, { label }]) => `<option value="${key}"${key === initialEncoder ? ' selected' : ''}${key === 'image/jxl' ? ' disabled' : ''}>${label}</option>`).join('')}
               </select></label>
               <label class="image-quality" ${encoders[initialEncoder].hasQuality ? '' : 'hidden'}>
                 JPEG品質 <input type="range" aria-label="${label}のJPEG品質" min="0.01" max="1" step="0.01" value="${initialQuality}">
@@ -128,6 +133,19 @@ export function mount(container: HTMLElement): () => void {
                 <div class="image-webp-actions">
                   <button type="button" class="image-webp-cancel" hidden aria-label="${label}側のWebP変換を中止">WebP変換を中止</button>
                   <button type="button" class="image-webp-retry" hidden aria-label="${label}側のWebP変換を再試行">WebP変換を再試行</button>
+                </div>
+              </div>
+              <div class="image-jxl-settings" hidden>
+                <label>Distance <input type="range" class="image-jxl-distance" aria-label="${label}のJPEG XL Distance" min="0.1" max="15" step="0.1" aria-describedby="image-jxl-distance-${id}"><span></span></label>
+                <p class="image-note" id="image-jxl-distance-${id}">Distanceは小さいほど高画質になります。</p>
+                <label>Effort <input type="range" class="image-jxl-effort" aria-label="${label}のJPEG XL Effort" min="1" max="10" step="1" aria-describedby="image-jxl-effort-${id}"><span></span></label>
+                <p class="image-note" id="image-jxl-effort-${id}">Effortは大きいほど圧縮に労力をかけます。出力サイズが小さくなるかは画像によります。高いEffortや大きな画像では処理時間とメモリ消費量が増えます。</p>
+                <label><input type="checkbox" class="image-jxl-lossless" aria-label="${label}側のJPEG XLを可逆圧縮にする"> 可逆圧縮</label>
+                <p class="image-note">アルファは常に可逆圧縮します。可逆圧縮をオンにすると、8-bit sRGBに正規化したRGBA画素をすべて保持します。</p>
+                <p class="image-jxl-status" role="status" aria-atomic="true"></p>
+                <div class="image-jxl-actions">
+                  <button type="button" class="image-jxl-cancel" hidden aria-label="${label}側のJPEG XL変換を中止">JPEG XL変換を中止</button>
+                  <button type="button" class="image-jxl-retry" hidden aria-label="${label}側のJPEG XL変換を再試行">JPEG XL変換を再試行</button>
                 </div>
               </div>
               <div class="image-oxipng-settings" hidden>
@@ -198,7 +216,7 @@ export function mount(container: HTMLElement): () => void {
         </details>
       </div>
     </section>
-    <p class="image-note">画像はブラウザ内で処理します。JPEGでは透明部分が白になります。AVIFは8-bit sRGBの静止画として変換し、EXIFなどのメタデータは保持されない場合があります。</p>`;
+    <p class="image-note">画像はブラウザ内で処理します。JPEGでは透明部分が白になります。AVIFとJPEG XLは8-bit sRGBの静止画として変換します。EXIFなどのメタデータは保持されない場合があります。</p>`;
   const get = <T extends Element>(selector: string) => view.querySelector<T>(selector)!;
   const tool = findTool('image-converter')!;
   get('h1').textContent = tool.name;
@@ -231,6 +249,8 @@ export function mount(container: HTMLElement): () => void {
   const sampleList = get('.image-sample-list');
   const listeners = new AbortController();
   const options = { signal: listeners.signal };
+  const jxlSupport = detectJxlSupport();
+  let jxlEvaluationUnsupported = false;
   for (const sample of sampleImages) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -292,6 +312,8 @@ export function mount(container: HTMLElement): () => void {
       mozjpegKey: undefined as string | undefined,
       webpOptions: { ...defaultWebpOptions },
       webpKey: undefined as string | undefined,
+      jxlOptions: { ...defaultJxlOptions },
+      jxlKey: undefined as string | undefined,
       oxipngOptions: { ...defaultOxipngOptions } as OxipngOptions,
       oxipngKey: undefined as string | undefined,
       generation: 0,
@@ -338,6 +360,15 @@ export function mount(container: HTMLElement): () => void {
       webpStatus: panel.querySelector<HTMLElement>('.image-webp-status')!,
       webpCancel: panel.querySelector<HTMLButtonElement>('.image-webp-cancel')!,
       webpRetry: panel.querySelector<HTMLButtonElement>('.image-webp-retry')!,
+      jxlSettings: panel.querySelector<HTMLElement>('.image-jxl-settings')!,
+      jxlDistance: panel.querySelector<HTMLInputElement>('.image-jxl-distance')!,
+      jxlDistanceValue: panel.querySelector('.image-jxl-distance + span')!,
+      jxlEffort: panel.querySelector<HTMLInputElement>('.image-jxl-effort')!,
+      jxlEffortValue: panel.querySelector('.image-jxl-effort + span')!,
+      jxlLossless: panel.querySelector<HTMLInputElement>('.image-jxl-lossless')!,
+      jxlStatus: panel.querySelector<HTMLElement>('.image-jxl-status')!,
+      jxlCancel: panel.querySelector<HTMLButtonElement>('.image-jxl-cancel')!,
+      jxlRetry: panel.querySelector<HTMLButtonElement>('.image-jxl-retry')!,
       oxipngSettings: panel.querySelector<HTMLElement>('.image-oxipng-settings')!,
       oxipngLevel: panel.querySelector<HTMLSelectElement>('.image-oxipng-settings select')!,
       oxipngInterlace: panel.querySelector<HTMLInputElement>('.image-oxipng-interlace')!,
@@ -357,6 +388,21 @@ export function mount(container: HTMLElement): () => void {
   type Side = ReturnType<typeof createSide>;
   const [left, right] = [createSide(sideDefinitions[0]), createSide(sideDefinitions[1])];
   const sides = [left, right];
+  void jxlSupport.then(({ input, preview }) => {
+    if (listeners.signal.aborted) return;
+    const notice = get<HTMLElement>('.image-jxl-compatibility');
+    for (const side of sides) {
+      side.format.querySelector<HTMLOptionElement>('option[value="image/jxl"]')!.disabled = !preview;
+    }
+    if (!preview) {
+      notice.textContent = 'このブラウザではJPEG XLの入力と出力を利用できません。';
+      notice.hidden = false;
+    } else if (!input) {
+      notice.textContent = 'このブラウザではJPEG XLの入力を利用できません。JPEG XLへの変換と保存は利用できます。';
+      notice.hidden = false;
+    }
+  });
+  const jxlJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const mozjpegJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const webpJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const avifJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
@@ -504,6 +550,53 @@ export function mount(container: HTMLElement): () => void {
     return job.blob ? Promise.resolve(job.blob) : job.promise!;
   }
 
+  function detachJxl(side: Side) {
+    const key = side.jxlKey;
+    side.jxlKey = undefined;
+    if (!key) return;
+    const job = jxlJobs.get(key);
+    if (!job) return;
+    job.consumers.delete(side);
+    if (!job.consumers.size) {
+      if (!job.blob) job.controller.abort();
+      jxlJobs.delete(key);
+    }
+  }
+
+  function requestJxl(side: Side, bitmap: ImageBitmap, generation: number): Promise<Blob> {
+    const options = validateJxlOptions(side.jxlOptions);
+    const key = jxlKey(generation, options);
+    let job = jxlJobs.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      job = { controller, consumers: new Set(), started: false };
+      jxlJobs.set(key, job);
+      const current = job;
+      current.promise = encodeJxl(bitmap, options, controller.signal, () => {
+        if (jxlJobs.get(key) !== current) return;
+        current.started = true;
+        for (const consumer of current.consumers) {
+          if (consumer.jxlKey === key) consumer.jxlStatus.textContent = 'JPEG XLに変換しています…';
+        }
+      }).then(blob => {
+        if (jxlJobs.get(key) === current && current.consumers.size) current.blob = blob;
+        return blob;
+      }, cause => {
+        if (jxlJobs.get(key) === current) jxlJobs.delete(key);
+        throw cause;
+      });
+      for (const pending of sides) {
+        if (pending.jxlKey === key && pending.result.status === 'pending') current.consumers.add(pending);
+      }
+    }
+    job.consumers.add(side);
+    side.jxlKey = key;
+    side.jxlStatus.textContent = job.started ? 'JPEG XLに変換しています…' : 'JPEG XL変換を待っています…';
+    side.jxlCancel.hidden = false;
+    side.jxlRetry.hidden = true;
+    return job.blob ? Promise.resolve(job.blob) : job.promise!;
+  }
+
   function detachMozjpeg(side: Side) {
     const key = side.mozjpegKey;
     side.mozjpegKey = undefined;
@@ -556,11 +649,16 @@ export function mount(container: HTMLElement): () => void {
   function isLossless(side: Side): boolean {
     return side.encoder === 'oxipng' ||
       (side.encoder === 'image/avif' && isAvifLossless(side.avifOptions)) ||
-      (side.encoder === 'image/webp' && side.webpOptions.lossless);
+      (side.encoder === 'image/webp' && side.webpOptions.lossless) ||
+      (side.encoder === 'image/jxl' && side.jxlOptions.lossless);
+  }
+
+  function canScore(side: Side): boolean {
+    return !(side.encoder === 'image/jxl' && jxlEvaluationUnsupported) && isEvaluable(side.encoder, isLossless(side));
   }
 
   function evaluationBlob(side: Side): Blob | undefined {
-    if (isEvaluable(side.encoder, isLossless(side)) && side.result.status === 'ready') return side.result.blob;
+    if (canScore(side) && side.result.status === 'ready') return side.result.blob;
   }
 
   function unevaluatedImages(): Blob[] {
@@ -575,6 +673,7 @@ export function mount(container: HTMLElement): () => void {
   function evaluationMessage(side: Side, blob: Blob | undefined, limit: string | undefined) {
     if (side.encoder === 'original') return '基準画像';
     if (isLossless(side)) return '可逆圧縮（スコア評価対象外）';
+    if (side.encoder === 'image/jxl' && jxlEvaluationUnsupported) return jxlEvaluationUnavailable;
     if (!isEvaluable(side.encoder)) return '画質評価は未対応';
     if (limit && source) {
       const { width, height } = source.bitmap;
@@ -592,7 +691,7 @@ export function mount(container: HTMLElement): () => void {
     const currentSource = source;
     const limit = currentSource && evaluationLimit(currentSource.bitmap.width, currentSource.bitmap.height);
     if (limitNotice.textContent !== (limit ?? '')) limitNotice.textContent = limit ?? '';
-    const converting = sides.some(side => isEvaluable(side.encoder, isLossless(side)) && side.result.status === 'pending');
+    const converting = sides.some(side => canScore(side) && side.result.status === 'pending');
     const images = unevaluatedImages();
     const canEvaluate = currentSource && !limit && (converting || images.length > 0);
     if (!canEvaluate && requestedEvaluation) {
@@ -652,6 +751,7 @@ export function mount(container: HTMLElement): () => void {
     const job = { controller, mode, images, started: false };
     const isCurrent = () => evaluation === job && generation === inputGeneration;
     evaluation = job;
+    let jxlSkipped = false;
     for (const image of images) failedEvaluations.delete(image);
     if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
     updateEvaluation();
@@ -664,19 +764,27 @@ export function mount(container: HTMLElement): () => void {
           evaluationStatus.textContent = '画質を評価しています…';
           updateEvaluation();
         },
-        (jpeg, score) => {
-          if (!isCurrent() || !sides.some(side => evaluationBlob(side) === jpeg)) return;
-          scores.set(jpeg, score);
+        (image, score) => {
+          if (!isCurrent() || !sides.some(side => evaluationBlob(side) === image)) return;
+          scores.set(image, score);
+          updateEvaluation();
+        },
+        () => {
+          if (!isCurrent()) return;
+          jxlSkipped = jxlEvaluationUnsupported = true;
           updateEvaluation();
         },
       );
-      if (isCurrent()) setIconMessage(evaluationStatus, Check, '画質評価が完了しました。');
+      if (isCurrent()) {
+        if (jxlSkipped) setIconMessage(evaluationStatus, CircleAlert, jxlEvaluationUnavailable);
+        else setIconMessage(evaluationStatus, Check, '画質評価が完了しました。');
+      }
     } catch (cause) {
       if (isCurrent()) {
         if (cause instanceof DOMException && cause.name === 'AbortError') {
           evaluationStatus.textContent = '画質評価を中止しました。';
         } else {
-          // If one JPEG completed before the worker failed, its cached score remains valid.
+          // Keep the scores already received before the Worker failed.
           for (const image of images) {
             if (!scores.has(image)) failedEvaluations.add(image);
           }
@@ -703,6 +811,7 @@ export function mount(container: HTMLElement): () => void {
     detachAvif(side);
     detachMozjpeg(side);
     detachWebp(side);
+    detachJxl(side);
     detachOxipng(side);
     ++side.generation;
     clearTimeout(side.timer);
@@ -721,6 +830,8 @@ export function mount(container: HTMLElement): () => void {
     side.mozjpegCancel.hidden = side.mozjpegRetry.hidden = true;
     side.webpStatus.textContent = '';
     side.webpCancel.hidden = side.webpRetry.hidden = true;
+    side.jxlStatus.textContent = '';
+    side.jxlCancel.hidden = side.jxlRetry.hidden = true;
     side.avifCancel.hidden = side.avifRetry.hidden = true;
     side.oxipngCancel.hidden = side.oxipngRetry.hidden = true;
     delete side.output.dataset.change;
@@ -832,6 +943,14 @@ export function mount(container: HTMLElement): () => void {
     side.webpLossless.checked = side.webpOptions.lossless;
     side.webpSharp.checked = Boolean(shownWebpOptions.use_sharp_yuv);
     side.webpAlpha.disabled = side.webpSharp.disabled = side.webpOptions.lossless;
+    side.jxlSettings.hidden = side.encoder !== 'image/jxl';
+    const jxl = effectiveJxlOptions(side.jxlOptions);
+    side.jxlDistance.disabled = side.jxlLossless.checked = jxl.lossless;
+    side.jxlDistance.min = jxl.lossless ? '0' : '0.1';
+    const distance = jxl.distanceTenths / 10;
+    side.jxlDistance.value = String(distance);
+    side.jxlDistanceValue.textContent = jxl.lossless ? '0' : distance.toFixed(1);
+    side.jxlEffort.value = side.jxlEffortValue.textContent = String(jxl.effort);
     side.oxipngSettings.hidden = side.encoder !== 'oxipng';
     side.oxipngLevel.value = String(side.oxipngOptions.level);
     side.oxipngInterlace.checked = side.oxipngOptions.interlace;
@@ -866,6 +985,10 @@ export function mount(container: HTMLElement): () => void {
         blob = await requestWebp(side, bitmap, currentInput);
         if (!isCurrent()) return;
         filename = webpFilename(stem, side.id, side.webpOptions);
+      } else if (side.encoder === 'image/jxl') {
+        blob = await requestJxl(side, bitmap, currentInput);
+        if (!isCurrent()) return;
+        filename = jxlFilename(stem, side.id, side.jxlOptions);
       } else if (side.encoder === 'image/jpeg' || side.encoder === 'image/png') {
         let encoding: Promise<Blob> | undefined;
         // 設定が一致する間は、もう片側の変換処理か成功済みのBlobを共有する。
@@ -911,6 +1034,11 @@ export function mount(container: HTMLElement): () => void {
         side.webpStatus.textContent = 'WebP変換が完了しました。';
         side.webpCancel.hidden = side.webpRetry.hidden = true;
       }
+      const restoreJxlFocus = side.encoder === 'image/jxl' && document.activeElement === side.jxlCancel;
+      if (side.encoder === 'image/jxl') {
+        side.jxlStatus.textContent = 'JPEG XL変換が完了しました。';
+        side.jxlCancel.hidden = side.jxlRetry.hidden = true;
+      }
       side.output.dataset.change = blob.size < file.size ? 'reduction' : blob.size > file.size ? 'increase' : 'same';
       side.sizeChange.textContent = sizeChange(file.size, blob.size);
       const originalSize = document.createElement('span');
@@ -919,7 +1047,7 @@ export function mount(container: HTMLElement): () => void {
       convertedSize.textContent = ' → 出力 ' + formatFileSize(blob.size);
       side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
-      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus || restoreMozjpegFocus) side.save.focus({ preventScroll: true });
+      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus || restoreMozjpegFocus || restoreJxlFocus) side.save.focus({ preventScroll: true });
       updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
@@ -931,6 +1059,8 @@ export function mount(container: HTMLElement): () => void {
       const restoreMozjpegFocus = isMozjpeg && document.activeElement === side.mozjpegCancel;
       const isWebp = side.encoder === 'image/webp';
       const restoreWebpFocus = isWebp && document.activeElement === side.webpCancel;
+      const isJxl = side.encoder === 'image/jxl';
+      const restoreJxlFocus = isJxl && document.activeElement === side.jxlCancel;
       invalidate(side);
       side.result = { status: 'failed' };
       const message = cause instanceof Error && !(cause instanceof DOMException) ? cause.message : '変換結果を表示できませんでした。';
@@ -954,6 +1084,11 @@ export function mount(container: HTMLElement): () => void {
         side.webpStatus.textContent = 'WebP変換に失敗しました。もう一度お試しください。';
         side.webpRetry.hidden = false;
         if (restoreWebpFocus) side.webpRetry.focus({ preventScroll: true });
+      }
+      if (isJxl) {
+        side.jxlStatus.textContent = 'JPEG XL変換に失敗しました。もう一度お試しください。';
+        side.jxlRetry.hidden = false;
+        if (restoreJxlFocus) side.jxlRetry.focus({ preventScroll: true });
       }
       updateEvaluation();
     }
@@ -999,6 +1134,14 @@ export function mount(container: HTMLElement): () => void {
       if (active) active.consumers.add(side);
       side.webpStatus.textContent = active?.started ? 'WebPに変換しています…' : 'WebP変換を待っています…';
       side.webpCancel.hidden = false;
+    }
+    if (side.encoder === 'image/jxl') {
+      const key = jxlKey(currentInput, side.jxlOptions);
+      side.jxlKey = key;
+      const active = jxlJobs.get(key);
+      if (active) active.consumers.add(side);
+      side.jxlStatus.textContent = active?.started ? 'JPEG XLに変換しています…' : 'JPEG XL変換を待っています…';
+      side.jxlCancel.hidden = false;
     }
     updateEvaluation();
     if (delay === 0) {
@@ -1047,10 +1190,10 @@ export function mount(container: HTMLElement): () => void {
       return false;
     }
     const file = files[0]!;
-    if (file.type && !['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(file.type)) {
+    if (file.type && !inputMimeTypes.includes(file.type)) {
       reading = undefined;
       inputStatus.textContent = '';
-      setIconMessage(inputError, CircleAlert, 'JPEG・PNG・WebP・AVIFの画像を選択してください。');
+      setIconMessage(inputError, CircleAlert, supportedInputMessage);
       return false;
     }
     const changedAt = selection.changedAt;
@@ -1059,7 +1202,7 @@ export function mount(container: HTMLElement): () => void {
     let bitmap: ImageBitmap | undefined;
     let preview: HTMLCanvasElement | undefined;
     try {
-      bitmap = await decode(file, controller.signal);
+      bitmap = await decode(file, controller.signal, jxlSupport);
       if (!selectionIsCurrent(selection)) {
         bitmap.close();
         return false;
@@ -1269,7 +1412,12 @@ export function mount(container: HTMLElement): () => void {
   for (const side of sides) {
     showSettings(side);
     side.format.addEventListener('change', () => {
-      const encoder = side.format.value as EncoderId;
+      const selected = side.format.selectedOptions[0];
+      if (!selected || selected.disabled) {
+        side.format.value = side.encoder;
+        return;
+      }
+      const encoder = selected.value as EncoderId;
       if (encoder === side.encoder) return;
       side.encoder = encoder;
       updateSettings(side);
@@ -1346,6 +1494,19 @@ export function mount(container: HTMLElement): () => void {
     side.webpSharp.addEventListener('change', () => {
       if (!side.webpOptions.lossless) updateWebpOptions({ sharpYuv: side.webpSharp.checked });
     }, options);
+    const updateJxlOptions = (change: Partial<JxlOptions>) => {
+      const updated = validateJxlOptions({ ...side.jxlOptions, ...change });
+      const previousKey = jxlKey(inputGeneration, side.jxlOptions);
+      side.jxlOptions = updated;
+      if (jxlKey(inputGeneration, updated) !== previousKey) updateSettings(side, 180);
+    };
+    side.jxlDistance.addEventListener('input', () => {
+      if (!side.jxlOptions.lossless) updateJxlOptions({ distance: side.jxlDistance.valueAsNumber });
+    }, options);
+    side.jxlEffort.addEventListener('input', () => {
+      updateJxlOptions({ effort: side.jxlEffort.valueAsNumber });
+    }, options);
+    side.jxlLossless.addEventListener('change', () => updateJxlOptions({ lossless: side.jxlLossless.checked }), options);
     side.qualityInput.addEventListener('input', () => {
       if (!encoders[side.encoder].hasQuality || side.quality === side.qualityInput.valueAsNumber) return;
       side.quality = side.qualityInput.valueAsNumber;
@@ -1418,6 +1579,21 @@ export function mount(container: HTMLElement): () => void {
       if (side.encoder === 'image/webp' && source) {
         updateSettings(side);
         side.webpCancel.focus({ preventScroll: true });
+      }
+    }, options);
+    side.jxlCancel.addEventListener('click', () => {
+      if (side.encoder !== 'image/jxl' || side.result.status !== 'pending') return;
+      invalidate(side);
+      side.result = { status: 'cancelled' };
+      side.jxlStatus.textContent = 'JPEG XL変換を中止しました。再試行できます。';
+      side.jxlRetry.hidden = false;
+      side.jxlRetry.focus({ preventScroll: true });
+      updateEvaluation();
+    }, options);
+    side.jxlRetry.addEventListener('click', () => {
+      if (side.encoder === 'image/jxl' && source) {
+        updateSettings(side);
+        side.jxlCancel.focus({ preventScroll: true });
       }
     }, options);
   }

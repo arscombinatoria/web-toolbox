@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import type { FileChooser, Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { formatFileSize, sizeChange } from '../src/tools/image-converter/encoder';
+import { isJxl } from '../src/tools/image-converter/jxl/signature';
+import { jxlProbeBlob } from '../src/tools/image-converter/jxl/support';
 import { imageWorkerLockName } from '../src/tools/image-converter/worker-slot';
 
 async function testImage(page: Page, width = 64, height = 32) {
@@ -1835,7 +1837,7 @@ test('MozJPEG loads on demand, composites white, saves and reopens JPEG on the d
   await expect(left).toHaveValue('original');
   await expect(right).toHaveValue('image/jpeg');
   await expect(right.locator('option')).toHaveText([
-    'Original', 'AVIF (libaom)', 'Browser JPEG', 'Browser PNG', 'JPEG (MozJPEG)', 'Oxipng', 'WebP (libwebp)',
+    'Original', 'AVIF (libaom)', 'Browser JPEG', 'Browser PNG', 'JPEG (MozJPEG)', 'JPEG XL (libjxl)', 'Oxipng', 'WebP (libwebp)',
   ]);
   const save = page.getByRole('button', { name: '右をダウンロード' });
   await expect(save).toBeEnabled();
@@ -2046,4 +2048,180 @@ test('MozJPEG previews and saves a 16-megapixel input and cancels active encodin
   await expect(status).toContainText('中止しました');
   await expect(save).toBeDisabled();
   await expect.poll(() => page.workers().length).toBe(0);
+});
+
+test('JPEG XL checks native decoding, loads the encoder on demand, and previews, scores and reopens output', async ({ page, context, browserName }) => {
+  test.setTimeout(60_000);
+  const probe = Buffer.from(await jxlProbeBlob().arrayBuffer());
+  const requests: string[] = [];
+  context.on('request', request => requests.push(request.url()));
+  await page.goto('./?tool=image-converter');
+  const support = await page.evaluate(async bytes => {
+    const blob = new Blob([Uint8Array.from(bytes)], { type: 'image/jxl' });
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.src = url;
+    try {
+      const preview = await image.decode().then(() => true, () => false);
+      const input = await createImageBitmap(image).then(bitmap => { bitmap.close(); return true; }, () => false);
+      if (!preview) return { preview, input, scoring: false };
+
+      const script = new Blob([`
+        onmessage = async ({ data }) => {
+          try {
+            const bitmap = await createImageBitmap(data);
+            bitmap.close();
+            postMessage(true);
+          } catch {
+            postMessage(false);
+          }
+        };
+      `], { type: 'text/javascript' });
+      const workerUrl = URL.createObjectURL(script);
+      const worker = new Worker(workerUrl);
+      try {
+        const scoring = await new Promise<boolean>((resolve, reject) => {
+          worker.onmessage = ({ data }) => resolve(data === true);
+          worker.onerror = reject;
+          worker.postMessage(blob);
+        });
+        return { preview, input, scoring };
+      } finally {
+        worker.terminate();
+        URL.revokeObjectURL(workerUrl);
+      }
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, [...probe]);
+
+  const input = page.locator('[type=file]');
+  const format = page.getByLabel('右の出力形式');
+  const option = format.locator('option[value="image/jxl"]');
+  const status = page.locator('.image-panel[data-side=right] .image-jxl-status');
+  const score = page.locator('.image-panel[data-side=right] .image-score');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  const preview = page.getByAltText('右側のプレビュー');
+  const assets = () => requests.filter(url => /libjxl-0\.13\.0-encoder-.*\.wasm/.test(url));
+  if (!support.preview) {
+    await expect(option).toBeDisabled();
+    await expect(page.locator('.image-jxl-compatibility')).toHaveText(/JPEG XLの入力と出力を利用できません/);
+    await input.setInputFiles({ name: 'valid.jxl', mimeType: 'image/jxl', buffer: probe });
+    await expect(page.locator('.image-input-error')).toHaveText(/JPEG XLの入力を利用できません/);
+    expect(assets()).toEqual([]);
+    return;
+  }
+
+  await expect(option).toBeEnabled();
+  await page.getByLabel('画質の自動評価').uncheck();
+  await input.setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: rgbaPng(31, 29) });
+  await expect(save).toBeEnabled();
+  expect(assets()).toEqual([]);
+
+  const wasmPath = '**/web-toolbox/assets/libjxl-0.13.0-encoder-*.wasm';
+  const cancel = page.getByRole('button', { name: '右側のJPEG XL変換を中止' });
+  const retry = page.getByRole('button', { name: '右側のJPEG XL変換を再試行' });
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route(wasmPath, async route => {
+    await blocked;
+    await route.abort().catch(() => {});
+  }, { times: 1 });
+  try {
+    const requested = page.waitForRequest(wasmPath);
+    await format.selectOption('image/jxl');
+    await requested;
+    await cancel.click();
+    await expect(status).toContainText('中止しました');
+    await expect(save).toBeDisabled();
+    await expect.poll(() => page.workers().length).toBe(0);
+  } finally {
+    release();
+  }
+
+  await page.route(wasmPath, route => route.fulfill({ status: 503 }), { times: 1 });
+  await retry.click();
+  await expect(status).toContainText('失敗');
+  await expect(save).toBeDisabled();
+  const wasm = page.waitForResponse(wasmPath);
+  await retry.click();
+  expect((await wasm).ok()).toBe(true);
+  await expect(status).toHaveText('JPEG XL変換が完了しました。');
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveJSProperty('naturalWidth', 31);
+  await expect(preview).toHaveJSProperty('naturalHeight', 29);
+  await page.getByRole('button', { name: '画質を評価' }).click();
+  if (support.scoring) await expect(score).toHaveText(/^-?\d+\.\d$/);
+  else await expect(score).toHaveText(/JPEG XLの画質評価を利用できません/);
+  await expect(save).toBeEnabled();
+
+  const lossless = page.getByLabel('右側のJPEG XLを可逆圧縮にする');
+  const distance = page.getByLabel('右のJPEG XL Distance');
+  await distance.fill('0.5');
+  await lossless.check();
+  await expect(distance).toBeDisabled();
+  await expect(distance).toHaveValue('0');
+  await expect(page.locator('.image-panel[data-side=right] .image-jxl-distance + span')).toHaveText('0');
+  await expect(score).toHaveText('可逆圧縮（スコア評価対象外）');
+  const result = await saveBrowserImage(page, save, 'sample-right-jxl-lossless-e7.jxl', browserName);
+  expect(isJxl(result)).toBe(true);
+
+  // Firefox can open the saved image in its own page.
+  if (browserName === 'firefox') await page.goto('./?tool=image-converter');
+  else {
+    await lossless.uncheck();
+    await expect(distance).toHaveValue('0.5');
+  }
+  await input.setInputFiles({ name: 'roundtrip.jxl', mimeType: 'image/jxl', buffer: result });
+  if (!support.input) {
+    await expect(page.locator('.image-input-error')).toHaveText(/JPEG XLの入力を利用できません/);
+  } else {
+    await expect(page.locator('.image-info')).toHaveText(/roundtrip\.jxl.*31 × 29 px/);
+    const original = await saveBrowserImage(page, page.getByRole('button', { name: '左をダウンロード' }), 'roundtrip.jxl', browserName);
+    expect(original).toEqual(result);
+    if (browserName === 'firefox') await page.goto('./?tool=image-converter');
+
+    // Wrap the raw probe in the standard signature, file type and codestream boxes.
+    const header = Buffer.from('0000000c4a584c200d0a870a00000014667479706a786c20000000006a786c20', 'hex');
+    const codestreamBox = Buffer.alloc(8);
+    codestreamBox.writeUInt32BE(8 + probe.length);
+    codestreamBox.write('jxlc', 4);
+    const container = Buffer.concat([header, codestreamBox, probe]);
+    await input.setInputFiles({ name: 'container.jxl', mimeType: 'image/jxl', buffer: container });
+    await expect(page.locator('.image-info')).toHaveText(/container\.jxl.*2 × 2 px/);
+    await input.setInputFiles({ name: 'corrupt.jxl', mimeType: 'image/jxl', buffer: probe.subarray(0, 2) });
+    await expect(page.locator('.image-input-error')).toHaveText(/画像を読み込めませんでした/);
+    await expect(page.locator('.image-filename')).toHaveText('container.jxl');
+  }
+});
+
+test('JPEG XL explains unavailable preview support and leaves the default conversion available', async ({ page, context }) => {
+  const jxlRequests: string[] = [];
+  context.on('request', request => {
+    if (request.url().includes('libjxl-0.13.0-encoder')) jxlRequests.push(request.url());
+  });
+  await page.addInitScript(() => {
+    const jxlUrls = new Set<string>();
+    const createUrl = URL.createObjectURL;
+    const decode = HTMLImageElement.prototype.decode;
+    URL.createObjectURL = object => {
+      const url = createUrl(object);
+      if (object instanceof Blob && object.type === 'image/jxl') jxlUrls.add(url);
+      return url;
+    };
+    HTMLImageElement.prototype.decode = function () {
+      if (jxlUrls.has(this.src)) return Promise.reject(new DOMException('Unsupported format', 'EncodingError'));
+      return decode.call(this);
+    };
+  });
+  await page.goto('./?tool=image-converter');
+  await expect(page.locator('.image-jxl-compatibility')).toHaveText(/JPEG XLの入力と出力を利用できません/);
+  await expect(page.getByLabel('右の出力形式').locator('option[value="image/jxl"]')).toBeDisabled();
+  const input = page.locator('[type=file]');
+  await input.setInputFiles({ name: 'valid.jxl', mimeType: 'image/jxl', buffer: Buffer.from(await jxlProbeBlob().arrayBuffer()) });
+  await expect(page.locator('.image-input-error')).toHaveText(/JPEG XLの入力を利用できません/);
+  await input.setInputFiles(await testImage(page));
+  await expect(page.getByLabel('右の出力形式')).toHaveValue('image/jpeg');
+  await expect(page.getByRole('button', { name: '右をダウンロード' })).toBeEnabled();
+  expect(jxlRequests).toEqual([]);
 });

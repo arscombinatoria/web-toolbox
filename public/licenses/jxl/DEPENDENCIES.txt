@@ -1,0 +1,25 @@
+JPEG XL encoder WASM dependency sources
+======================================
+
+libjxl 0.13.0
+  Release commit: 5a7da83447212fe4900fc29ce97430b881caa67e
+  Source: https://github.com/libjxl/libjxl/archive/refs/tags/v0.13.0.tar.gz
+  SHA-256: 24d18c9af2d1f5a17730b3f8d3f70a5c16e5ac303f5d9d5fe9dc00cf7ca82af2
+
+Brotli 1.2.1 (commit db24a98aed38a16de78cc05ca15cdd8dc2a0d92d)
+  Source: https://github.com/google/brotli/archive/db24a98aed38a16de78cc05ca15cdd8dc2a0d92d.tar.gz
+  SHA-256: 113b9685dfc14dd2f3360d077283266eec2fbdfb0fe3e5600f11be151da0d68e
+
+Highway 1.2.0 (commit 457c891775a7397bdb0376bb1031e6e027af1c48)
+  Source: https://github.com/google/highway/archive/457c891775a7397bdb0376bb1031e6e027af1c48.tar.gz
+  SHA-256: 5124b0501c98d9930dbb065bfa1a5bbbd59ce0f12facb7e1e33aaef01a5f1f1a
+
+skcms (commit 074a8d439d75df5bff2746458306f7760ee74dd8; 2026-11-09)
+  Source: https://skia.googlesource.com/skcms/+archive/074a8d439d75df5bff2746458306f7760ee74dd8.tar.gz
+  SHA-256 of normalized source tree archive: ac17fae715bba85a8280ff85936c1d5f63f8ea274b416ae74a5e5258bfab5569
+  Normalization: GNU tar, sorted paths, mtime 0, uid/gid 0, GNU format
+  Includes CLUT bounds fix a7a3b15f06355692d86a3b8373c579a521598f4c and
+  ICC tag-count bounds fix ec12624e9419c52e476891003bef1e5764bed9b5.
+
+Build image: emscripten/emsdk, Linux amd64, Emscripten 4.0.20
+  Image digest: sha256:33e992367f721747d8008c9141c04fa017139e3557a60e0c80be93a0870fe462

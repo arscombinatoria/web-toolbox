@@ -1,0 +1,6 @@
+const containerSignature = [0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a];
+
+export function isJxl(bytes: Uint8Array): boolean {
+  return (bytes[0] === 0xff && bytes[1] === 0x0a) ||
+    containerSignature.every((byte, index) => bytes[index] === byte);
+}
