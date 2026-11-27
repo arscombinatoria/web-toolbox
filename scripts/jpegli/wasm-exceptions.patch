@@ -2,9 +2,6 @@ diff --git a/lib/CMakeLists.txt b/lib/CMakeLists.txt
 index 2f29f4a..44f7464 100644
 --- a/lib/CMakeLists.txt
 +++ b/lib/CMakeLists.txt
-@@ -83,4 +83,4 @@ else ()
-   else()  # WIN32
-     list(APPEND JPEGLI_INTERNAL_FLAGS
-       -fsized-deallocation
+@@ -122 +122 @@
 -      -fno-exceptions
 +      -fwasm-exceptions

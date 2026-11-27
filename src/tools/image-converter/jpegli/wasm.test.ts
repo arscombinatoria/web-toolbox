@@ -50,6 +50,48 @@ it.each([
   expect(isJpegli(encodeJpegliPixels(encoder, fixture(width, height), options), width, height, options)).toBe(true);
 });
 
+function jpegQuantizationTables(bytes: Uint8Array): Map<number, Uint8Array> {
+  const tables = new Map<number, Uint8Array>();
+  for (let offset = 2; offset + 4 <= bytes.length;) {
+    if (bytes[offset] !== 0xff) break;
+    const marker = bytes[offset + 1]!;
+    if (marker === 0xda || marker === 0xd9) break;
+    const length = bytes[offset + 2]! * 256 + bytes[offset + 3]!;
+    const end = offset + 2 + length;
+    if (length < 2 || end > bytes.length) break;
+    if (marker === 0xdb) {
+      for (let cursor = offset + 4; cursor < end;) {
+        const descriptor = bytes[cursor++]!;
+        const precision = descriptor >> 4;
+        const tableId = descriptor & 0x0f;
+        const tableLength = precision === 0 ? 64 : 128;
+        if (cursor + tableLength > end) break;
+        tables.set(tableId, bytes.slice(cursor, cursor + tableLength));
+        cursor += tableLength;
+      }
+    }
+    offset = end;
+  }
+  return tables;
+}
+
+it.each([
+  ['distance', { mode: 'distance', distance: 1.0 }],
+  ['quality', { mode: 'quality', quality: 90 }],
+] as const)('creates sampling-specific quantization tables for %s mode', (mode, setting) => {
+  const pixels = fixture(97, 69);
+  const encode = (subsample: JpegliOptions['subsample']) => {
+    const options = { ...defaultJpegliOptions, ...setting, mode, subsample };
+    return jpegQuantizationTables(encodeJpegliPixels(encoder, pixels, options));
+  };
+  const tables444 = encode('444');
+  const tables420 = encode('420');
+  expect(tables444.get(0)).toBeDefined();
+  expect(tables420.get(0)).toBeDefined();
+  expect(tables444.get(0)).not.toEqual(tables420.get(0));
+  expect(tables444.get(1)).not.toEqual(tables420.get(1));
+});
+
 it('uses the stored Huffman choice only for sequential output and applies adaptive quantization', () => {
   const pixels = fixture(97, 69);
   const encode = (change: Partial<JpegliOptions>) =>

@@ -140,6 +140,15 @@ extern "C" int jpegli_encode(const uint8_t* rgba, uint32_t rgba_length,
     state->cinfo.in_color_space = JCS_EXT_RGBA;
     jpegli_set_defaults(&state->cinfo);
 
+    state->cinfo.comp_info[0].h_samp_factor =
+        (subsample == 444 || subsample == 440) ? 1 : 2;
+    state->cinfo.comp_info[0].v_samp_factor =
+        (subsample == 420 || subsample == 440) ? 2 : 1;
+    state->cinfo.comp_info[1].h_samp_factor = 1;
+    state->cinfo.comp_info[1].v_samp_factor = 1;
+    state->cinfo.comp_info[2].h_samp_factor = 1;
+    state->cinfo.comp_info[2].v_samp_factor = 1;
+
     if (mode == 0) {
       jpegli_set_distance(&state->cinfo,
                           jpegli_quality_to_distance(value), TRUE);
@@ -151,15 +160,6 @@ extern "C" int jpegli_encode(const uint8_t* rgba, uint32_t rgba_length,
         &state->cinfo, adaptive_quantization ? TRUE : FALSE);
     jpegli_set_progressive_level(&state->cinfo, progressive_level);
     state->cinfo.optimize_coding = optimize_coding ? TRUE : FALSE;
-
-    state->cinfo.comp_info[0].h_samp_factor =
-        (subsample == 444 || subsample == 440) ? 1 : 2;
-    state->cinfo.comp_info[0].v_samp_factor =
-        (subsample == 420 || subsample == 440) ? 2 : 1;
-    state->cinfo.comp_info[1].h_samp_factor = 1;
-    state->cinfo.comp_info[1].v_samp_factor = 1;
-    state->cinfo.comp_info[2].h_samp_factor = 1;
-    state->cinfo.comp_info[2].v_samp_factor = 1;
 
     state->destination.state = state;
     state->destination.capacity = 0;
