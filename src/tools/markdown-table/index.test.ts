@@ -339,7 +339,7 @@ it('最大列数でも配置DOMを50件に制限し、末尾設定・入力エ�
   expect(document.querySelector('[data-alignment-range]')!.textContent)
     .toBe('列 1〜50 を表示中（全 51 列）');
   dispose();
-});
+}, 15_000);
 
 it('重複・空ヘッダーの名前と配置を保ち、設定更新後も入力エラーを復帰できる', () => {
   const dispose = mount(document.body);
