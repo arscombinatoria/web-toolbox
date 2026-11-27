@@ -107,15 +107,15 @@
 .image-panel label { display: grid; gap: .25rem; font-size: .875rem; }
 .image-panel select { width: 100%; min-width: 0; min-height: 2.75rem; font-size: 1rem; }
 .image-panel .image-quality { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
-.image-avif-settings, .image-webp-settings, .image-mozjpeg-settings, .image-jxl-settings { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.image-avif-settings > label:has(input[type="range"]), .image-webp-settings > label:has(input[type="range"]), .image-mozjpeg-settings > label:has(input[type="range"]), .image-jxl-settings > label:has(input[type="range"]) { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
-.image-avif-settings input[type="range"], .image-webp-settings input[type="range"], .image-mozjpeg-settings input[type="range"], .image-jxl-settings input[type="range"] { grid-row: 2; grid-column: 1 / -1; width: 100%; min-height: 1.75rem; margin: 0; accent-color: var(--accent); }
-.image-avif-settings label span, .image-webp-settings label span, .image-mozjpeg-settings label span, .image-jxl-settings label span { font-variant-numeric: tabular-nums; }
-.image-avif-settings > label:has(input[type="checkbox"]), .image-webp-settings > label:has(input[type="checkbox"]), .image-mozjpeg-settings > label:has(input[type="checkbox"]), .image-jxl-settings > label:has(input[type="checkbox"]) { display: flex; align-items: flex-start; gap: var(--space-1); }
-.image-avif-settings input[type="checkbox"], .image-webp-settings input[type="checkbox"], .image-mozjpeg-settings input[type="checkbox"], .image-jxl-settings input[type="checkbox"] { flex: none; min-width: 1rem; min-height: 1rem; margin: .2rem 0 0; accent-color: var(--accent); }
-.image-avif-actions, .image-webp-actions, .image-mozjpeg-actions, .image-jxl-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.image-avif-actions button, .image-webp-actions button, .image-mozjpeg-actions button, .image-jxl-actions button { min-height: 2.75rem; }
-.image-avif-status, .image-webp-status, .image-mozjpeg-status, .image-jxl-status { font-size: .875rem; }
+.image-avif-settings, .image-webp-settings, .image-jpegli-settings, .image-mozjpeg-settings, .image-jxl-settings { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.image-avif-settings > label:has(input[type="range"]), .image-webp-settings > label:has(input[type="range"]), .image-jpegli-settings > label:has(input[type="range"]), .image-mozjpeg-settings > label:has(input[type="range"]), .image-jxl-settings > label:has(input[type="range"]) { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0; }
+.image-avif-settings input[type="range"], .image-webp-settings input[type="range"], .image-jpegli-settings input[type="range"], .image-mozjpeg-settings input[type="range"], .image-jxl-settings input[type="range"] { grid-row: 2; grid-column: 1 / -1; width: 100%; min-height: 1.75rem; margin: 0; accent-color: var(--accent); }
+.image-avif-settings label span, .image-webp-settings label span, .image-jpegli-settings label span, .image-mozjpeg-settings label span, .image-jxl-settings label span { font-variant-numeric: tabular-nums; }
+.image-avif-settings > label:has(input[type="checkbox"]), .image-webp-settings > label:has(input[type="checkbox"]), .image-jpegli-settings > label:has(input[type="checkbox"]), .image-mozjpeg-settings > label:has(input[type="checkbox"]), .image-jxl-settings > label:has(input[type="checkbox"]) { display: flex; align-items: flex-start; gap: var(--space-1); }
+.image-avif-settings input[type="checkbox"], .image-webp-settings input[type="checkbox"], .image-jpegli-settings input[type="checkbox"], .image-mozjpeg-settings input[type="checkbox"], .image-jxl-settings input[type="checkbox"] { flex: none; min-width: 1rem; min-height: 1rem; margin: .2rem 0 0; accent-color: var(--accent); }
+.image-avif-actions, .image-webp-actions, .image-jpegli-actions, .image-mozjpeg-actions, .image-jxl-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.image-avif-actions button, .image-webp-actions button, .image-jpegli-actions button, .image-mozjpeg-actions button, .image-jxl-actions button { min-height: 2.75rem; }
+.image-avif-status, .image-webp-status, .image-jpegli-status, .image-mozjpeg-status, .image-jxl-status { font-size: .875rem; }
 .image-oxipng-settings { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .image-oxipng-settings > label:has(input[type="checkbox"]) { display: flex; align-items: flex-start; gap: var(--space-1); }
 .image-oxipng-settings input[type="checkbox"] { flex: none; min-width: 1rem; min-height: 1rem; margin: .2rem 0 0; accent-color: var(--accent); }

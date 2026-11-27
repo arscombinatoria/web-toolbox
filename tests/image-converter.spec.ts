@@ -1837,7 +1837,7 @@ test('MozJPEG loads on demand, composites white, saves and reopens JPEG on the d
   await expect(left).toHaveValue('original');
   await expect(right).toHaveValue('image/jpeg');
   await expect(right.locator('option')).toHaveText([
-    'Original', 'AVIF (libaom)', 'Browser JPEG', 'Browser PNG', 'JPEG (MozJPEG)', 'JPEG XL (libjxl)', 'Oxipng', 'WebP (libwebp)',
+    'Original', 'AVIF (libaom)', 'Browser JPEG', 'Browser PNG', 'JPEG (Jpegli)', 'JPEG (MozJPEG)', 'JPEG XL (libjxl)', 'Oxipng', 'WebP (libwebp)',
   ]);
   const save = page.getByRole('button', { name: '右をダウンロード' });
   await expect(save).toBeEnabled();
@@ -2224,4 +2224,47 @@ test('JPEG XL explains unavailable preview support and leaves the default conver
   await expect(page.getByLabel('右の出力形式')).toHaveValue('image/jpeg');
   await expect(page.getByRole('button', { name: '右をダウンロード' })).toBeEnabled();
   expect(jxlRequests).toEqual([]);
+});
+
+test('Jpegli loads on demand, composites white, scores JPEG and saves on the deployment subpath', async ({ page, browserName }) => {
+  test.setTimeout(60_000);
+  const requests: string[] = [];
+  page.on('request', request => requests.push(request.url()));
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  const input = page.locator('[type=file]');
+  await input.setInputFiles(await testImage(page, 127, 97));
+  const right = page.getByLabel('右の出力形式');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  await expect(right).toHaveValue('image/jpeg');
+  await expect(save).toBeEnabled();
+  expect(requests.some(url => /jpegli-.*\.wasm|\/assets\/worker-/.test(url))).toBe(false);
+
+  const wasm = page.waitForResponse('**/web-toolbox/assets/jpegli-*-encoder-*.wasm');
+  await right.selectOption('jpegli');
+  expect((await wasm).ok()).toBe(true);
+  const preview = page.getByAltText('右側のプレビュー');
+  await expect(preview).toBeVisible();
+  const pixels = await preview.evaluate(element => {
+    const image = element as HTMLImageElement;
+    const canvas = new OffscreenCanvas(image.naturalWidth, image.naturalHeight);
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    return [...context.getImageData(8, 8, 1, 1).data, ...context.getImageData(112, 80, 1, 1).data];
+  });
+  expect(pixels.slice(0, 3).every(value => value >= 250)).toBe(true);
+  expect(pixels[3]).toBe(255);
+  expect(pixels[4]).toBeGreaterThan(240);
+  expect(pixels[5]).toBeLessThan(15);
+  expect(pixels[6]).toBeLessThan(15);
+
+  await page.getByRole('button', { name: '画質を評価', exact: true }).click();
+  await expect(page.locator('.image-panel[data-side=right] .image-score')).toHaveText(/^-?\d+\.\d$/);
+  const output = await saveBrowserImage(page, save, 'sample.alpha-right-jpegli-q90-444-p2-aq-opt.jpg', browserName);
+  expect(output.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+  expect(output.subarray(-2)).toEqual(Buffer.from([0xff, 0xd9]));
+  await right.selectOption('original');
+  await input.setInputFiles({ name: 'jpegli-roundtrip.jpg', mimeType: 'image/jpeg', buffer: output });
+  await expect(page.locator('.image-filename')).toHaveText('jpegli-roundtrip.jpg');
+  await expect(page.locator('.image-original-layer canvas')).toHaveJSProperty('width', 127);
 });

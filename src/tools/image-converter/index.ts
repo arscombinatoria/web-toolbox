@@ -8,6 +8,8 @@ import { encodeAvif } from './avif/client';
 import { avifFilename, avifKey, defaultAvifOptions, effectiveAvifOptions, isAvifLossless, validateAvifOptions, type AvifOptions } from './avif/options';
 import { encodeMozjpeg } from './mozjpeg/client';
 import { defaultMozjpegOptions, effectiveMozjpegOptions, mozjpegFilename, mozjpegKey, validateMozjpegOptions, type MozjpegOptions } from './mozjpeg/options';
+import { encodeJpegli } from './jpegli/client';
+import { defaultJpegliOptions, effectiveJpegliOptions, jpegliFilename, jpegliKey, validateJpegliOptions, type JpegliOptions } from './jpegli/options';
 import { encodeWebp } from './webp/client';
 import { defaultWebpOptions, effectiveWebpOptions, validateWebpOptions, webpFilename, webpKey, type WebpOptions } from './webp/options';
 import { encodeJxl } from './jxl/client';
@@ -120,6 +122,27 @@ export function mount(container: HTMLElement): () => void {
                 <div class="image-mozjpeg-actions">
                   <button type="button" class="image-mozjpeg-cancel" hidden aria-label="${label}側のMozJPEG変換を中止">MozJPEG変換を中止</button>
                   <button type="button" class="image-mozjpeg-retry" hidden aria-label="${label}側のMozJPEG変換を再試行">MozJPEG変換を再試行</button>
+                </div>
+              </div>
+              <div class="image-jpegli-settings" hidden>
+                <label>画質の指定方法 <select class="image-jpegli-mode" aria-label="${label}のJpegli画質の指定方法">
+                  <option value="quality">Quality</option><option value="distance">Distance</option>
+                </select></label>
+                <label>Quality <input type="range" class="image-jpegli-quality" aria-label="${label}のJpegli Quality" min="1" max="100" step="1" aria-describedby="image-jpegli-note-${id}"><span></span></label>
+                <label hidden>Distance <input type="range" class="image-jpegli-distance" aria-label="${label}のJpegli Distance" min="0.1" max="25" step="0.1" aria-describedby="image-jpegli-note-${id}"><span></span></label>
+                <label>色差サンプリング <select class="image-jpegli-subsample" aria-label="${label}のJpegli色差サンプリング">
+                  <option value="444">4:4:4</option><option value="440">4:4:0</option><option value="422">4:2:2</option><option value="420">4:2:0</option>
+                </select></label>
+                <label>Progressive Level <select class="image-jpegli-progressive" aria-label="${label}のJpegli Progressive Level">
+                  <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+                </select></label>
+                <label><input type="checkbox" class="image-jpegli-adaptive" aria-label="${label}のJpegli適応量子化"> 適応量子化</label>
+                <label><input type="checkbox" class="image-jpegli-optimize" aria-label="${label}のJpegliハフマン符号化最適化"> ハフマン符号化最適化</label>
+                <p class="image-note" id="image-jpegli-note-${id}">Distanceは小さいほど高画質です。Qualityの数値と実際の画質の関係はエンコーダーごとに異なります。非可逆圧縮で、透明部分は白になります。</p>
+                <p class="image-jpegli-status" role="status" aria-atomic="true"></p>
+                <div class="image-jpegli-actions">
+                  <button type="button" class="image-jpegli-cancel" hidden aria-label="${label}側のJpegli変換を中止">Jpegli変換を中止</button>
+                  <button type="button" class="image-jpegli-retry" hidden aria-label="${label}側のJpegli変換を再試行">Jpegli変換を再試行</button>
                 </div>
               </div>
               <div class="image-webp-settings" hidden>
@@ -310,6 +333,8 @@ export function mount(container: HTMLElement): () => void {
       avifKey: undefined as string | undefined,
       mozjpegOptions: { ...defaultMozjpegOptions },
       mozjpegKey: undefined as string | undefined,
+      jpegliOptions: { ...defaultJpegliOptions },
+      jpegliKey: undefined as string | undefined,
       webpOptions: { ...defaultWebpOptions },
       webpKey: undefined as string | undefined,
       jxlOptions: { ...defaultJxlOptions },
@@ -347,6 +372,19 @@ export function mount(container: HTMLElement): () => void {
       mozjpegStatus: panel.querySelector<HTMLElement>('.image-mozjpeg-status')!,
       mozjpegCancel: panel.querySelector<HTMLButtonElement>('.image-mozjpeg-cancel')!,
       mozjpegRetry: panel.querySelector<HTMLButtonElement>('.image-mozjpeg-retry')!,
+      jpegliSettings: panel.querySelector<HTMLElement>('.image-jpegli-settings')!,
+      jpegliMode: panel.querySelector<HTMLSelectElement>('.image-jpegli-mode')!,
+      jpegliQuality: panel.querySelector<HTMLInputElement>('.image-jpegli-quality')!,
+      jpegliQualityValue: panel.querySelector('.image-jpegli-quality + span')!,
+      jpegliDistance: panel.querySelector<HTMLInputElement>('.image-jpegli-distance')!,
+      jpegliDistanceValue: panel.querySelector('.image-jpegli-distance + span')!,
+      jpegliSubsample: panel.querySelector<HTMLSelectElement>('.image-jpegli-subsample')!,
+      jpegliAdaptive: panel.querySelector<HTMLInputElement>('.image-jpegli-adaptive')!,
+      jpegliProgressive: panel.querySelector<HTMLSelectElement>('.image-jpegli-progressive')!,
+      jpegliOptimize: panel.querySelector<HTMLInputElement>('.image-jpegli-optimize')!,
+      jpegliStatus: panel.querySelector<HTMLElement>('.image-jpegli-status')!,
+      jpegliCancel: panel.querySelector<HTMLButtonElement>('.image-jpegli-cancel')!,
+      jpegliRetry: panel.querySelector<HTMLButtonElement>('.image-jpegli-retry')!,
       webpSettings: panel.querySelector<HTMLElement>('.image-webp-settings')!,
       webpQualityLabel: panel.querySelector('.image-webp-quality-label')!,
       webpQuality: panel.querySelector<HTMLInputElement>('.image-webp-quality')!,
@@ -404,6 +442,7 @@ export function mount(container: HTMLElement): () => void {
   });
   const jxlJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const mozjpegJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
+  const jpegliJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const webpJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const avifJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const oxipngJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
@@ -644,6 +683,53 @@ export function mount(container: HTMLElement): () => void {
     return job.blob ? Promise.resolve(job.blob) : job.promise!;
   }
 
+  function detachJpegli(side: Side) {
+    const key = side.jpegliKey;
+    side.jpegliKey = undefined;
+    if (!key) return;
+    const job = jpegliJobs.get(key);
+    if (!job) return;
+    job.consumers.delete(side);
+    if (!job.consumers.size) {
+      if (!job.blob) job.controller.abort();
+      jpegliJobs.delete(key);
+    }
+  }
+
+  function requestJpegli(side: Side, bitmap: ImageBitmap, generation: number): Promise<Blob> {
+    const options = validateJpegliOptions(side.jpegliOptions);
+    const key = jpegliKey(generation, options);
+    let job = jpegliJobs.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      job = { controller, consumers: new Set(), started: false };
+      jpegliJobs.set(key, job);
+      const current = job;
+      current.promise = encodeJpegli(bitmap, options, controller.signal, () => {
+        if (jpegliJobs.get(key) !== current) return;
+        current.started = true;
+        for (const consumer of current.consumers) {
+          if (consumer.jpegliKey === key) consumer.jpegliStatus.textContent = 'Jpegliに変換しています…';
+        }
+      }).then(blob => {
+        if (jpegliJobs.get(key) === current && current.consumers.size) current.blob = blob;
+        return blob;
+      }, cause => {
+        if (jpegliJobs.get(key) === current) jpegliJobs.delete(key);
+        throw cause;
+      });
+      for (const pending of sides) {
+        if (pending.jpegliKey === key && pending.result.status === 'pending') current.consumers.add(pending);
+      }
+    }
+    job.consumers.add(side);
+    side.jpegliKey = key;
+    side.jpegliStatus.textContent = job.started ? 'Jpegliに変換しています…' : 'Jpegli変換を待っています…';
+    side.jpegliCancel.hidden = false;
+    side.jpegliRetry.hidden = true;
+    return job.blob ? Promise.resolve(job.blob) : job.promise!;
+  }
+
   for (const side of sides) side.save.prepend(createIcon(Download));
 
   function isLossless(side: Side): boolean {
@@ -810,6 +896,7 @@ export function mount(container: HTMLElement): () => void {
   function invalidate(side: Side) {
     detachAvif(side);
     detachMozjpeg(side);
+    detachJpegli(side);
     detachWebp(side);
     detachJxl(side);
     detachOxipng(side);
@@ -828,6 +915,8 @@ export function mount(container: HTMLElement): () => void {
     side.avifStatus.textContent = '';
     side.mozjpegStatus.textContent = '';
     side.mozjpegCancel.hidden = side.mozjpegRetry.hidden = true;
+    side.jpegliStatus.textContent = '';
+    side.jpegliCancel.hidden = side.jpegliRetry.hidden = true;
     side.webpStatus.textContent = '';
     side.webpCancel.hidden = side.webpRetry.hidden = true;
     side.jxlStatus.textContent = '';
@@ -932,6 +1021,18 @@ export function mount(container: HTMLElement): () => void {
     side.mozjpegProgressive.checked = shownMozjpegOptions.progressive;
     side.mozjpegOptimize.checked = shownMozjpegOptions.optimizeCoding;
     side.mozjpegOptimize.disabled = shownMozjpegOptions.progressive;
+    side.jpegliSettings.hidden = side.encoder !== 'jpegli';
+    const jpegli = effectiveJpegliOptions(side.jpegliOptions);
+    side.jpegliMode.value = jpegli.mode;
+    side.jpegliQuality.closest('label')!.hidden = jpegli.mode !== 'quality';
+    side.jpegliDistance.closest('label')!.hidden = jpegli.mode !== 'distance';
+    side.jpegliQuality.value = side.jpegliQualityValue.textContent = String(jpegli.quality);
+    side.jpegliDistance.value = side.jpegliDistanceValue.textContent = jpegli.distance.toFixed(1);
+    side.jpegliSubsample.value = jpegli.subsample;
+    side.jpegliProgressive.value = String(jpegli.progressiveLevel);
+    side.jpegliAdaptive.checked = jpegli.adaptiveQuantization;
+    side.jpegliOptimize.checked = jpegli.optimizeCoding;
+    side.jpegliOptimize.disabled = jpegli.progressiveLevel > 0;
     side.webpSettings.hidden = side.encoder !== 'image/webp';
     const shownWebpOptions = effectiveWebpOptions(side.webpOptions);
     const webpQualityLabel = side.webpOptions.lossless ? '圧縮効率' : 'WebP品質';
@@ -981,6 +1082,10 @@ export function mount(container: HTMLElement): () => void {
         blob = await requestMozjpeg(side, bitmap, currentInput);
         if (!isCurrent()) return;
         filename = mozjpegFilename(stem, side.id, side.mozjpegOptions);
+      } else if (side.encoder === 'jpegli') {
+        blob = await requestJpegli(side, bitmap, currentInput);
+        if (!isCurrent()) return;
+        filename = jpegliFilename(stem, side.id, side.jpegliOptions);
       } else if (side.encoder === 'image/webp') {
         blob = await requestWebp(side, bitmap, currentInput);
         if (!isCurrent()) return;
@@ -1029,6 +1134,11 @@ export function mount(container: HTMLElement): () => void {
         side.mozjpegStatus.textContent = 'MozJPEG変換が完了しました。';
         side.mozjpegCancel.hidden = side.mozjpegRetry.hidden = true;
       }
+      const restoreJpegliFocus = side.encoder === 'jpegli' && document.activeElement === side.jpegliCancel;
+      if (side.encoder === 'jpegli') {
+        side.jpegliStatus.textContent = 'Jpegli変換が完了しました。';
+        side.jpegliCancel.hidden = side.jpegliRetry.hidden = true;
+      }
       const restoreWebpFocus = side.encoder === 'image/webp' && document.activeElement === side.webpCancel;
       if (side.encoder === 'image/webp') {
         side.webpStatus.textContent = 'WebP変換が完了しました。';
@@ -1047,7 +1157,7 @@ export function mount(container: HTMLElement): () => void {
       convertedSize.textContent = ' → 出力 ' + formatFileSize(blob.size);
       side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
-      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus || restoreMozjpegFocus || restoreJxlFocus) side.save.focus({ preventScroll: true });
+      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus || restoreMozjpegFocus || restoreJpegliFocus || restoreJxlFocus) side.save.focus({ preventScroll: true });
       updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
@@ -1057,6 +1167,8 @@ export function mount(container: HTMLElement): () => void {
       const restoreAvifFocus = isAvif && document.activeElement === side.avifCancel;
       const isMozjpeg = side.encoder === 'mozjpeg';
       const restoreMozjpegFocus = isMozjpeg && document.activeElement === side.mozjpegCancel;
+      const isJpegli = side.encoder === 'jpegli';
+      const restoreJpegliFocus = isJpegli && document.activeElement === side.jpegliCancel;
       const isWebp = side.encoder === 'image/webp';
       const restoreWebpFocus = isWebp && document.activeElement === side.webpCancel;
       const isJxl = side.encoder === 'image/jxl';
@@ -1079,6 +1191,11 @@ export function mount(container: HTMLElement): () => void {
         side.mozjpegStatus.textContent = 'MozJPEG変換に失敗しました。もう一度お試しください。';
         side.mozjpegRetry.hidden = false;
         if (restoreMozjpegFocus) side.mozjpegRetry.focus({ preventScroll: true });
+      }
+      if (isJpegli) {
+        side.jpegliStatus.textContent = 'Jpegli変換に失敗しました。もう一度お試しください。';
+        side.jpegliRetry.hidden = false;
+        if (restoreJpegliFocus) side.jpegliRetry.focus({ preventScroll: true });
       }
       if (isWebp) {
         side.webpStatus.textContent = 'WebP変換に失敗しました。もう一度お試しください。';
@@ -1126,6 +1243,14 @@ export function mount(container: HTMLElement): () => void {
       if (active) active.consumers.add(side);
       side.mozjpegStatus.textContent = active?.started ? 'MozJPEGに変換しています…' : 'MozJPEG変換を待っています…';
       side.mozjpegCancel.hidden = false;
+    }
+    if (side.encoder === 'jpegli') {
+      const key = jpegliKey(currentInput, side.jpegliOptions);
+      side.jpegliKey = key;
+      const active = jpegliJobs.get(key);
+      if (active) active.consumers.add(side);
+      side.jpegliStatus.textContent = active?.started ? 'Jpegliに変換しています…' : 'Jpegli変換を待っています…';
+      side.jpegliCancel.hidden = false;
     }
     if (side.encoder === 'image/webp') {
       const key = webpKey(currentInput, side.webpOptions);
@@ -1477,6 +1602,33 @@ export function mount(container: HTMLElement): () => void {
     side.mozjpegOptimize.addEventListener('change', () => {
       if (!side.mozjpegOptions.progressive) updateMozjpegOptions({ optimizeCoding: side.mozjpegOptimize.checked });
     }, options);
+    const updateJpegliOptions = (change: Partial<JpegliOptions>) => {
+      const updated = validateJpegliOptions({ ...side.jpegliOptions, ...change });
+      const previousKey = jpegliKey(inputGeneration, side.jpegliOptions);
+      side.jpegliOptions = updated;
+      if (jpegliKey(inputGeneration, updated) !== previousKey) updateSettings(side, 180);
+    };
+    side.jpegliMode.addEventListener('change', () => {
+      updateJpegliOptions({ mode: side.jpegliMode.value === 'distance' ? 'distance' : 'quality' });
+    }, options);
+    side.jpegliQuality.addEventListener('input', () => {
+      if (side.jpegliOptions.mode === 'quality') updateJpegliOptions({ quality: side.jpegliQuality.valueAsNumber });
+    }, options);
+    side.jpegliDistance.addEventListener('input', () => {
+      if (side.jpegliOptions.mode === 'distance') updateJpegliOptions({ distance: side.jpegliDistance.valueAsNumber });
+    }, options);
+    side.jpegliSubsample.addEventListener('change', () => {
+      updateJpegliOptions({ subsample: side.jpegliSubsample.value as JpegliOptions['subsample'] });
+    }, options);
+    side.jpegliProgressive.addEventListener('change', () => {
+      updateJpegliOptions({ progressiveLevel: Number(side.jpegliProgressive.value) as JpegliOptions['progressiveLevel'] });
+    }, options);
+    side.jpegliAdaptive.addEventListener('change', () => {
+      updateJpegliOptions({ adaptiveQuantization: side.jpegliAdaptive.checked });
+    }, options);
+    side.jpegliOptimize.addEventListener('change', () => {
+      if (side.jpegliOptions.progressiveLevel === 0) updateJpegliOptions({ optimizeCoding: side.jpegliOptimize.checked });
+    }, options);
     const updateWebpOptions = (change: Partial<WebpOptions>) => {
       const updated = validateWebpOptions({ ...side.webpOptions, ...change });
       const previousKey = webpKey(inputGeneration, side.webpOptions);
@@ -1564,6 +1716,21 @@ export function mount(container: HTMLElement): () => void {
       if (side.encoder === 'mozjpeg' && source) {
         updateSettings(side);
         side.mozjpegCancel.focus({ preventScroll: true });
+      }
+    }, options);
+    side.jpegliCancel.addEventListener('click', () => {
+      if (side.encoder !== 'jpegli' || side.result.status !== 'pending') return;
+      invalidate(side);
+      side.result = { status: 'cancelled' };
+      side.jpegliStatus.textContent = 'Jpegli変換を中止しました。再試行できます。';
+      side.jpegliRetry.hidden = false;
+      side.jpegliRetry.focus({ preventScroll: true });
+      updateEvaluation();
+    }, options);
+    side.jpegliRetry.addEventListener('click', () => {
+      if (side.encoder === 'jpegli' && source) {
+        updateSettings(side);
+        side.jpegliCancel.focus({ preventScroll: true });
       }
     }, options);
     side.webpCancel.addEventListener('click', () => {

@@ -411,7 +411,7 @@ SVG文字列を`innerHTML`へ挿入せず、`image/svg+xml`のBlob URLを`img.sr
 
 Oxipngは `@jsquash/oxipng` 2.3.0の単一スレッド生成コードをWorkerから直接読み込み、画像をBrowser PNGにエンコードしてから再圧縮する段階を設けず、Canvasの8-bit sRGB RGBA ImageDataを `optimise_raw` へ渡します。Workerはデコード済みImageBitmapの複製を受け取り、OffscreenCanvasに描いて `getImageData(..., { colorSpace: 'srgb' })` で画素を正規化し、その後にBitmapとCanvasを解放してからWasmを呼びます。レベルは1〜6で初期値2、インターレースと完全透明画素のRGB最適化は初期状態でオフです。レベル5・6は時間がかかる場合があり、より高いレベルが小さいファイルを作るとは限りません。完全透明画素のRGB最適化は完全透明な画素だけを対象にし、そのRGB値を変更する場合があります。
 
-左右は各自のOxipng設定をメモリ内に保ち、入力世代・レベル・インターレース・完全透明画素最適化を組にして同一出力を共有します。実行中は消費側を記録し、片側が設定変更・入力確定・中止・破棄で離れても他側の要求が残れば処理を続け、最後の消費側が離れるとAbortControllerでWorkerを終了します。完了Blobは表示中の側がある間だけマップに残るため、最大2件です。異なる設定は共有Workerキューで直列化します。キュー待機は中止でき、Web Locks対応ブラウザではWorker自身も共通のロックを取得して `terminate()` 後にブラウザがWasmを回収するまで保持します。Web Locksのない環境ではメインスレッドのFIFOキューで実行中Workerを1つに制限します。AVIF、MozJPEG、WebP、JPEG XL、画質評価も同じキューとロックを使います。
+左右は各自のOxipng設定をメモリ内に保ち、入力世代・レベル・インターレース・完全透明画素最適化を組にして同一出力を共有します。実行中は消費側を記録し、片側が設定変更・入力確定・中止・破棄で離れても他側の要求が残れば処理を続け、最後の消費側が離れるとAbortControllerでWorkerを終了します。完了Blobは表示中の側がある間だけマップに残るため、最大2件です。異なる設定は共有Workerキューで直列化します。キュー待機は中止でき、Web Locks対応ブラウザではWorker自身も共通のロックを取得して `terminate()` 後にブラウザがWasmを回収するまで保持します。Web Locksのない環境ではメインスレッドのFIFOキューで実行中Workerを1つに制限します。AVIF、Jpegli、MozJPEG、WebP、JPEG XL、画質評価も同じキューとロックを使います。
 
 このWasmが保つのは、入力のブラウザ正規化後の8-bit sRGB RGBA画素です。元ファイルのビット深度・ICCプロファイル・EXIFなどのメタデータやアニメーションの保持は保証しません。出力は静止PNGです。入力は他の変換と同じ32 MiB、8,192px、1,600万画素の上限を使います。最大寸法でのWasm高水位割り当ては実ブラウザ・端末で別途確認し、端末のメモリにより上限内でも失敗することがあります。圧縮結果はSSIMULACRA2の採点対象外です。
 
@@ -511,6 +511,48 @@ Viteの本番ビルドをベースコミット `2c8e118966a1ddb1b6a4d0d9e4b87850
 | AVIF Wasm 1本 | 3,485,872 | 1,120,953 |
 
 AVIFのWorkerとWasmは出力にAVIFを選んだときに取得します。本番ビルドにはAVIFのデコーダーとマルチスレッド版のWasmは含まれません。
+
+#### JPEG (Jpegli)
+
+エンコーダーはGoogle Jpegli `c7d342c25d3587ac0110c915989ad94f414b6c8d` です。上流が指定するHighway `271a9a0ed9de1232d9117f1572c3fe28f8542ec1` を利用し、JPEG互換APIのヘッダーにlibjpeg-turbo `8ecba3647edb6dd940463fedf38ca33a8e2a73d1` を使います。skcmsはCMake設定時の依存です。2026年11月27日時点でJpegliの `main` は採用コミットと一致し、リリースは未公開でした。Highwayの最新リリースは1.4.0、libjpeg-turboは3.2.1です。上流が固定した組み合わせを採用し、libjpeg-turboはヘッダーに限定しました。 [上流が指定する依存関係](https://github.com/google/jpegli/blob/c7d342c25d3587ac0110c915989ad94f414b6c8d/deps.sh) · [Highway 1.4.0](https://github.com/google/highway/releases/tag/1.4.0) · [libjpeg-turbo 3.2.1](https://github.com/libjpeg-turbo/libjpeg-turbo/releases/tag/3.2.1) · [供給元とチェックサム](../public/licenses/jpegli/DEPENDENCIES.txt)
+
+`bash scripts/jpegli/build.sh` はソースのSHA-256を検証してから、Emscripten 4.0.20を固定ダイジェストのLinux amd64コンテナで実行します。オフラインのReleaseビルドで `-O3`、Wasm SIMD、LTOを有効にします。単一スレッドのStandalone Wasmで、線形メモリは16 MiBから最大1 GiBまで拡張できます。通常のViteビルドとCIはリポジトリ内のWasmを使用します。SharedArrayBufferとクロスオリジン分離は不要です。リンクレポートでは `jpegli-static` の符号化・共通オブジェクト、Highwayのアロケーターと中断処理、Emscriptenのランタイムが抽出されました。JPEGデコーダー、libjxl、libjpeg-turboの実装、skcms、CLI、画像入出力ライブラリは抽出されませんでした。 [ビルドスクリプト](../scripts/jpegli/build.sh)
+
+2026年11月27日にJpegli、Highway、libjpeg-turboの上流情報と公開アドバイザリを確認しました。各リポジトリの公開アドバイザリ一覧は空で、今回リンクする符号化経路に該当する公開アドバイザリは調査で確認できませんでした。CVE-2024-11403は過去のJpegli JPEGデコード経路に関するもので、libjpeg-turboのCVE-2026-75466はTurboJPEGのPNG読み込みに関するものです。画像ファイルの読み込みとメタデータ処理はブラウザの標準デコーダーが担当します。Jpegli、Highway、互換ヘッダー、Emscriptenランタイムのライセンスと著作権表示を配信します。 [Jpegliのアドバイザリ](https://github.com/google/jpegli/security/advisories) · [Highwayのアドバイザリ](https://github.com/google/highway/security/advisories) · [CVE-2024-11403](https://github.com/advisories/GHSA-5pp5-4vfv-784q) · [libjpeg-turboのリリース](https://github.com/libjpeg-turbo/libjpeg-turbo/releases) · [同梱ライセンス](../public/licenses/jpegli/NOTICE)
+
+Workerは複製したImageBitmapをOffscreenCanvasで白背景に合成し、8-bit sRGB RGBAに正規化します。各辺8,192 px以下、総画素数16,000,000以下、RGBA長を検証し、Wasm取得の前にBitmapとCanvasを解放します。画像処理はブラウザ内で完結します。WorkerとWasmは選択時に `/web-toolbox/` の同一オリジンから取得します。JPEGの入力、プレビュー、採点にはブラウザ標準のデコーダーを使います。出力は8-bit sRGBの静止画で、元のICCプロファイル、EXIF、HDR、広色域、ビット深度は保持しません。
+
+Qualityは1〜100の整数、Distanceは0.1〜25.0の0.1刻みです。各側が両方の値を保持し、選択中の指定方式だけを符号化に使います。Qualityは公式 `jpegli_quality_to_distance()` で変換し、`jpegli_set_distance()` の `force_baseline` をTRUEにします。初期値はQuality 90、保存されるDistanceは1.0、4:4:4、Progressive Level 2、適応量子化とハフマン最適化はオンです。4:4:4、4:4:0、4:2:2、4:2:0で輝度の水平・垂直サンプリング係数を変更してからDistanceを設定し、量子化テーブルのサンプリング補正を選択形式に合わせます。レベル0はSequentialで、レベル1・2はハフマン最適化を強制します。レベル0では各側に保存していた最適化設定を使用します。
+
+変換は既存の共有WorkerキューとWeb Locksを通ります。180msのデバウンスを使い、入力世代・現在の指定方式と値・サンプリング・Progressive Level・適応量子化・実効ハフマン設定が一致する左右でジョブと完了Blobを共有します。最後の利用側が離れると待機・取得・符号化を取り消します。入力と設定の世代を照合し、キャンセルや切り替え後の結果を破棄します。ファイル名は `sample-left-jpegli-q90-444-p2-aq-opt.jpg`、`sample-right-jpegli-d1.5-420-p0-aq-noopt.jpg` の形式です。Quality 100を含むすべてのJpegli出力に既存のSSIMULACRA2評価と制限を適用します。
+
+Wasm ABIはRGBAポインター、バイト長、幅・高さ、画質指定方式と値（Distanceは10倍の整数）、圧縮設定、結果領域のポインターを受け取ります。C++は線形メモリ内の入力・結果領域とその非重複を確認し、`JCS_EXT_RGBA` で行を渡します。ラッパーが出力バッファを所有し、再確保の成否を確認します。エラーコールバックをWasmのC++例外で処理し、上流の一時オブジェクトのデストラクターを実行して圧縮器と出力を解放します。成功時に結果領域へ出力ポインターと長さを書き込みます。TypeScriptは符号化後の現在の線形メモリから結果を独立したArrayBufferにコピーし、入力、出力、結果領域を解放します。フレームの寸法とサンプリング、Sequential・Progressiveのマーカー、上流のレベル別スキャン順序、EOIを検証します。4:4:4のProgressiveではDCを1スキャンにまとめ、それ以外では成分ごとに分けます。
+
+#### Jpegliの実測
+
+Linux x86_64のCodexコンテナ（Xeon Platinum 8573C、CPU割当2コア、メモリ上限8 GiB）で、Node.js 26.13.0、Playwright 1.65.1、Chromium Headless Shell 159.0.8154.6を使用しました。本番ビルドをローカルの `/web-toolbox/` で配信し、Quality 90、4:4:4、Progressive Level 2、適応量子化とハフマン最適化オンで、4サンプルを1回ずつ順に変換しました。符号化時間はWorker内の `jpegli_encode` の呼び出し直前から戻るまでで、Wasmの取得・初期化、画素の正規化・転送、プレビュー、評価は計時区間の外です。線形メモリは符号化直後の `memory.buffer.byteLength` です。SSIMULACRA2は同じブラウザで手動評価し、画面のスコアを記録しました。
+
+| サンプル | 出力 (B) | SSIMULACRA2 | 符号化 (ms) | 線形メモリ (MiB) |
+| --- | ---: | ---: | ---: | ---: |
+| レッサーパンダ 3,840 × 2,560 | 3,951,866 | 85.8 | 716.5 | 140.37 |
+| 輪郭イラスト 1,200 × 900 | 42,633 | 87.4 | 65.4 | 18.00 |
+| スマートフォン画面 900 × 1,600 | 84,914 | 85.2 | 94.8 | 21.69 |
+| 透明な幾何学図形 1,200 × 900 | 87,444 | 87.0 | 65.6 | 18.19 |
+
+4,000 × 4,000 pxの合成PNG（対角グラデーションと矩形、14,809,830 B）も、同じ初期設定で1回変換しました。892.2 msで483,207 Bを出力し、線形メモリは181.67 MiBでした。原寸プレビューと保存が成功し、画質評価は既存の1,000万画素制限が適用されました。線形メモリはWasmインスタンスの容量で、ブラウザのプロセスメモリは測定していません。
+
+同じ4サンプルの既存データは、設定ごとの出力サイズと画質スコアを確認するために参照できます。測定回と負荷条件が異なるため、経過時間の直接比較は行っていません。 [Browser JPEG・MozJPEGの実測](#mozjpegの実測) · [WebPの実測](#webpの実測) · [JPEG XLの実測](#jpeg-xlの実測)
+
+独立した2回のオフラインビルドのSHA-256は `1668b723e557ca35f179b7b5f74868527fb051cb88a172841d8eb47cbfa94e53` で一致しました。Wasmのエクスポート、SIMD命令、共有フラグなしの線形メモリと1 GiBの上限を確認しました。関連配信アセットの増分は `main` の `7393f8929ecd8ccde343ec18fca0e0663b5b5c86` と比較しました。gzipはGNU gzip 1.13の `gzip -n -c` をファイルごとに使用したサイズです。
+
+| 配信アセット | 非圧縮 (B) | gzip (B) |
+| --- | ---: | ---: |
+| JpegliエンコーダーWasm | 166,328 | 64,618 |
+| Jpegli Worker | 5,365 | 2,554 |
+| 画像変換JSの増分 | +10,265 | +1,709 |
+| 画像変換CSSの増分 | +321 | +42 |
+| MozJPEG Workerの増分 | +75 | +37 |
+| Jpegliライセンスファイル合計 | 164,240 | 62,076 |
 
 #### JPEG (MozJPEG)
 
@@ -704,7 +746,7 @@ Linux x86_64のCodexコンテナ（Xeon Platinum 8573C、割当2コア、メモ�
 
 #### SSIMULACRA2
 
-画質評価はBrowser JPEG、JPEG (MozJPEG)、非可逆AVIF、非可逆WebP、非可逆JPEG XLの出力Blobを元画像と比較します。Originalは「基準画像」、Browser PNGは「画質評価は未対応」、Oxipng、可逆AVIF、可逆WebP、可逆JPEG XLは「可逆圧縮（スコア評価対象外）」と表示します。評価対象の欄には実測スコアのほか、変換待ち、未評価、評価待機中、評価中、失敗、評価制限を表示します。評価の実行・中止と自動評価の切り替えは、左右のカードの下にまとめます。採点準備前とWorker側で、各辺8 px以上かつ10,000,000画素以下かを共通の `quality/rules.ts` で検査します。元の寸法で採点し、通常変換・保存には画像入力の制限を適用します。
+画質評価はBrowser JPEG、JPEG (Jpegli)、JPEG (MozJPEG)、非可逆AVIF、非可逆WebP、非可逆JPEG XLの出力Blobを元画像と比較します。Originalは「基準画像」、Browser PNGは「画質評価は未対応」、Oxipng、可逆AVIF、可逆WebP、可逆JPEG XLは「可逆圧縮（スコア評価対象外）」と表示します。評価対象の欄には実測スコアのほか、変換待ち、未評価、評価待機中、評価中、失敗、評価制限を表示します。評価の実行・中止と自動評価の切り替えは、左右のカードの下にまとめます。採点準備前とWorker側で、各辺8 px以上かつ10,000,000画素以下かを共通の `quality/rules.ts` で検査します。元の寸法で採点し、通常変換・保存には画像入力の制限を適用します。
 
 `quality/client.ts`は入力のデコード済みImageBitmapを複製してWorkerへ移譲し、評価対象のBlobを渡します。Browser JPEGのエンコーダーはHTML Canvasの `toBlob` を使用します。評価Workerは各Blobを標準APIでデコードし、`paint.ts` の白背景描画をエンコーダーと共有して、元画像と同寸法の8ビットsRGBに正規化します。比較色はブラウザのデコードと色管理に依存します。元画像のEXIF向きは既存のデコード結果に従い、変換JPEGに元のメタデータが保持されることは前提としません。アルファ自体の採点、広色域・HDRの精度保証、異なるブラウザ間の数値一致は対象外です。
 
@@ -714,7 +756,7 @@ Linux x86_64のCodexコンテナ（Xeon Platinum 8573C、割当2コア、メモ�
 
 対象Blobがある場合だけWorkerを起動し、完了・中止・失敗で終了します。中止は採点エラー表示の対象外です。採点エラーが発生しても、変換と保存はそれぞれ利用できます。有限のスコアは負値や100を超える値も含めて小数1桁で表示します。
 
-`worker-slot.ts`の共有FIFOキューはAVIF、MozJPEG、Oxipng、WebP、JPEG XL、画質評価のWorkerを同時に1つだけ実行します。Web Locks APIが使える環境では各Workerが共通ロックを取得し、ブラウザがWorkerを破棄するまで保持します。`terminate()` から実際の破棄まで時間がかかる場合に、次の処理は同じロックの解放を待ってWorkerを起動します。ロック待ちとFIFOキュー待ちは中止できます。Web Locks APIのない環境では、FIFOキューが現在のWorkerの完了または終了まで次を待ちます。
+`worker-slot.ts`の共有FIFOキューはAVIF、Jpegli、MozJPEG、Oxipng、WebP、JPEG XL、画質評価のWorkerを同時に1つだけ実行します。Web Locks APIが使える環境では各Workerが共通ロックを取得し、ブラウザがWorkerを破棄するまで保持します。`terminate()` から実際の破棄まで時間がかかる場合に、次の処理は同じロックの解放を待ってWorkerを起動します。ロック待ちとFIFOキュー待ちは中止できます。Web Locks APIのない環境では、FIFOキューが現在のWorkerの完了または終了まで次を待ちます。
 
 `quality/ssimulacra2-0.1.0.wasm` は npm の bytecut-ssimulacra2 0.1.0 配布物（62,706バイト、SHA-256 `56ae71e4b0e1d72d3afbcf2821ec913e0d775806f3c745960ea3a0504f402648`）です。Vitestでハッシュを照合します。WorkerがVite出力の同一オリジンの静的アセットを評価時に取得し、Node.js用ラッパーは使用しません。採点アダプターは公開C ABIの `alloc`、`dealloc`、`score` と `memory` を使います。両入力の確保と境界検査を済ませてからメモリビューを作り、RGBに詰め替えます。採点でメモリが拡張した後は旧ビューを参照せず、確保した入力を解放します。 [npm配布元](https://registry.npmjs.org/bytecut-ssimulacra2/0.1.0) · [Wasm公開ソース](https://github.com/anupjon/bytecut/tree/7f46cac57416b40c15bedb939bb05da1bf0d7929/packages/ssimulacra2)
 
