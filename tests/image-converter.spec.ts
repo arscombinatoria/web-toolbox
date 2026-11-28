@@ -1971,6 +1971,26 @@ test('MozJPEG shares a fetch, survives one-side cancel, and recovers from a fail
 
 test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evaluation queue', async ({ page }) => {
   test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    // Count page-side handles through terminate(), not Playwright's asynchronously
+    // updated browser-protocol inventory exposed by page.workers().
+    const active = new Set<Worker>();
+    let maximum = 0;
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        active.add(this);
+        maximum = Math.max(maximum, active.size);
+      }
+
+      override terminate() {
+        active.delete(this);
+        super.terminate();
+      }
+    };
+    Object.defineProperty(window, '__maxImageConverterWorkers', { get: () => maximum });
+  });
   await page.goto('./?tool=image-converter');
   await page.locator('[type=file]').setInputFiles({ name: 'mixed.png', mimeType: 'image/png', buffer: rgbaPng(127, 97) });
   await page.getByLabel('左の出力形式').selectOption('mozjpeg');
@@ -1980,8 +2000,6 @@ test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evalu
   await expect(scores.last()).toHaveText(finiteScore);
   await page.getByLabel('画質の自動評価').uncheck();
 
-  let maxWorkers = 0;
-  page.on('worker', () => { maxWorkers = Math.max(maxWorkers, page.workers().length); });
   await page.getByLabel('左のMozJPEG品質').fill('100');
   for (const format of ['image/avif', 'image/webp']) {
     await page.getByLabel('右の出力形式').selectOption(format);
@@ -1990,6 +2008,8 @@ test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evalu
     await expect(scores.last()).toHaveText(finiteScore);
     await expect.poll(() => page.workers().length).toBe(0);
   }
+  const maxWorkers = await page.evaluate(() =>
+    (window as Window & { __maxImageConverterWorkers: number }).__maxImageConverterWorkers);
   expect(maxWorkers).toBe(1);
 });
 
