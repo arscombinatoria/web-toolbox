@@ -138,6 +138,44 @@ it('decodes externally encoded 16-bit gray, gray-alpha, and subsampled sYCC fixt
   expect(Array.from(oddOrigin.data)).toEqual(oddRows);
 });
 
+it('normalizes independently encoded low-precision gray, signed gray, and alpha to the full 8-bit range', async () => {
+  const codec = await instantiateOpenJpeg(binary());
+  const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
+  const gray1 = decodeJp2Pixels(codec, fixture('external-low-depth-gray1.jp2'));
+  expect(Array.from(gray1.data)).toEqual([
+    0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 255,
+    255, 255, 255, 255, 0, 0, 0, 255,
+  ]);
+
+  const expectedGray4 = [0, 68, 136, 255, 255, 136, 68, 0].flatMap((value) => [value, value, value, 255]);
+  expect(Array.from(decodeJp2Pixels(codec, fixture('external-low-depth-gray4.jp2')).data)).toEqual(expectedGray4);
+  expect(Array.from(decodeJp2Pixels(codec, fixture('external-low-depth-signed-gray4.jp2')).data)).toEqual(expectedGray4);
+
+  const grayAlpha = decodeJp2Pixels(codec, fixture('external-low-depth-gray-alpha1.jp2'));
+  expect(Array.from(grayAlpha.data)).toEqual([
+    [0, 0, 0, 0], [255, 255, 255, 255], [0, 0, 0, 255], [255, 255, 255, 0],
+    [255, 255, 255, 0], [0, 0, 0, 255], [255, 255, 255, 0], [0, 0, 0, 255],
+  ].flat());
+
+  const lowDepthSycc = decodeJp2Pixels(codec, fixture('external-low-depth-sycc4.jp2'));
+  expect(Array.from(lowDepthSycc.data)).toEqual([
+    [136, 136, 136, 255], [136, 136, 136, 255],
+    [136, 102, 255, 255], [136, 102, 255, 255],
+    [255, 68, 136, 255], [255, 85, 17, 255],
+    [51, 170, 136, 255], [51, 204, 17, 255],
+  ].flat());
+
+  const mismatchedSycc = fixture('external-low-depth-sycc4.jp2');
+  const ihdr = indexOfAscii(mismatchedSycc, 'ihdr');
+  const siz = indexOfAscii(mismatchedSycc, '\xff\x51');
+  expect(ihdr).toBeGreaterThanOrEqual(0);
+  expect(siz).toBeGreaterThanOrEqual(0);
+  mismatchedSycc[ihdr + 14] = 255; // JP2 signals component-specific precision.
+  mismatchedSycc[siz + 43] = 7; // Give Cb a different precision from Y and Cr.
+  expect(() => decodeJp2Pixels(codec, mismatchedSycc)).toThrow('対応していません');
+});
+
 it('rejects invalid dimensions, byte lengths, settings, corrupt data, and external size limits', async () => {
   const codec = await instantiateOpenJpeg(binary());
   expect(() => encodeJp2Pixels(codec, { ...rgba, width: 0 }, { mode: 'lossless' })).toThrow(RangeError);

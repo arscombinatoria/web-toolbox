@@ -265,29 +265,37 @@ int jp2_encode(const uint8_t *rgba, uint32_t width, uint32_t height, uint32_t mo
 }
 
 static uint8_t scale8(const opj_image_comp_t *c, int32_t value) {
-  if (c->sgnd) value += 1 << (c->prec-1);
-  if (c->prec > 8) value=(value + (1 << (c->prec-9))) >> (c->prec-8);
-  else if (c->prec < 8) value <<= (8-c->prec);
-  if (value<0) value=0; if (value>255) value=255;
-  return (uint8_t)value;
+  const int64_t precision=(int64_t)c->prec;
+  const int64_t range=(int64_t)1<<precision;
+  const int64_t minimum=c->sgnd ? -(range>>1) : 0;
+  const int64_t maximum=c->sgnd ? (range>>1)-1 : range-1;
+  int64_t sample=value;
+  if(sample<minimum) sample=minimum;
+  if(sample>maximum) sample=maximum;
+  const uint64_t normalized=(uint64_t)(sample-minimum);
+  const uint64_t denominator=(uint64_t)(maximum-minimum);
+  /* Round to nearest while mapping the declared component range to [0,255]. */
+  return (uint8_t)((normalized*255u+denominator/2u)/denominator);
 }
-static uint8_t sample8(const opj_image_comp_t *c, uint32_t x, uint32_t y, const opj_image_t *image) {
+static int32_t sample_raw(const opj_image_comp_t *c, uint32_t x, uint32_t y, const opj_image_t *image) {
   int64_t sx=((int64_t)x + image->x0) / c->dx - c->x0;
   int64_t sy=((int64_t)y + image->y0) / c->dy - c->y0;
   if (sx<0) sx=0; if (sy<0) sy=0;
   if ((uint64_t)sx>=c->w) sx=c->w-1; if ((uint64_t)sy>=c->h) sy=c->h-1;
-  int32_t value=c->data[(uint64_t)sy*c->w+(uint64_t)sx];
-  return scale8(c,value);
+  return c->data[(uint64_t)sy*c->w+(uint64_t)sx];
 }
-static uint8_t sample_sycc_chroma(const opj_image_comp_t *c, uint32_t x, uint32_t y,
-                                 const opj_image_t *image) {
+static uint8_t sample8(const opj_image_comp_t *c, uint32_t x, uint32_t y, const opj_image_t *image) {
+  return scale8(c,sample_raw(c,x,y,image));
+}
+static int32_t sample_sycc_chroma(const opj_image_comp_t *c, uint32_t x, uint32_t y,
+                                  const opj_image_t *image) {
   uint32_t offx=c->dx==2 ? (image->x0&1u) : 0;
   uint32_t offy=c->dy==2 ? (image->y0&1u) : 0;
   if((offx && x==0) || (offy && y==0)) return 0;
   int64_t sx=c->dx==2 ? (x-offx)/2 : ((int64_t)x+image->x0)/c->dx-c->x0;
   int64_t sy=c->dy==2 ? (y-offy)/2 : ((int64_t)y+image->y0)/c->dy-c->y0;
   if(sx<0 || sy<0 || (uint64_t)sx>=c->w || (uint64_t)sy>=c->h) return 0;
-  return scale8(c,c->data[(uint64_t)sy*c->w+(uint64_t)sx]);
+  return c->data[(uint64_t)sy*c->w+(uint64_t)sx];
 }
 
 int jp2_decode(const uint8_t *bytes, uint32_t length, uint8_t **rgba_out, uint32_t generated) {
@@ -350,6 +358,9 @@ int jp2_decode(const uint8_t *bytes, uint32_t length, uint8_t **rgba_out, uint32
        image->comps[1].dx!=image->comps[2].dx || image->comps[1].dy!=image->comps[2].dy ||
        image->comps[1].dx>2 || image->comps[1].dy>2 ||
        (numcomps==4 && (image->comps[3].dx!=1 || image->comps[3].dy!=1))) goto unsupported;
+    /* OpenJPEG's sYCC transform assumes equally precise unsigned Y/Cb/Cr. */
+    for(uint32_t i=0;i<3;i++)
+      if(image->comps[i].sgnd || image->comps[i].prec!=image->comps[0].prec) goto unsupported;
   }
   if(image->color_space==OPJ_CLRSPC_GRAY) {
     if(numcomps>2) goto unsupported;
@@ -379,11 +390,16 @@ int jp2_decode(const uint8_t *bytes, uint32_t length, uint8_t **rgba_out, uint32
     uint64_t o=((uint64_t)y*width+x)*4;
     if (gray) rgba[o]=rgba[o+1]=rgba[o+2]=sample8(&image->comps[0],x,y,image);
     else if (image->color_space==OPJ_CLRSPC_SYCC && image->numcomps>=3) {
-      int yy=sample8(&image->comps[0],x,y,image);
-      int cb=(int)sample_sycc_chroma(&image->comps[1],x,y,image)-128;
-      int cr=(int)sample_sycc_chroma(&image->comps[2],x,y,image)-128;
+      const opj_image_comp_t *ycomp=&image->comps[0];
+      int precision=ycomp->prec;
+      int offset=1<<(precision-1), maximum=(1<<precision)-1;
+      int yy=sample_raw(ycomp,x,y,image);
+      int cb=sample_sycc_chroma(&image->comps[1],x,y,image)-offset;
+      int cr=sample_sycc_chroma(&image->comps[2],x,y,image)-offset;
       int r=yy+(int)(1.402f*cr), g=yy-(int)(0.344f*cb+0.714f*cr), b=yy+(int)(1.772f*cb);
-      rgba[o]=r<0?0:r>255?255:r; rgba[o+1]=g<0?0:g>255?255:g; rgba[o+2]=b<0?0:b>255?255:b;
+      rgba[o]=scale8(ycomp,r<0?0:r>maximum?maximum:r);
+      rgba[o+1]=scale8(ycomp,g<0?0:g>maximum?maximum:g);
+      rgba[o+2]=scale8(ycomp,b<0?0:b>maximum?maximum:b);
     } else { rgba[o]=sample8(&image->comps[0],x,y,image); rgba[o+1]=sample8(&image->comps[1],x,y,image); rgba[o+2]=sample8(&image->comps[2],x,y,image); }
     rgba[o+3]=ai==UINT32_MAX?255:sample8(&image->comps[ai],x,y,image);
   }

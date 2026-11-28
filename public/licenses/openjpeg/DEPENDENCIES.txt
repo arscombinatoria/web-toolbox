@@ -27,7 +27,12 @@ SIMD, no filesystem, OPJ_USE_THREAD=OFF, and a 1 GiB maximum linear memory.
 The OpenJPEG CLI, tests, and optional image libraries are not built or linked.
 
 Wasm SHA-256:
-325704508954a940d4fda704dbbb473e2ead0efdd5e88818985a1689175e69f4
+ee7c0df2e86f264fd0d44f528562aed7deaecaf66f674fe6c2b9ee1f4151a8bf
+
+The decoder's low-bit-depth normalization uses signed-range-aware, rounded
+scaling and applies the upstream sYCC transform at component precision. The
+rebuilt Wasm is 397,105 bytes (133,724 bytes with gzip -n -6). Two independent
+builds with the pinned source archive and SDK image produced identical hashes.
 
 The Emscripten runtime imports are memory-growth notification and empty WASI
 environment calls. The Wasm instantiator supplies these without file or
