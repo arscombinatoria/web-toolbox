@@ -152,10 +152,10 @@ JPEG 2000は、入出力に使うときだけOpenJPEGの単一スレッドWasm�
 
 - Vanilla TypeScript（strict）、Vite、HTML/CSS、ブラウザ標準APIを使用しています。
 - 単体テストはVitestを使用し、Nodeを既定環境としてDOMに依存しないロジックを検証します。DOMやブラウザ固有のAPIが必要なテストファイルではjsdomを指定します。E2EテストはPlaywrightを使用します。
-- 開発・CIではNode.js **26 LTS**とnpmを使用します。メジャーバージョンは`.nvmrc`と`package.json`の`engines`で指定しています。
-- モダンブラウザを対象としています。自動E2E検証はChromiumの詳細シナリオと、Chromium・Firefox共通の主要機能スモーク、画像変換、IPアドレス欄のレイアウトを対象としています。
+- 開発・CIのNode.js要件は[.nvmrc](.nvmrc)と[package.json](package.json)の`engines`を参照してください。
+- モダンブラウザを対象としています。自動E2Eのブラウザ別対象は[`playwright.config.ts`](playwright.config.ts)と[詳細設計書](docs/architecture.md#e2eと検証範囲)を参照してください。
 
-UIフレームワーク、外部フォント、アイコンライブラリは使用していません。XLSX生成にはExcelJS 4.4から移行したexceljs-community 5.2.1（MIT）を使用し、ダウンロード操作時に同一サイトのバンドルから動的に読み込みます。
+UIフレームワークと外部フォントは使用していません。アイコンにはlucideを使用します。XLSX生成にはexceljs-communityを使用し、ダウンロード操作時に同一サイトのバンドルから動的に読み込みます。依存バージョンは[package.json](package.json)と[ロックファイル](package-lock.json)を参照してください。
 
 ## ローカル開発・テスト
 
@@ -167,7 +167,7 @@ npm ci
 npm run dev
 ```
 
-[ローカル開発サーバー](http://localhost:5173/web-toolbox/)を開いてください。`nvm`を使用しない場合は、Node.js 26を別途インストールしてください。
+[ローカル開発サーバー](http://localhost:5173/web-toolbox/)を開いてください。`nvm`を使用しない場合は、[.nvmrc](.nvmrc)で指定されたNode.jsメジャーバージョンを別途インストールしてください。
 
 ### テスト・ビルド
 
@@ -181,7 +181,7 @@ npm run test:e2e
 
 `npm run build`には型チェックを含むため、上の手順で別途実行する必要はありません。型チェックのみを行う場合は`npm run typecheck`を使えます。初回はPlaywrightのブラウザとOS依存パッケージのインストールが必要です。
 
-E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。`tests/smoke.spec.ts`ではIP表示・再取得、文字幅の双方向変換、Markdown／TSV変換、日時変換、RDAP検索・JSON表示、基本ナビゲーションをChromium・Firefoxの両方で確認します。`tests/ip-address-layout.spec.ts`も両ブラウザで実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで検証します。RDAPの検索・JSON・IP確認からの遷移と履歴・エラー・狭幅両テーマは`tests/rdap-lookup.spec.ts`で確認します。コピー・ダウンロード・IME・モバイルなどの詳細シナリオはChromiumで実行します。CIの再試行でのみ成功したケースも失敗扱いです。WebKitの自動検証は今回追加していません。
+E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。Chromiumは全E2E対象を実行します。Firefoxの対象は[`playwright.config.ts`](playwright.config.ts)の`testMatch`に従います。詳細な対象範囲は設定ファイルを参照してください。CIの再試行でのみ成功したケースも失敗扱いです。
 
 ローカルでE2Eを繰り返す場合は、先にビルドして別ターミナルでVite previewを起動しておくと、Playwrightがそのサーバーを再利用します。
 
@@ -194,7 +194,7 @@ previewを起動したターミナルはそのままにして、別のターミ�
 
 単体テスト・E2Eともipify・RDAP通信をモックし、実APIへはアクセスしません。実APIへの接続確認は別途必要です。各ツールの詳しい検証対象は[詳細設計書](docs/architecture.md)を参照してください。
 
-Codexの制約付きコンテナで実行する場合は、ビルド後に`npm run test:e2e:container`を使えます。この専用モードはブラウザとXDGキャッシュをコンテナの一時領域に置き、Playwright標準のインストーラーで不足分だけを準備します。通常のheadless実行にはChromium Headless Shellを使い、`--headed`を渡した場合は通常Chromiumを準備します。コンテナ内で信頼できるテストを実行する場合に限り、Firefoxのコンテンツ／RDDサンドボックスを無効化します。通常の`npm run test:e2e`とGitHub Actionsには適用しません。環境変数で保存先を指定した場合はその値を使います。
+Codexの制約付きコンテナで、信頼できるリポジトリのE2Eを隔離して実行する場合に限り、ビルド後に`npm run test:e2e:container`を使えます。通常環境・GitHub Actionsでは使いません。Firefoxのコンテンツ／RDDサンドボックス設定を含む処理詳細と保存先の指定は[`scripts/run-e2e-container.mjs`](scripts/run-e2e-container.mjs)を参照してください。このモードはOS依存パッケージ不足など、環境固有のすべての起動障害を回避するものではありません。
 
 ### カバレッジ
 

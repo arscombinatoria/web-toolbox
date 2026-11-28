@@ -269,7 +269,7 @@ textareaはCRLFをLFへ正規化しますが、コピーは変換時に生成し
 
 #### XLSX生成
 
-`xlsx.ts`はExcelJS 4.4から移行した`exceljs-community` 5.2.1（MIT）を使用します。既存のXLSX出力仕様を維持しながら依存を置き換え、ブラウザ用ビルドと文字列型・書式・列幅・折り返しのAPIを利用します。バージョンは固定し、推移依存はlockfileで管理します。現行のVitest設定でNode向けエントリが動作するため、専用aliasは設定していません。
+`xlsx.ts`は`exceljs-community`を使用します（バージョンは[package.json](../package.json)とロックファイルを参照）。既存のXLSX出力仕様を維持しながら依存を置き換え、ブラウザ用ビルドと文字列型・書式・列幅・折り返しのAPIを利用します。バージョンは固定し、推移依存はlockfileで管理します。現行のVitest設定でNode向けエントリが動作するため、専用aliasは設定していません。
 
 ダウンロード時だけ`import('./xlsx')`し、入力・変換・TSVコピーでは読み込みません。ExcelJSを含む生成用コードは遅延チャンクとなるため、初期ロードに含まれません。具体的なバンドルサイズは固定仕様にせず、必要時に`npm run build`の出力で確認します。
 
@@ -809,6 +809,8 @@ PoCでは1024×1024でWasm線形メモリ約157 MiB、2048×2048で約619 MiBを
 
 Vitestで入力形式、不正な置換で現在画像を保つ処理、連続候補の競合、透明度と品質の処理、増減率、左右の設定と変換の独立性、同一設定の共有、入力変更・破棄時の競合を検証します。Oxipngではオプション範囲・キー、各設定の180msデバウンス、Blob共有時のconsumer detach、Worker生成・終了・エラー・中止、Web LocksとフォールバックFIFO待機、中止後の再試行を確認します。ズームの上下限、パン範囲、ズーム操作による変換・URL発行の不発生も確認します。比較バーではARIA属性・矢印キーと端点、Pointer Captureによるドラッグ、キャンセル・画像変更・破棄時の後始末、パン・変換処理との独立を確認します。画質評価では寸法・形式・有限値・Wasmの境界、自動評価の待機と変換完了順、連続操作、中止と失敗後の再開条件、結果の再利用を検証します。`tests/image-converter.spec.ts` はChromium・Firefoxで初回画像選択、比較エリアへの置換ドロップと変更ボタン、左右の設定と保存、ズーム・パン、境界バーのポインター・キーボード・タッチ操作、320pxの両テーマ、片側と両側の変換失敗を確認します。本番ビルドの実Wasmで自動更新、2048×2048での評価と上限超過画像の保存、HTML CanvasとOffscreenCanvasの比較画素、中止・復帰、サブパス、外部送信がないことを確認し、OxipngではRGBA、alpha最適化、interlace、3入力形式、cancel/retry、同時採点の排他を検証します。
 
+#### コーデック追加時の検証記録（当時）
+
 Oxipng追加時の最終確認では`npm test`が37ファイル・714テスト成功、`npm run build`成功でした。Playwrightはsandbox環境でFirefoxの子プロセス起動制限とブラウザキャッシュの書き込み制限があるため、リポジトリ指定の`npm run test:e2e:container`を使います。全E2Eは182件中180件が成功し、残る1ケースは両ブラウザーで古いWorkerロック名を待っていたテストでした。共有ロック名を参照するよう修正した後、そのケースをChromium・Firefoxで再実行して2件とも成功しました。Oxipngに絞った実WasmのE2Eは`npm run test:e2e:container -- tests/image-converter.spec.ts -g 'Oxipng'`で10件成功（各ブラウザー5件）、ロック回帰の再実行は`npm run test:e2e:container -- tests/image-converter.spec.ts -g '狭い画面と両テーマで、Wasmロード中の中止と失敗から再評価できる'`で2件成功でした。
 
 AVIF追加時はVitestで設定の境界、実効可逆設定と非可逆設定の保持、`ftyp`、共有Blobと中止、古い処理結果の破棄を追加検証しました。ChromiumとFirefoxのE2Eでは実Wasm、奇数寸法のRGBA一致、保存したAVIFの再入力、JPEGとの混在評価、3種類のWorkerの排他、Wasm取得中の中止と失敗時の再試行、狭い画面と両テーマでのキーボード操作を確認しました。`npm test` は39ファイル・740件、`npm run build` は成功し、コンテナ用E2Eは188件すべて成功しました。
@@ -825,13 +827,13 @@ AVIF追加時はVitestで設定の境界、実効可逆設定と非可逆設定�
 
 ### E2Eと検証範囲
 
-[playwright.config.ts](../playwright.config.ts)はビルド済み`dist/`をVite previewで配信し、`http://127.0.0.1:4173/web-toolbox/`を使用します。E2Eコマンド自体はビルドしないため、事前の`npm run build`が必要です。サーバーは既存プロセスを再利用せず、指定ポートで起動します。CIでは`test.only`を禁止し、診断用に失敗時に1回再試行します。`failOnFlakyTests: true`により再試行でのみ成功したケースもコマンドを失敗させ、失敗時のtraceを保持します。
+[playwright.config.ts](../playwright.config.ts)はビルド済み`dist/`をVite previewで配信し、`http://127.0.0.1:4173/web-toolbox/`を使用します。E2Eコマンド自体はビルドしないため、事前の`npm run build`が必要です。ローカルでは既存サーバーを再利用し、CIでは再利用せず指定ポートで起動します。CIでは`test.only`を禁止し、診断用に失敗時に1回再試行します。`failOnFlakyTests: true`により再試行でのみ成功したケースもコマンドを失敗させ、失敗時のtraceを保持します。
 
-Chromiumはホームと8ツールの主要シナリオを実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
+Chromiumは全E2E対象を実行します。`tests/app.spec.ts`は直接URL・再読み込み・戻る／進む、空／不明ID、テーマ復元とOS追従、ストレージ拒否、モバイルメニューとフォーカス、ホームの非通信・遅延ロード・両テーマのカード配置を検証します。単体テストと同じ全境界値をE2Eへ重複させる構成にはしていません。
 
 `tests/smoke.spec.ts`の8ケースはChromium・Firefox共通です。ホームからの遷移・URL・戻る／進む・再読み込み、IPv4／IPv6表示と再取得、文字種選択と双方向の文字幅変換、Markdown／TSV変換とエラー復帰、JSTの24時間表選択とUTC入力・epoch出力、RDAPの明示検索とJSON表示、正規表現のWorker描画・Unicode集合・構文エラーからの復帰、JWTのデコード・実署名検証とエラー復帰を検証します。ブラウザのタイムゾーンをロサンゼルスに固定し、端末の時間帯に依存しない操作を確認します。
 
-Firefoxではスモークに加えて既存の`tests/ip-address-layout.spec.ts`を実行し、IP欄の高さ・折り返し・画面幅への追従を両テーマで維持します。詳細なコピー・ダウンロード・IME・モバイル操作などはChromium中心とし、Firefoxへ全ケースを複製しません。WebKitはSafari系のフォーム・レイアウト差の検出に有効ですが、追加ブラウザとOS依存の配備・実行のCI負荷が増えるため今回は追加しません。Safari固有の検証が必要になった時点で共通スモークへの追加を検討します。
+Firefoxの対象は[playwright.config.ts](../playwright.config.ts)の`testMatch`に従います。詳細な対象範囲は設定ファイルを参照してください。
 
 単体テストのfetchモックとE2E共通の`tests/fixtures.ts`でipify・RDAPを置換するため、実APIにはアクセスしません。CI成功だけでは実サービスの接続・CORS・IPv6到達性を保証せず、必要時に別途確認します。
 
@@ -843,7 +845,7 @@ Node.jsは26 LTSを使用し、[.nvmrc](../.nvmrc)の`26`と[package.json](../pa
 
 [.github/workflows/ci-pages.yml](../.github/workflows/ci-pages.yml)はPRと`main`へのpushで起動します。`.nvmrc`に従うNode.jsとnpmキャッシュを使い、`unit`と`build`を独立して実行します。`unit`は`npm run test:coverage`と`npm run test:badge`、`build`は型チェックを含む`npm run build`を担当します。buildは一度だけ行います。
 
-`e2e`はbuild完了後に開始し、`build-dist`を展開してVite previewから配信します。PlaywrightのMatrixは`1/2`と`2/2`の2シャード、各3 workerで、`fullyParallel`による自動分割を使います。Chromiumの全対象とFirefoxの既定対象、retry・flaky test・reporter設定はPlaywright設定を維持します。2シャードの失敗は集約されます。
+`e2e`はbuild完了後に開始し、`build-dist`を展開してVite previewから配信します。シャード分割とWorker数は[CI workflow](../.github/workflows/ci-pages.yml)の設定に従い、`fullyParallel`による自動分割を使います。Chromiumの全対象とFirefoxの既定対象、retry・flaky test・reporter設定はPlaywright設定に従います。各シャードの失敗は集約されます。
 
 `ci`は`unit`・`build`・`e2e`の結果を常に集約し、すべてがsuccessの場合だけ成功します。PRではこの集約判定だけを行います。`main`へのpushで全検証が成功した場合は、`build-dist`と`coverage-summary`を受け取り、Node.js標準ライブラリだけでカバレッジSVGを生成し、既存のPages Actionで成果物をアップロードします。いずれかの検証、成果物転送、バッジ生成、Pages成果物アップロードが失敗すると`ci`は成功せず、deployは実行されません。
 
