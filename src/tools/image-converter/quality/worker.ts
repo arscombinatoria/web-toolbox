@@ -6,7 +6,7 @@ import { loadScorer, scoreImages } from './wasm';
 
 export interface EvaluationRequest {
   reference: ImageBitmap;
-  images: readonly Blob[];
+  images: readonly (Blob | { bitmap: ImageBitmap })[];
   lockName?: string;
 }
 
@@ -34,9 +34,9 @@ async function evaluate({ reference, images }: EvaluationRequest) {
     const limit = evaluationLimit(width, height);
     if (limit) throw new RangeError(limit);
 
-    const canDecodeJxl = !images.some(image => image.type === 'image/jxl') || await supportsJxl();
+    const canDecodeJxl = !images.some(image => image instanceof Blob && image.type === 'image/jxl') || await supportsJxl();
     const reportUnsupportedJxl = (index: number) => worker.postMessage({ index, unsupported: 'image/jxl' } satisfies EvaluationReply);
-    if (!canDecodeJxl && images.every(image => image.type === 'image/jxl')) {
+    if (!canDecodeJxl && images.every(image => image instanceof Blob && image.type === 'image/jxl')) {
       images.forEach((_, index) => reportUnsupportedJxl(index));
       return;
     }
@@ -53,17 +53,17 @@ async function evaluate({ reference, images }: EvaluationRequest) {
       const original = readPixels(reference);
       let scorer: Awaited<ReturnType<typeof loadScorer>> | undefined;
       for (const [index, image] of images.entries()) {
-        if (image.type === 'image/jxl' && !canDecodeJxl) {
+        if (image instanceof Blob && image.type === 'image/jxl' && !canDecodeJxl) {
           reportUnsupportedJxl(index);
           continue;
         }
         scorer ??= await loadScorer();
-        const decoded = await decodeBlob(image);
+        const decoded = image instanceof Blob ? await decodeBlob(image) : image.bitmap;
         let score: number;
         try {
           score = scoreImages(scorer, original, readPixels(decoded));
         } finally {
-          decoded.close();
+          if (image instanceof Blob) decoded.close();
         }
         worker.postMessage({ index, score } satisfies EvaluationReply);
       }
@@ -73,7 +73,14 @@ async function evaluate({ reference, images }: EvaluationRequest) {
   } catch {
     worker.postMessage({ error: true } satisfies EvaluationReply);
   } finally {
-    reference.close();
+    closeRequest({ reference, images });
+  }
+}
+
+function closeRequest({ reference, images }: EvaluationRequest) {
+  reference.close();
+  for (const image of images) {
+    if (!(image instanceof Blob)) image.bitmap.close();
   }
 }
 
@@ -90,7 +97,7 @@ worker.addEventListener('message', async ({ data }: MessageEvent<EvaluationReque
       await new Promise<void>(() => {});
     });
   } catch {
-    data.reference.close();
+    closeRequest(data);
     worker.postMessage({ error: true } satisfies EvaluationReply);
   }
 }, { once: true });

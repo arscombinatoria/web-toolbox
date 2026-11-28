@@ -1,6 +1,8 @@
 import { drawOnWhite } from './paint';
 import { isAvifFtyp } from './avif/ftyp';
 import { isJxl } from './jxl/signature';
+import { decodeJp2 } from './jp2/client';
+import { acceptsJp2Mime, jp2FileTypeEnd, jp2InputType, jp2MimeTypes } from './jp2/signature';
 import { detectJxlSupport, type JxlSupport } from './jxl/support';
 
 export const encoders = {
@@ -11,6 +13,7 @@ export const encoders = {
   'image/webp': { label: 'WebP (libwebp)', type: 'image/webp', extension: '.webp', hasQuality: false },
   jpegli: { label: 'JPEG (Jpegli)', type: 'image/jpeg', extension: '.jpg', hasQuality: false },
   mozjpeg: { label: 'JPEG (MozJPEG)', type: 'image/jpeg', extension: '.jpg', hasQuality: false },
+  'image/jp2': { label: 'JPEG 2000 (OpenJPEG)', type: 'image/jp2', extension: '.jp2', hasQuality: false },
   'image/jxl': { label: 'JPEG XL (libjxl)', type: 'image/jxl', extension: '.jxl', hasQuality: false },
   oxipng: { label: 'Oxipng', type: 'image/png', extension: '.png', hasQuality: false },
 } as const;
@@ -18,8 +21,10 @@ export const encoders = {
 export type EncoderId = keyof typeof encoders;
 type OutputType = (typeof encoders)['image/jpeg' | 'image/png']['type'];
 
-export const inputMimeTypes: readonly string[] = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/jxl'];
-export const supportedInputMessage = 'JPEG・PNG・WebP・AVIF・JPEG XLの画像を選択してください。';
+export const inputMimeTypes: readonly string[] = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/jxl', ...jp2MimeTypes,
+];
+export const supportedInputMessage = 'JPEG・PNG・WebP・AVIF・JPEG XL・JPEG 2000の画像を選択してください。';
 
 export function formatFileSize(bytes: number): string {
   if (bytes < 1_000) return bytes.toLocaleString('ja-JP', { maximumFractionDigits: 0 }) + ' B';
@@ -36,12 +41,17 @@ export function inputType(bytes: Uint8Array, fileSize = bytes.byteLength): strin
   if (tag(0) === 'RIFF' && tag(8) === 'WEBP') return 'image/webp';
   if (isAvifFtyp(bytes, fileSize)) return 'image/avif';
   if (isJxl(bytes)) return 'image/jxl';
+  return jp2InputType(bytes, fileSize);
 }
 
 export async function decode(file: File, signal: AbortSignal, jxlSupport?: Promise<JxlSupport>): Promise<ImageBitmap> {
   if (file.size > 32 * 1024 * 1024) throw new Error('32 MiB以下の画像を選択してください。');
-  const header = new Uint8Array(await file.slice(0, 24).arrayBuffer());
+  const header = new Uint8Array(await file.slice(0, 32).arrayBuffer());
   let type = inputType(header, file.size);
+  const jp2End = jp2FileTypeEnd(header, file.size);
+  if (!type && jp2End && jp2End > header.length) {
+    type = jp2InputType(new Uint8Array(await file.slice(0, jp2End).arrayBuffer()), file.size);
+  }
   if (!type && String.fromCharCode(...header.subarray(4, 8)) === 'ftyp') {
     const prefix = new DataView(header.buffer, header.byteOffset, header.byteLength);
     const size32 = prefix.getUint32(0);
@@ -51,10 +61,14 @@ export async function decode(file: File, signal: AbortSignal, jxlSupport?: Promi
       type = inputType(new Uint8Array(await file.slice(0, declaredSize).arrayBuffer()), file.size);
     }
   }
+  signal.throwIfAborted();
+  if (type === 'image/jp2' || type === 'image/j2k') {
+    if (!acceptsJp2Mime(type, file.type)) throw new Error(supportedInputMessage);
+    return decodeJp2(file, signal);
+  }
   if (!type || (file.type && file.type !== type)) {
     throw new Error(supportedInputMessage);
   }
-  signal.throwIfAborted();
   if (type === 'image/jxl') {
     const support = await (jxlSupport ?? detectJxlSupport());
     signal.throwIfAborted();

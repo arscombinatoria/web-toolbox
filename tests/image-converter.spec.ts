@@ -5,6 +5,7 @@ import type { FileChooser, Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { formatFileSize, sizeChange } from '../src/tools/image-converter/encoder';
 import { isJxl } from '../src/tools/image-converter/jxl/signature';
+import { jp2InputType } from '../src/tools/image-converter/jp2/signature';
 import { jxlProbeBlob } from '../src/tools/image-converter/jxl/support';
 import { imageWorkerLockName } from '../src/tools/image-converter/worker-slot';
 
@@ -1837,7 +1838,7 @@ test('MozJPEG loads on demand, composites white, saves and reopens JPEG on the d
   await expect(left).toHaveValue('original');
   await expect(right).toHaveValue('image/jpeg');
   await expect(right.locator('option')).toHaveText([
-    'Original', 'AVIF (libaom)', 'Browser JPEG', 'Browser PNG', 'JPEG (Jpegli)', 'JPEG (MozJPEG)', 'JPEG XL (libjxl)', 'Oxipng', 'WebP (libwebp)',
+    'Original', 'AVIF (libaom)', 'Browser JPEG', 'Browser PNG', 'JPEG (Jpegli)', 'JPEG (MozJPEG)', 'JPEG 2000 (OpenJPEG)', 'JPEG XL (libjxl)', 'Oxipng', 'WebP (libwebp)',
   ]);
   const save = page.getByRole('button', { name: '右をダウンロード' });
   await expect(save).toBeEnabled();
@@ -1970,6 +1971,26 @@ test('MozJPEG shares a fetch, survives one-side cancel, and recovers from a fail
 
 test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evaluation queue', async ({ page }) => {
   test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    // Count page-side handles through terminate(), not Playwright's asynchronously
+    // updated browser-protocol inventory exposed by page.workers().
+    const active = new Set<Worker>();
+    let maximum = 0;
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        active.add(this);
+        maximum = Math.max(maximum, active.size);
+      }
+
+      override terminate() {
+        active.delete(this);
+        super.terminate();
+      }
+    };
+    Object.defineProperty(window, '__maxImageConverterWorkers', { get: () => maximum });
+  });
   await page.goto('./?tool=image-converter');
   await page.locator('[type=file]').setInputFiles({ name: 'mixed.png', mimeType: 'image/png', buffer: rgbaPng(127, 97) });
   await page.getByLabel('左の出力形式').selectOption('mozjpeg');
@@ -1979,8 +2000,6 @@ test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evalu
   await expect(scores.last()).toHaveText(finiteScore);
   await page.getByLabel('画質の自動評価').uncheck();
 
-  let maxWorkers = 0;
-  page.on('worker', () => { maxWorkers = Math.max(maxWorkers, page.workers().length); });
   await page.getByLabel('左のMozJPEG品質').fill('100');
   for (const format of ['image/avif', 'image/webp']) {
     await page.getByLabel('右の出力形式').selectOption(format);
@@ -1989,6 +2008,8 @@ test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evalu
     await expect(scores.last()).toHaveText(finiteScore);
     await expect.poll(() => page.workers().length).toBe(0);
   }
+  const maxWorkers = await page.evaluate(() =>
+    (window as unknown as { __maxImageConverterWorkers: number }).__maxImageConverterWorkers);
   expect(maxWorkers).toBe(1);
 });
 
@@ -2267,4 +2288,130 @@ test('Jpegli loads on demand, composites white, scores JPEG and saves on the dep
   await input.setInputFiles({ name: 'jpegli-roundtrip.jpg', mimeType: 'image/jpeg', buffer: output });
   await expect(page.locator('.image-filename')).toHaveText('jpegli-roundtrip.jpg');
   await expect(page.locator('.image-original-layer canvas')).toHaveJSProperty('width', 127);
+});
+
+test('JPEG 2000 lazily loads, previews on Canvas, scores mixed outputs, and reopens JP2 and J2K', async ({ page, context, browserName }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  const requests: string[] = [];
+  context.on('request', request => requests.push(request.url()));
+  await page.addInitScript(() => {
+    const workerNames: (string | undefined)[] = [];
+    Object.defineProperty(window, 'testWorkerNames', { value: workerNames });
+    window.Worker = class extends Worker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        workerNames.push(options?.name);
+      }
+    };
+  });
+  await page.goto('./?tool=image-converter');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.getByLabel('画質の自動評価').uncheck();
+  const input = page.getByLabel('入力画像');
+  await expect(input).toHaveAttribute('accept', /\.jp2,\.j2k,\.j2c/);
+  await input.setInputFiles({ name: 'sample.png', mimeType: 'image/png', buffer: rgbaPng(31, 29) });
+  const left = page.locator('.image-panel[data-side=left]');
+  const right = page.locator('.image-panel[data-side=right]');
+  const rightSave = right.getByRole('button', { name: '右をダウンロード' });
+  const leftSave = left.getByRole('button', { name: '左をダウンロード' });
+  await expect(rightSave).toBeEnabled();
+  const wasmRequests = () => requests.filter(url => /openjpeg-.*\.wasm$/.test(url));
+  const jpeg2000Workers = () => page.evaluate(() =>
+    (window as unknown as { testWorkerNames: string[] }).testWorkerNames.filter(name => name === 'image-converter-openjpeg'));
+  expect(wasmRequests()).toEqual([]);
+  expect(await jpeg2000Workers()).toEqual([]);
+
+  const format = left.getByLabel('左の出力形式');
+  await format.selectOption('image/jp2');
+  const canvas = page.locator('canvas[data-jp2-side=left]');
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveJSProperty('width', 31);
+  await expect(canvas).toHaveJSProperty('height', 29);
+  expect(await canvas.evaluate(element => {
+    const pixels = (element as HTMLCanvasElement).getContext('2d')!.getImageData(0, 0, 31, 29).data;
+    return pixels.some((value, index) => index % 4 === 3 && value > 0 && value < 255);
+  })).toBe(true);
+  const divider = page.getByRole('slider', { name: '比較位置' });
+  await divider.focus();
+  await divider.press('ArrowRight');
+  await expect(divider).toHaveAttribute('aria-valuenow', '51');
+  await page.getByRole('button', { name: '拡大', exact: true }).click();
+  await expect(page.locator('.image-zoom-reset')).toHaveText('125%');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(wasmRequests()).toHaveLength(1);
+  expect(await jpeg2000Workers()).toHaveLength(1);
+  await page.getByRole('button', { name: '画質を評価' }).click();
+  await expect(left.locator('.image-score')).toHaveText(/^-?\d+\.\d$/);
+  await expect(right.locator('.image-score')).toHaveText(/^-?\d+\.\d$/);
+  expect(wasmRequests()).toHaveLength(1);
+  expect(await jpeg2000Workers()).toHaveLength(1);
+
+  const mode = left.getByLabel('左のJPEG 2000画質の指定方法');
+  await mode.selectOption('ratio');
+  const ratio = left.getByLabel('左のJPEG 2000圧縮率');
+  await expect(ratio).toHaveValue('10');
+  const lossless = left.getByLabel('左側のJPEG 2000を可逆圧縮にする');
+  await lossless.check();
+  await expect(mode).toBeDisabled();
+  await expect(ratio).toBeDisabled();
+  await expect(left.locator('.image-score')).toHaveText('可逆圧縮（スコア評価対象外）');
+  const jp2 = await saveBrowserImage(page, leftSave, 'sample-left-openjpeg-lossless.jp2', browserName);
+  expect(jp2InputType(jp2)).toBe('image/jp2');
+  await lossless.uncheck();
+  await expect(mode).toHaveValue('ratio');
+  await expect(ratio).toBeEnabled();
+
+  await format.selectOption('original');
+  await input.setInputFiles({ name: 'roundtrip.jp2', mimeType: 'image/jp2', buffer: jp2 });
+  await expect(page.locator('.image-info')).toHaveText(/roundtrip\.jp2.*31 × 29 px/);
+  await expect(rightSave).toBeEnabled();
+  expect(await saveBrowserImage(page, leftSave, 'roundtrip.jp2', browserName)).toEqual(jp2);
+
+  const external = await readFile(new URL('../src/tools/image-converter/jp2/fixtures/external-rgb.j2k', import.meta.url));
+  await input.setInputFiles({ name: 'external.j2c', mimeType: 'application/octet-stream', buffer: external });
+  await expect(page.locator('.image-filename')).toHaveText('external.j2c');
+  await expect(rightSave).toBeEnabled();
+  await expect(page.getByAltText('右側のプレビュー')).toBeVisible();
+});
+
+test('JPEG 2000 cancels an active conversion, retries, and discards results when input changes', async ({ page }) => {
+  await page.goto('./?tool=image-converter');
+  await page.getByLabel('画質の自動評価').uncheck();
+  const input = page.getByLabel('入力画像');
+  const format = page.getByLabel('右の出力形式');
+  const status = page.locator('.image-panel[data-side=right] .image-jp2-status');
+  const save = page.getByRole('button', { name: '右をダウンロード' });
+  const cancel = page.getByRole('button', { name: '右側のJPEG 2000変換を中止' });
+  const retry = page.getByRole('button', { name: '右側のJPEG 2000変換を再試行' });
+  const wasmPath = '**/web-toolbox/assets/openjpeg-*.wasm';
+  await input.setInputFiles({ name: 'first.png', mimeType: 'image/png', buffer: rgbaPng(25, 23) });
+
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  await page.route(wasmPath, async route => {
+    await blocked;
+    await route.abort().catch(() => {});
+  }, { times: 2 });
+  try {
+    const requested = page.waitForRequest(wasmPath);
+    await format.selectOption('image/jp2');
+    await requested;
+    await cancel.click();
+    await expect(status).toContainText('中止しました');
+    await expect(retry).toBeFocused();
+    await expect(save).toBeDisabled();
+
+    const retried = page.waitForRequest(wasmPath);
+    await retry.press('Enter');
+    await retried;
+    await input.setInputFiles({ name: 'replacement.png', mimeType: 'image/png', buffer: rgbaPng(33, 27) });
+    await expect(page.locator('.image-filename')).toHaveText('replacement.png');
+    await expect(status).toHaveText('JPEG 2000変換が完了しました。');
+    await expect(page.locator('canvas[data-jp2-side=right]')).toHaveJSProperty('width', 33);
+    await expect(save).toBeEnabled();
+  } finally {
+    release();
+  }
 });

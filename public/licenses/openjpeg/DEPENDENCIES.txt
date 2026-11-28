@@ -1,0 +1,39 @@
+OpenJPEG Wasm dependency and build record
+=========================================
+
+OpenJPEG
+--------
+Latest formal release checked: v2.5.4. The repository README states that the
+project is unmaintained. The pinned source is upstream commit
+8314119b067c0fc77834731168daaebd379fdb12 (2026-09-05), which includes the
+published OSV-2025-219 fixes and CVE-2026-6192 encoder fix.
+
+The upstream commit is affected by CVE-2026-107080. The build applies the
+reviewed four-line zero-height guard from upstream PR #1674, head
+843b78e2712edab13bbda30662465d443a062716, via
+scripts/openjpeg/cve-2026-107080.patch. PR #1674 was open when this build was
+prepared. The patched build source is fetched and verified by
+scripts/openjpeg/build.sh.
+
+Source archive SHA-256:
+e723e8babb2188e8743308842bb1bfc9809f0375cd964cfeac2fb17285094321
+
+Emscripten build
+----------------
+The Linux/amd64 Emscripten SDK 4.0.20 container is pinned by digest in
+scripts/openjpeg/build.sh. Compilation runs with network disabled, after the
+source archive is fetched and hash-verified. The build uses -O3, LTO, Wasm
+SIMD, no filesystem, OPJ_USE_THREAD=OFF, and a 1 GiB maximum linear memory.
+The OpenJPEG CLI, tests, and optional image libraries are not built or linked.
+
+Wasm SHA-256:
+ee7c0df2e86f264fd0d44f528562aed7deaecaf66f674fe6c2b9ee1f4151a8bf
+
+The decoder's low-bit-depth normalization uses signed-range-aware, rounded
+scaling and applies the upstream sYCC transform at component precision. The
+rebuilt Wasm is 397,105 bytes (133,724 bytes with gzip -n -6). Two independent
+builds with the pinned source archive and SDK image produced identical hashes.
+
+The Emscripten runtime imports are memory-growth notification and empty WASI
+environment calls. The Wasm instantiator supplies these without file or
+network access. Emscripten runtime notices are included alongside this file.
