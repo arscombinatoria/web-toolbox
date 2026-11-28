@@ -49,6 +49,10 @@ it('round trips a 1×1 pixel and omits alpha only when the input is fully opaque
   const cdefStart = cdefType - 4;
   const count = new DataView(alphaBytes.buffer, alphaBytes.byteOffset, alphaBytes.byteLength).getUint16(cdefStart + 8);
   expect(count).toBe(4);
+  const premultiplied = alphaBytes.slice();
+  premultiplied[cdefStart + 30] = 0;
+  premultiplied[cdefStart + 31] = 2;
+  expect(() => decodeJp2Pixels(codec, premultiplied)).toThrow('対応していません');
 });
 
 it('encodes PSNR and ratio settings and decodes their pixels', async () => {
