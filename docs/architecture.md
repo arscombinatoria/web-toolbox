@@ -845,7 +845,7 @@ Node.jsは26 LTSを使用し、[.nvmrc](../.nvmrc)の`26`と[package.json](../pa
 
 [.github/workflows/ci-pages.yml](../.github/workflows/ci-pages.yml)はPRと`main`へのpushで起動します。`.nvmrc`に従うNode.jsとnpmキャッシュを使い、`unit`と`build`を独立して実行します。`unit`は`npm run test:coverage`と`npm run test:badge`、`build`は型チェックを含む`npm run build`を担当します。buildは一度だけ行います。
 
-`e2e`はbuild完了後に開始し、`build-dist`を展開してVite previewから配信します。PlaywrightのMatrixは`1/2`と`2/2`の2シャード、各2 workerで、`fullyParallel`による自動分割を使います。Chromiumの全対象とFirefoxの既定対象、retry・flaky test・reporter設定はPlaywright設定を維持します。2シャードの失敗は集約されます。
+`e2e`はbuild完了後に開始し、`build-dist`を展開してVite previewから配信します。シャード分割とWorker数は[CI workflow](../.github/workflows/ci-pages.yml)の設定に従い、`fullyParallel`による自動分割を使います。Chromiumの全対象とFirefoxの既定対象、retry・flaky test・reporter設定はPlaywright設定に従います。各シャードの失敗は集約されます。
 
 `ci`は`unit`・`build`・`e2e`の結果を常に集約し、すべてがsuccessの場合だけ成功します。PRではこの集約判定だけを行います。`main`へのpushで全検証が成功した場合は、`build-dist`と`coverage-summary`を受け取り、Node.js標準ライブラリだけでカバレッジSVGを生成し、既存のPages Actionで成果物をアップロードします。いずれかの検証、成果物転送、バッジ生成、Pages成果物アップロードが失敗すると`ci`は成功せず、deployは実行されません。
 
