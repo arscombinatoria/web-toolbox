@@ -2009,7 +2009,7 @@ test('MozJPEG compares with Browser JPEG, AVIF and WebP through the shared evalu
     await expect.poll(() => page.workers().length).toBe(0);
   }
   const maxWorkers = await page.evaluate(() =>
-    (window as Window & { __maxImageConverterWorkers: number }).__maxImageConverterWorkers);
+    (window as unknown as { __maxImageConverterWorkers: number }).__maxImageConverterWorkers);
   expect(maxWorkers).toBe(1);
 });
 
