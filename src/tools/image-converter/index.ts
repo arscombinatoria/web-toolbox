@@ -14,6 +14,8 @@ import { encodeWebp } from './webp/client';
 import { defaultWebpOptions, effectiveWebpOptions, validateWebpOptions, webpFilename, webpKey, type WebpOptions } from './webp/options';
 import { encodeJxl } from './jxl/client';
 import { defaultJxlOptions, effectiveJxlOptions, jxlFilename, jxlKey, validateJxlOptions, type JxlOptions } from './jxl/options';
+import { encodeJp2, type Jp2Result } from './jp2/client';
+import { defaultJp2Options, effectiveJp2Options, jp2Filename, jp2Key, validateJp2Options, type Jp2Options } from './jp2/options';
 import { detectJxlSupport } from './jxl/support';
 import { evaluateImages } from './quality/client';
 import { evaluationLimit, isEvaluable, MIN_EVALUATION_SIDE } from './quality/rules';
@@ -47,7 +49,7 @@ type Selection = { generation: number; controller: AbortController; changedAt: n
 type SideResult =
   | { status: 'idle' | 'failed' | 'cancelled' }
   | { status: 'pending'; encoding?: Promise<Blob> }
-  | { status: 'ready'; blob: Blob; filename: string };
+  | { status: 'ready'; blob: Blob; filename: string; bitmap?: ImageBitmap };
 
 export function mount(container: HTMLElement): () => void {
   const view = document.createElement('div');
@@ -55,14 +57,14 @@ export function mount(container: HTMLElement): () => void {
   view.innerHTML = `
     <h1 tabindex="-1"></h1>
     <p class="tool-description"></p>
-    <input type="file" aria-label="入力画像" accept="${[...inputMimeTypes, '.jxl'].join(',')}" hidden>
+    <input type="file" aria-label="入力画像" accept="${[...inputMimeTypes, '.jxl', '.jp2', '.j2k', '.j2c'].join(',')}" hidden>
     <section class="image-samples" aria-label="サンプル画像">
       <h2>サンプルで試す</h2>
       <div class="image-sample-list"></div>
     </section>
     <p class="image-input-status" role="status" aria-atomic="true"></p>
     <p class="image-input-error" role="alert"></p>
-    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP・AVIF・JPEG XL）</span></button>
+    <button type="button" class="image-drop"><strong>画像を選択</strong><span>または、ここへドロップ（JPEG・PNG・WebP・AVIF・JPEG XL・JPEG 2000）</span></button>
     <p class="image-note image-jxl-compatibility" role="status" hidden></p>
     <section hidden aria-label="画像の比較と変換設定">
       <div class="image-comparison-area">
@@ -156,6 +158,20 @@ export function mount(container: HTMLElement): () => void {
                 <div class="image-webp-actions">
                   <button type="button" class="image-webp-cancel" hidden aria-label="${label}側のWebP変換を中止">WebP変換を中止</button>
                   <button type="button" class="image-webp-retry" hidden aria-label="${label}側のWebP変換を再試行">WebP変換を再試行</button>
+                </div>
+              </div>
+              <div class="image-jp2-settings" hidden>
+                <label>画質の指定方法 <select class="image-jp2-mode" aria-label="${label}のJPEG 2000画質の指定方法">
+                  <option value="psnr">PSNR</option><option value="ratio">圧縮率</option>
+                </select></label>
+                <label>PSNR <input type="range" class="image-jp2-psnr" aria-label="${label}のJPEG 2000 PSNR" min="20" max="60" step="1" aria-describedby="image-jp2-note-${id}"><span></span></label>
+                <label hidden>圧縮率 <input type="range" class="image-jp2-ratio" aria-label="${label}のJPEG 2000圧縮率" min="2" max="100" step="1" aria-describedby="image-jp2-note-${id}"><span></span></label>
+                <label><input type="checkbox" class="image-jp2-lossless" aria-label="${label}側のJPEG 2000を可逆圧縮にする"> 可逆圧縮</label>
+                <p class="image-note" id="image-jp2-note-${id}">PSNRは大きいほど高画質です。圧縮率は非圧縮の画素データを基準とし、大きいほど強く圧縮します。どちらも目標値で、実測値は画像によって変わります。非可逆圧縮では透明度も変わる場合があります。可逆圧縮は正規化された8-bit sRGB RGBA画素を保持します。ブラウザでの読み込み・再表示時はアルファ処理で画素値が変わる場合があります。</p>
+                <p class="image-jp2-status" role="status" aria-atomic="true"></p>
+                <div class="image-jp2-actions">
+                  <button type="button" class="image-jp2-cancel" hidden aria-label="${label}側のJPEG 2000変換を中止">JPEG 2000変換を中止</button>
+                  <button type="button" class="image-jp2-retry" hidden aria-label="${label}側のJPEG 2000変換を再試行">JPEG 2000変換を再試行</button>
                 </div>
               </div>
               <div class="image-jxl-settings" hidden>
@@ -337,6 +353,8 @@ export function mount(container: HTMLElement): () => void {
       jpegliKey: undefined as string | undefined,
       webpOptions: { ...defaultWebpOptions },
       webpKey: undefined as string | undefined,
+      jp2Options: { ...defaultJp2Options },
+      jp2Key: undefined as string | undefined,
       jxlOptions: { ...defaultJxlOptions },
       jxlKey: undefined as string | undefined,
       oxipngOptions: { ...defaultOxipngOptions } as OxipngOptions,
@@ -398,6 +416,17 @@ export function mount(container: HTMLElement): () => void {
       webpStatus: panel.querySelector<HTMLElement>('.image-webp-status')!,
       webpCancel: panel.querySelector<HTMLButtonElement>('.image-webp-cancel')!,
       webpRetry: panel.querySelector<HTMLButtonElement>('.image-webp-retry')!,
+      jp2Preview: undefined as HTMLCanvasElement | undefined,
+      jp2Settings: panel.querySelector<HTMLElement>('.image-jp2-settings')!,
+      jp2Mode: panel.querySelector<HTMLSelectElement>('.image-jp2-mode')!,
+      jp2Psnr: panel.querySelector<HTMLInputElement>('.image-jp2-psnr')!,
+      jp2PsnrValue: panel.querySelector('.image-jp2-psnr + span')!,
+      jp2Ratio: panel.querySelector<HTMLInputElement>('.image-jp2-ratio')!,
+      jp2RatioValue: panel.querySelector('.image-jp2-ratio + span')!,
+      jp2Lossless: panel.querySelector<HTMLInputElement>('.image-jp2-lossless')!,
+      jp2Status: panel.querySelector<HTMLElement>('.image-jp2-status')!,
+      jp2Cancel: panel.querySelector<HTMLButtonElement>('.image-jp2-cancel')!,
+      jp2Retry: panel.querySelector<HTMLButtonElement>('.image-jp2-retry')!,
       jxlSettings: panel.querySelector<HTMLElement>('.image-jxl-settings')!,
       jxlDistance: panel.querySelector<HTMLInputElement>('.image-jxl-distance')!,
       jxlDistanceValue: panel.querySelector('.image-jxl-distance + span')!,
@@ -440,6 +469,15 @@ export function mount(container: HTMLElement): () => void {
       notice.hidden = false;
     }
   });
+  type Jp2Job = {
+    controller: AbortController;
+    consumers: Set<Side>;
+    started: boolean;
+    promise?: Promise<Jp2Result>;
+    result?: Jp2Result;
+  };
+  // The job owns the decoded bitmap while any side uses the result.
+  const jp2Jobs = new Map<string, Jp2Job>();
   const jxlJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const mozjpegJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
   const jpegliJobs = new Map<string, { controller: AbortController; consumers: Set<Side>; promise?: Promise<Blob>; blob?: Blob; started: boolean }>();
@@ -589,6 +627,45 @@ export function mount(container: HTMLElement): () => void {
     return job.blob ? Promise.resolve(job.blob) : job.promise!;
   }
 
+  function detachJp2(side: Side) {
+    const key = side.jp2Key;
+    side.jp2Key = undefined;
+    if (!key) return;
+    const job = jp2Jobs.get(key);
+    if (job?.consumers.delete(side) && !job.consumers.size) {
+      jp2Jobs.delete(key);
+      if (job.result) job.result.bitmap.close();
+      else job.controller.abort();
+    }
+  }
+
+  function requestJp2(side: Side, bitmap: ImageBitmap): Promise<Jp2Result> {
+    const key = side.jp2Key!;
+    let job = jp2Jobs.get(key);
+    if (!job) {
+      const controller = new AbortController();
+      const consumers = new Set(sides.filter(pending => pending.jp2Key === key && pending.result.status === 'pending'));
+      const current: Jp2Job = { controller, consumers, started: false };
+      jp2Jobs.set(key, current);
+      current.promise = encodeJp2(bitmap, effectiveJp2Options(side.jp2Options), controller.signal, () => {
+        if (jp2Jobs.get(key) !== current) return;
+        current.started = true;
+        for (const consumer of consumers) consumer.jp2Status.textContent = 'JPEG 2000に変換しています…';
+      }).then(result => {
+        if (jp2Jobs.get(key) === current) current.result = result;
+        else result.bitmap.close();
+        return result;
+      }, cause => {
+        if (jp2Jobs.get(key) === current) jp2Jobs.delete(key);
+        throw cause;
+      });
+      job = current;
+    }
+    job.consumers.add(side);
+    side.jp2Status.textContent = job.started ? 'JPEG 2000に変換しています…' : 'JPEG 2000変換を待っています…';
+    return job.promise!;
+  }
+
   function detachJxl(side: Side) {
     const key = side.jxlKey;
     side.jxlKey = undefined;
@@ -736,6 +813,7 @@ export function mount(container: HTMLElement): () => void {
     return side.encoder === 'oxipng' ||
       (side.encoder === 'image/avif' && isAvifLossless(side.avifOptions)) ||
       (side.encoder === 'image/webp' && side.webpOptions.lossless) ||
+      (side.encoder === 'image/jp2' && side.jp2Options.lossless) ||
       (side.encoder === 'image/jxl' && side.jxlOptions.lossless);
   }
 
@@ -837,6 +915,12 @@ export function mount(container: HTMLElement): () => void {
     const job = { controller, mode, images, started: false };
     const isCurrent = () => evaluation === job && generation === inputGeneration;
     evaluation = job;
+    const previews = new Map<Blob, ImageBitmap>();
+    for (const side of sides) {
+      if (side.result.status === 'ready' && side.result.bitmap && images.includes(side.result.blob)) {
+        previews.set(side.result.blob, side.result.bitmap);
+      }
+    }
     let jxlSkipped = false;
     for (const image of images) failedEvaluations.delete(image);
     if (evaluationStatus.textContent !== evaluationWaiting) evaluationStatus.textContent = evaluationWaiting;
@@ -860,6 +944,7 @@ export function mount(container: HTMLElement): () => void {
           jxlSkipped = jxlEvaluationUnsupported = true;
           updateEvaluation();
         },
+        previews,
       );
       if (isCurrent()) {
         if (jxlSkipped) setIconMessage(evaluationStatus, CircleAlert, jxlEvaluationUnavailable);
@@ -898,6 +983,7 @@ export function mount(container: HTMLElement): () => void {
     detachMozjpeg(side);
     detachJpegli(side);
     detachWebp(side);
+    detachJp2(side);
     detachJxl(side);
     detachOxipng(side);
     ++side.generation;
@@ -919,6 +1005,13 @@ export function mount(container: HTMLElement): () => void {
     side.jpegliCancel.hidden = side.jpegliRetry.hidden = true;
     side.webpStatus.textContent = '';
     side.webpCancel.hidden = side.webpRetry.hidden = true;
+    side.jp2Status.textContent = '';
+    side.jp2Cancel.hidden = side.jp2Retry.hidden = true;
+    if (side.jp2Preview) {
+      side.jp2Preview.width = side.jp2Preview.height = 0;
+      side.jp2Preview.remove();
+      side.jp2Preview = undefined;
+    }
     side.jxlStatus.textContent = '';
     side.jxlCancel.hidden = side.jxlRetry.hidden = true;
     side.avifCancel.hidden = side.avifRetry.hidden = true;
@@ -1044,6 +1137,15 @@ export function mount(container: HTMLElement): () => void {
     side.webpLossless.checked = side.webpOptions.lossless;
     side.webpSharp.checked = Boolean(shownWebpOptions.use_sharp_yuv);
     side.webpAlpha.disabled = side.webpSharp.disabled = side.webpOptions.lossless;
+    side.jp2Settings.hidden = side.encoder !== 'image/jp2';
+    const jp2 = side.jp2Options;
+    side.jp2Mode.value = jp2.mode;
+    side.jp2Psnr.closest('label')!.hidden = jp2.mode !== 'psnr';
+    side.jp2Ratio.closest('label')!.hidden = jp2.mode !== 'ratio';
+    side.jp2Psnr.value = String(jp2.psnr);
+    side.jp2PsnrValue.textContent = jp2.psnr + ' dB';
+    side.jp2Ratio.value = side.jp2RatioValue.textContent = String(jp2.ratio);
+    side.jp2Mode.disabled = side.jp2Psnr.disabled = side.jp2Ratio.disabled = side.jp2Lossless.checked = jp2.lossless;
     side.jxlSettings.hidden = side.encoder !== 'image/jxl';
     const jxl = effectiveJxlOptions(side.jxlOptions);
     side.jxlDistance.disabled = side.jxlLossless.checked = jxl.lossless;
@@ -1067,6 +1169,7 @@ export function mount(container: HTMLElement): () => void {
     const stem = file.name.replace(/\.[^.]*$/, '') || 'image';
     try {
       let blob: Blob = file;
+      let jp2Bitmap: ImageBitmap | undefined;
       let filename = file.name;
       if (side.encoder === 'oxipng') {
         blob = await requestOxipng(side, bitmap, currentInput);
@@ -1090,6 +1193,12 @@ export function mount(container: HTMLElement): () => void {
         blob = await requestWebp(side, bitmap, currentInput);
         if (!isCurrent()) return;
         filename = webpFilename(stem, side.id, side.webpOptions);
+      } else if (side.encoder === 'image/jp2') {
+        const result = await requestJp2(side, bitmap);
+        if (!isCurrent()) return;
+        blob = result.blob;
+        jp2Bitmap = result.bitmap;
+        filename = jp2Filename(stem, side.id, side.jp2Options);
       } else if (side.encoder === 'image/jxl') {
         blob = await requestJxl(side, bitmap, currentInput);
         if (!isCurrent()) return;
@@ -1110,7 +1219,19 @@ export function mount(container: HTMLElement): () => void {
         if (!isCurrent()) return;
       }
       side.url = URL.createObjectURL(blob);
-      if (type) {
+      if (jp2Bitmap) {
+        const canvas = document.createElement('canvas');
+        side.jp2Preview = canvas;
+        canvas.dataset.jp2Side = side.id;
+        canvas.setAttribute('role', 'img');
+        canvas.setAttribute('aria-label', side.preview.alt);
+        canvas.width = jp2Bitmap.width;
+        canvas.height = jp2Bitmap.height;
+        const context = canvas.getContext('2d', { colorSpace: 'srgb' });
+        if (!context) throw new Error('JPEG 2000のプレビューを表示できませんでした。');
+        context.drawImage(jp2Bitmap, 0, 0);
+        side.preview.after(canvas);
+      } else if (type) {
         side.preview.src = side.url;
         await side.preview.decode();
         if (!isCurrent()) return;
@@ -1118,7 +1239,7 @@ export function mount(container: HTMLElement): () => void {
       } else {
         showOriginal(side, true);
       }
-      side.result = { status: 'ready', blob, filename };
+      side.result = { status: 'ready', blob, filename, bitmap: jp2Bitmap };
       const restoreOxipngFocus = side.encoder === 'oxipng' && document.activeElement === side.oxipngCancel;
       const restoreAvifFocus = side.encoder === 'image/avif' && document.activeElement === side.avifCancel;
       if (side.encoder === 'oxipng') {
@@ -1144,6 +1265,11 @@ export function mount(container: HTMLElement): () => void {
         side.webpStatus.textContent = 'WebP変換が完了しました。';
         side.webpCancel.hidden = side.webpRetry.hidden = true;
       }
+      const restoreJp2Focus = side.encoder === 'image/jp2' && document.activeElement === side.jp2Cancel;
+      if (side.encoder === 'image/jp2') {
+        side.jp2Status.textContent = 'JPEG 2000変換が完了しました。';
+        side.jp2Cancel.hidden = side.jp2Retry.hidden = true;
+      }
       const restoreJxlFocus = side.encoder === 'image/jxl' && document.activeElement === side.jxlCancel;
       if (side.encoder === 'image/jxl') {
         side.jxlStatus.textContent = 'JPEG XL変換が完了しました。';
@@ -1157,7 +1283,7 @@ export function mount(container: HTMLElement): () => void {
       convertedSize.textContent = ' → 出力 ' + formatFileSize(blob.size);
       side.outputSize.replaceChildren(originalSize, convertedSize);
       side.save.disabled = false;
-      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus || restoreMozjpegFocus || restoreJpegliFocus || restoreJxlFocus) side.save.focus({ preventScroll: true });
+      if (restoreOxipngFocus || restoreAvifFocus || restoreWebpFocus || restoreMozjpegFocus || restoreJpegliFocus || restoreJxlFocus || restoreJp2Focus) side.save.focus({ preventScroll: true });
       updateEvaluation();
     } catch (cause) {
       if (!isCurrent()) return;
@@ -1171,6 +1297,8 @@ export function mount(container: HTMLElement): () => void {
       const restoreJpegliFocus = isJpegli && document.activeElement === side.jpegliCancel;
       const isWebp = side.encoder === 'image/webp';
       const restoreWebpFocus = isWebp && document.activeElement === side.webpCancel;
+      const isJp2 = side.encoder === 'image/jp2';
+      const restoreJp2Focus = isJp2 && document.activeElement === side.jp2Cancel;
       const isJxl = side.encoder === 'image/jxl';
       const restoreJxlFocus = isJxl && document.activeElement === side.jxlCancel;
       invalidate(side);
@@ -1201,6 +1329,11 @@ export function mount(container: HTMLElement): () => void {
         side.webpStatus.textContent = 'WebP変換に失敗しました。もう一度お試しください。';
         side.webpRetry.hidden = false;
         if (restoreWebpFocus) side.webpRetry.focus({ preventScroll: true });
+      }
+      if (isJp2) {
+        side.jp2Status.textContent = 'JPEG 2000変換に失敗しました。もう一度お試しください。';
+        side.jp2Retry.hidden = false;
+        if (restoreJp2Focus) side.jp2Retry.focus({ preventScroll: true });
       }
       if (isJxl) {
         side.jxlStatus.textContent = 'JPEG XL変換に失敗しました。もう一度お試しください。';
@@ -1260,6 +1393,14 @@ export function mount(container: HTMLElement): () => void {
       side.webpStatus.textContent = active?.started ? 'WebPに変換しています…' : 'WebP変換を待っています…';
       side.webpCancel.hidden = false;
     }
+    if (side.encoder === 'image/jp2') {
+      const key = jp2Key(currentInput, side.jp2Options);
+      side.jp2Key = key;
+      const active = jp2Jobs.get(key);
+      active?.consumers.add(side);
+      side.jp2Status.textContent = active?.started ? 'JPEG 2000に変換しています…' : 'JPEG 2000変換を待っています…';
+      side.jp2Cancel.hidden = false;
+    }
     if (side.encoder === 'image/jxl') {
       const key = jxlKey(currentInput, side.jxlOptions);
       side.jxlKey = key;
@@ -1315,7 +1456,7 @@ export function mount(container: HTMLElement): () => void {
       return false;
     }
     const file = files[0]!;
-    if (file.type && !inputMimeTypes.includes(file.type)) {
+    if (file.type && file.type !== 'application/octet-stream' && !inputMimeTypes.includes(file.type)) {
       reading = undefined;
       inputStatus.textContent = '';
       setIconMessage(inputError, CircleAlert, supportedInputMessage);
@@ -1646,6 +1787,22 @@ export function mount(container: HTMLElement): () => void {
     side.webpSharp.addEventListener('change', () => {
       if (!side.webpOptions.lossless) updateWebpOptions({ sharpYuv: side.webpSharp.checked });
     }, options);
+    const updateJp2Options = (change: Partial<Jp2Options>) => {
+      const updated = validateJp2Options({ ...side.jp2Options, ...change });
+      const previousKey = jp2Key(inputGeneration, side.jp2Options);
+      side.jp2Options = updated;
+      if (jp2Key(inputGeneration, updated) !== previousKey) updateSettings(side, 180);
+    };
+    side.jp2Mode.addEventListener('change', () => {
+      if (!side.jp2Options.lossless) updateJp2Options({ mode: side.jp2Mode.value === 'ratio' ? 'ratio' : 'psnr' });
+    }, options);
+    side.jp2Psnr.addEventListener('input', () => {
+      if (!side.jp2Options.lossless && side.jp2Options.mode === 'psnr') updateJp2Options({ psnr: side.jp2Psnr.valueAsNumber });
+    }, options);
+    side.jp2Ratio.addEventListener('input', () => {
+      if (!side.jp2Options.lossless && side.jp2Options.mode === 'ratio') updateJp2Options({ ratio: side.jp2Ratio.valueAsNumber });
+    }, options);
+    side.jp2Lossless.addEventListener('change', () => updateJp2Options({ lossless: side.jp2Lossless.checked }), options);
     const updateJxlOptions = (change: Partial<JxlOptions>) => {
       const updated = validateJxlOptions({ ...side.jxlOptions, ...change });
       const previousKey = jxlKey(inputGeneration, side.jxlOptions);
@@ -1746,6 +1903,21 @@ export function mount(container: HTMLElement): () => void {
       if (side.encoder === 'image/webp' && source) {
         updateSettings(side);
         side.webpCancel.focus({ preventScroll: true });
+      }
+    }, options);
+    side.jp2Cancel.addEventListener('click', () => {
+      if (side.encoder !== 'image/jp2' || side.result.status !== 'pending') return;
+      invalidate(side);
+      side.result = { status: 'cancelled' };
+      side.jp2Status.textContent = 'JPEG 2000変換を中止しました。再試行できます。';
+      side.jp2Retry.hidden = false;
+      side.jp2Retry.focus({ preventScroll: true });
+      updateEvaluation();
+    }, options);
+    side.jp2Retry.addEventListener('click', () => {
+      if (side.encoder === 'image/jp2' && source) {
+        updateSettings(side);
+        side.jp2Cancel.focus({ preventScroll: true });
       }
     }, options);
     side.jxlCancel.addEventListener('click', () => {

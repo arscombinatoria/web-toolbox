@@ -9,6 +9,7 @@ export async function evaluateImages(
   onStart: () => void,
   onScore: (image: Blob, score: number) => void,
   onUnsupportedJxl: () => void,
+  previews?: ReadonlyMap<Blob, ImageBitmap>,
 ): Promise<void> {
   signal.throwIfAborted();
   const limit = evaluationLimit(reference.width, reference.height);
@@ -17,7 +18,21 @@ export async function evaluateImages(
 
   await runHeavyWorker(signal, async () => {
     const copy = await createImageBitmap(reference);
+    const bitmaps: ImageBitmap[] = [];
     try {
+      const inputs: EvaluationRequest['images'][number][] = [];
+      for (const image of images) {
+        signal.throwIfAborted();
+        if (image.type !== 'image/jp2') {
+          inputs.push(image);
+          continue;
+        }
+        const preview = previews?.get(image);
+        if (!preview) throw new Error('JPEG 2000の評価画像を取得できませんでした。');
+        const bitmap = await createImageBitmap(preview);
+        bitmaps.push(bitmap);
+        inputs.push({ bitmap });
+      }
       signal.throwIfAborted();
       const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'image-quality-ssimulacra2' });
       await new Promise<void>((resolve, reject) => {
@@ -54,16 +69,18 @@ export async function evaluateImages(
         };
         worker.onerror = worker.onmessageerror = fail;
         try {
-          const request: EvaluationRequest = { reference: copy, images };
+          const request: EvaluationRequest = { reference: copy, images: inputs };
           if (navigator.locks) request.lockName = imageWorkerLockName;
           onStart();
-          worker.postMessage(request, [copy]);
+          signal.throwIfAborted();
+          worker.postMessage(request, [copy, ...bitmaps]);
         } catch (error) {
           finish(error);
         }
       });
     } finally {
       copy.close();
+      bitmaps.forEach(bitmap => bitmap.close());
     }
   });
 }

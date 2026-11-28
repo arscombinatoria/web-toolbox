@@ -6,6 +6,7 @@ import { encodeAvif } from './avif/client';
 import { encodeJpegli } from './jpegli/client';
 import { encodeMozjpeg } from './mozjpeg/client';
 import { encodeWebp } from './webp/client';
+import { encodeJp2, type Jp2Result } from './jp2/client';
 import { encodeJxl } from './jxl/client';
 import { detectJxlSupport, type JxlSupport } from './jxl/support';
 import { mount } from './index';
@@ -18,6 +19,7 @@ vi.mock('./avif/client', () => ({ encodeAvif: vi.fn() }));
 vi.mock('./jpegli/client', () => ({ encodeJpegli: vi.fn() }));
 vi.mock('./mozjpeg/client', () => ({ encodeMozjpeg: vi.fn() }));
 vi.mock('./webp/client', () => ({ encodeWebp: vi.fn() }));
+vi.mock('./jp2/client', () => ({ encodeJp2: vi.fn() }));
 vi.mock('./jxl/client', () => ({ encodeJxl: vi.fn() }));
 vi.mock('./jxl/support', () => ({ detectJxlSupport: vi.fn() }));
 
@@ -34,6 +36,7 @@ const png = new Blob(['1'], { type: 'image/png' });
 const oxipngPng = new Blob(['optimized'], { type: 'image/png' });
 const avif = new Blob(['avif'], { type: 'image/avif' });
 const webp = new Blob(['webp'], { type: 'image/webp' });
+const jp2 = new Blob(['jp2'], { type: 'image/jp2' });
 const jxl = new Blob(['jxl'], { type: 'image/jxl' });
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -55,6 +58,7 @@ function setup(active = bitmap(), jxlSupport: JxlSupport = { input: true, previe
   vi.mocked(encodeJpegli).mockResolvedValue(jpeg);
   vi.mocked(encodeMozjpeg).mockResolvedValue(jpeg);
   vi.mocked(encodeJxl).mockResolvedValue(jxl);
+  vi.mocked(encodeJp2).mockImplementation(async () => ({ blob: jp2, bitmap: bitmap() }));
   vi.mocked(detectJxlSupport).mockResolvedValue(jxlSupport);
   let urlNumber = 0;
   const createUrl = vi.fn((_blob: Blob) => 'blob:result-' + ++urlNumber);
@@ -125,6 +129,14 @@ function setup(active = bitmap(), jxlSupport: JxlSupport = { input: true, previe
       webpStatus: panel.querySelector<HTMLElement>('.image-webp-status')!,
       webpCancel: panel.querySelector<HTMLButtonElement>('.image-webp-cancel')!,
       webpRetry: panel.querySelector<HTMLButtonElement>('.image-webp-retry')!,
+      get jp2Preview() { return document.querySelector<HTMLCanvasElement>(`canvas[data-jp2-side="${id}"]`); },
+      jp2Mode: panel.querySelector<HTMLSelectElement>('.image-jp2-mode')!,
+      jp2Psnr: panel.querySelector<HTMLInputElement>('.image-jp2-psnr')!,
+      jp2Ratio: panel.querySelector<HTMLInputElement>('.image-jp2-ratio')!,
+      jp2Lossless: panel.querySelector<HTMLInputElement>('.image-jp2-lossless')!,
+      jp2Status: panel.querySelector<HTMLElement>('.image-jp2-status')!,
+      jp2Cancel: panel.querySelector<HTMLButtonElement>('.image-jp2-cancel')!,
+      jp2Retry: panel.querySelector<HTMLButtonElement>('.image-jp2-retry')!,
       jxlDistance: panel.querySelector<HTMLInputElement>('.image-jxl-distance')!,
       jxlDistanceValue: panel.querySelector('.image-jxl-distance + span')!,
       jxlEffort: panel.querySelector<HTMLInputElement>('.image-jxl-effort')!,
@@ -585,6 +597,7 @@ it('左右の出力形式はOriginalを先頭にし、表示名のアルファ�
     ['image/png', 'Browser PNG'],
     ['jpegli', 'JPEG (Jpegli)'],
     ['mozjpeg', 'JPEG (MozJPEG)'],
+    ['image/jp2', 'JPEG 2000 (OpenJPEG)'],
     ['image/jxl', 'JPEG XL (libjxl)'],
     ['oxipng', 'Oxipng'],
     ['image/webp', 'WebP (libwebp)'],
@@ -826,7 +839,7 @@ function mockScoring() {
     reply(data: unknown) { this.onmessage?.(new MessageEvent('message', { data })); }
   }
   const workers: ScoringWorker[] = [];
-  const copy = vi.fn(async () => bitmap());
+  const copy = vi.fn(async (_source: ImageBitmap) => bitmap());
   vi.stubGlobal('Worker', ScoringWorker);
   vi.stubGlobal('createImageBitmap', copy);
   return { workers, copy };
@@ -2043,4 +2056,135 @@ it('JPEG XL evaluates lossy output automatically and keeps downloads when only t
   expect(left.save.disabled).toBe(false);
   expect(right.score.textContent).toBe('88.2');
   expect(evaluate.disabled).toBe(true);
+});
+
+it('JPEG 2000 keeps the two targets per side and debounces only effective settings', async () => {
+  const { choose, left, right, auto, download } = setup(bitmap(), { input: false, preview: false });
+  auto.checked = false;
+  choose('sample.png');
+  await flush();
+  left.select('image/jp2');
+  right.select('image/jp2');
+  await flush();
+  expect(encodeJp2).toHaveBeenCalledOnce();
+  expect(vi.mocked(encodeJp2).mock.calls[0]![1]).toEqual({ mode: 'psnr', value: 40 });
+  left.setRange(left.jp2Psnr, 45);
+  left.jp2Mode.value = 'ratio';
+  left.jp2Mode.dispatchEvent(new Event('change'));
+  left.setRange(left.jp2Ratio, 16);
+  await vi.advanceTimersByTimeAsync(179);
+  expect(encodeJp2).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(1);
+  expect(vi.mocked(encodeJp2).mock.calls[1]![1]).toEqual({ mode: 'ratio', value: 16 });
+  left.jp2Lossless.click();
+  expect(left.jp2Mode.disabled).toBe(true);
+  expect(left.jp2Psnr.disabled).toBe(true);
+  expect(left.jp2Ratio.disabled).toBe(true);
+  await vi.advanceTimersByTimeAsync(180);
+  expect(vi.mocked(encodeJp2).mock.calls[2]![1]).toEqual({ mode: 'lossless' });
+  expect(left.score.textContent).toContain('対象外');
+  left.save.click();
+  right.save.click();
+  expect(download.mock.contexts.map(anchor => (anchor as HTMLAnchorElement).download)).toEqual([
+    'sample-left-openjpeg-lossless.jp2', 'sample-right-openjpeg-psnr40.jp2',
+  ]);
+  left.jp2Lossless.click();
+  expect(left.jp2Mode.value).toBe('ratio');
+  expect(left.jp2Ratio.value).toBe('16');
+  expect(left.jp2Psnr.value).toBe('45');
+  expect(right.jp2Mode.value).toBe('psnr');
+  expect(right.jp2Psnr.value).toBe('40');
+});
+
+it('JPEG 2000 shares the running job, actual Blob and bitmap until the last side leaves', async () => {
+  const { choose, left, right, createUrl, auto, unmount } = setup();
+  const pending = deferred<Jp2Result>();
+  vi.mocked(encodeJp2).mockReturnValueOnce(pending.promise);
+  auto.checked = false;
+  choose();
+  await flush();
+  left.select('image/jp2');
+  right.select('image/jp2');
+  expect(encodeJp2).toHaveBeenCalledOnce();
+  const [, , signal, onStart] = vi.mocked(encodeJp2).mock.calls[0]!;
+  onStart();
+  expect(right.jp2Status.textContent).toContain('変換しています');
+  left.jp2Cancel.click();
+  expect(signal.aborted).toBe(false);
+  const decoded = bitmap();
+  pending.resolve({ blob: jp2, bitmap: decoded });
+  await flush();
+  expect(left.jp2Preview).toBeNull();
+  expect(right.jp2Preview?.width).toBe(decoded.width);
+  expect(right.decodePreview).toHaveBeenCalledOnce(); // the initial Browser JPEG only
+  left.jp2Retry.click();
+  await flush();
+  expect(encodeJp2).toHaveBeenCalledOnce();
+  expect(createUrl.mock.calls.slice(-2)).toEqual([[jp2], [jp2]]);
+  const leftCanvas = left.jp2Preview!;
+  const rightCanvas = right.jp2Preview!;
+  left.select('original');
+  expect(leftCanvas.width).toBe(0);
+  expect(decoded.close).not.toHaveBeenCalled();
+  unmount();
+  expect(decoded.close).toHaveBeenCalledOnce();
+  expect(rightCanvas.width).toBe(0);
+});
+
+it('JPEG 2000 closes late results after input replacement or disposal and can retry errors', async () => {
+  const { choose, right, auto, unmount } = setup();
+  auto.checked = false;
+  const replaced = deferred<Jp2Result>();
+  const disposed = deferred<Jp2Result>();
+  vi.mocked(encodeJp2).mockReturnValueOnce(replaced.promise)
+    .mockRejectedValueOnce(new Error('OpenJPEG failed')).mockReturnValueOnce(disposed.promise);
+  choose();
+  await flush();
+  right.select('image/jp2');
+  const oldSignal = vi.mocked(encodeJp2).mock.calls[0]![2];
+  choose('different.png');
+  await flush();
+  expect(oldSignal.aborted).toBe(true);
+  const late = bitmap();
+  replaced.resolve({ blob: jp2, bitmap: late });
+  await flush();
+  expect(late.close).toHaveBeenCalledOnce();
+  expect(right.jp2Preview).toBeNull();
+  expect(right.error.textContent).toContain('OpenJPEG failed');
+  right.jp2Retry.click();
+  expect(right.error.textContent).toBe('');
+  const lastSignal = vi.mocked(encodeJp2).mock.calls[2]![2];
+  unmount();
+  expect(lastSignal.aborted).toBe(true);
+  const last = bitmap();
+  disposed.resolve({ blob: jp2, bitmap: last });
+  await flush();
+  expect(last.close).toHaveBeenCalledOnce();
+});
+
+it('scores JPEG 2000 through a transferred clone and shares its Blob score with the other side', async () => {
+  const { choose, left, right, auto } = setup();
+  const { workers, copy } = mockScoring();
+  const decoded = bitmap();
+  vi.mocked(encodeJp2).mockResolvedValueOnce({ blob: jp2, bitmap: decoded });
+  auto.checked = true;
+  choose();
+  await flush();
+  left.select('image/jp2');
+  await vi.advanceTimersByTimeAsync(800);
+  const scoring = workers[0]!;
+  const [request, transfer] = scoring.postMessage.mock.calls[0]!;
+  expect(copy.mock.calls.map(args => args[0])).toContain(decoded);
+  expect(request.images).toEqual([{ bitmap: transfer[1] }, jpeg]);
+  expect(transfer[1]).not.toBe(decoded);
+  expect(decoded.close).not.toHaveBeenCalled();
+  scoring.reply({ index: 0, score: 91.2 });
+  scoring.reply({ index: 1, score: 89.1 });
+  await flush();
+  expect(left.score.textContent).toBe('91.2');
+  expect(right.score.textContent).toBe('89.1');
+  right.select('image/jp2');
+  await vi.advanceTimersByTimeAsync(800);
+  expect(right.score.textContent).toBe('91.2');
+  expect(workers).toHaveLength(1);
 });

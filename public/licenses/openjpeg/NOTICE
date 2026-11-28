@@ -1,0 +1,10 @@
+OpenJPEG is distributed under the two-clause BSD license in LICENSE.
+
+The Wasm module is built from OpenJPEG upstream commit
+8314119b067c0fc77834731168daaebd379fdb12, with the local CVE-2026-107080
+fix in scripts/openjpeg/cve-2026-107080.patch. See DEPENDENCIES.txt for
+source, build, security, and runtime details.
+
+The Emscripten runtime notices and licenses in this directory cover the
+runtime components used by the standalone module, including libc/musl,
+compiler-rt, and dlmalloc.
