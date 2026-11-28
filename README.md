@@ -181,7 +181,7 @@ npm run test:e2e
 
 `npm run build`には型チェックを含むため、上の手順で別途実行する必要はありません。型チェックのみを行う場合は`npm run typecheck`を使えます。初回はPlaywrightのブラウザとOS依存パッケージのインストールが必要です。
 
-E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。実行対象の正本は[`playwright.config.ts`](playwright.config.ts)です。Chromiumは全E2Eを実行し、Firefoxは主要機能スモーク、画像変換、レスポンシブレイアウト、JWTデバッガーのサイズ検証を実行します。CIの再試行でのみ成功したケースも失敗扱いです。
+E2Eはビルド済みの`dist/`をVite previewで配信し、実際の`/web-toolbox/`配下で検証します。Chromiumは全E2E対象を実行します。Firefoxの対象は[`playwright.config.ts`](playwright.config.ts)の`testMatch`に従います。詳細な対象範囲は設定ファイルを参照してください。CIの再試行でのみ成功したケースも失敗扱いです。
 
 ローカルでE2Eを繰り返す場合は、先にビルドして別ターミナルでVite previewを起動しておくと、Playwrightがそのサーバーを再利用します。
 
